@@ -19,6 +19,7 @@ SECTIONS {
     . = 0x01000000;
 
     /* text section: where execuutable code resides */
+    /* text section memory is a multiple of 4 KB  */
     .text ALIGN(4096) : {
         KEEP(*(.multiboot))   /* Multiboot header (see bootloader.asm) */
         KEEP(*(.text*))       /* All .text files from all sources */
@@ -55,7 +56,7 @@ SECTIONS {
     }
 
     /* Mark the end of globals with a variable end */
-    /* Helpful for e.g. etting up the dynamic memory allocation */
+    /* Helpful for e.g. setting up the dynamic memory allocation */
     end = .; _end = .; __end = .;
 
     /* Discard the following sections */

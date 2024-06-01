@@ -4,9 +4,12 @@ GPP_PARAMS = -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exce
 AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 
-# sources
-SRC_CPP_FILES := $(wildcard source/*.cpp)
-SRC_ASM_FILES := $(wildcard source/*.asm)
+
+SUBDIRS := source/ source/core/ source/boot/
+
+# Source files
+SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))
+SRC_ASM_FILES := $(wildcard $(addsuffix /*.asm, $(SUBDIRS)))
 
 # remove preceding source/ and replace .cpp/.asm with .o
 OBJ_CPP_FILES := $(patsubst source/%,%, $(SRC_CPP_FILES:.cpp=.o))
@@ -16,16 +19,18 @@ objects := $(OBJ_CPP_FILES) $(OBJ_ASM_FILES)
 objects:
 	echo $(objects)
 
-# compile .cpp files into .o files using the command:
-%.o: source/%.cpp
-	g++ $(GPP_PARAMS) -Iinclude -o bin/$@ -c $<
+# Compile .cpp files into .o files
+bin/%.o: source/%.cpp
+	@mkdir -p $(@D)
+	g++ $(GPP_PARAMS) -Iinclude -o $@ -c $<
 
-# compile .s files into .o files using the command:
-%.o: source/%.asm
-	nasm $(AS_PARAMS) -o bin/$@ $<
+# Compile .asm files into .o files
+bin/%.o: source/%.asm
+	@mkdir -p $(@D)
+	nasm $(AS_PARAMS) -o $@ $<
 
 # compile linker.ld DEPENDING on $(objects) using the following command into kernel.bin
-kernel.bin: linker.ld $(objects)
+kernel.bin: linker.ld $(addprefix bin/, $(objects))
 	ld $(LD_PARAMS) -T $< -o bin/$@ $(addprefix bin/, $(objects))
 
 # run 'install' task depending on my kernel.bin using the following command

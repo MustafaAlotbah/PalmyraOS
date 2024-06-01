@@ -40,6 +40,7 @@ dd 32                        ; Bits per pixel
 GLOBAL kernel_start:function
 GLOBAL get_stack_start:function
 GLOBAL get_stack_end:function
+GLOBAL enable_protected_mode:function
 
 ; Externs from CPP
 EXTERN kernelEntry
@@ -85,7 +86,21 @@ get_stack_end:
     mov eax, kernel_stack_end
     ret
 
+
+; Function to enable the protected mode
+; Protection Enable bit (PE) is the least significant bit of Control Register 0 (CR0)
+enable_protected_mode:
+    push eax        ; temporarily save eax onto the stack (as we will use the register)
+
+    mov dword eax, cr0  ; Load the current value of the CR0 register into eax (cr0 cannot perform arithmetic operations)
+    or eax, 1           ; Set the Protection Enable (PE) bit in eax
+    mov dword cr0, eax  ; Update the CR0 register with the modified value (enabling protected mode)
+
+    pop eax         ; restore the original value of eax from the stack
+    ret
+
 section .bss alloc write
 resb 8192
 kernel_stack:
+
 
