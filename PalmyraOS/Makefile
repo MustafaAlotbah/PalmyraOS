@@ -5,7 +5,7 @@ AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 
 
-SUBDIRS := source/ source/core/ source/boot/
+SUBDIRS := source/ source/core/ source/boot/ source/libs/
 
 # Source files
 SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))

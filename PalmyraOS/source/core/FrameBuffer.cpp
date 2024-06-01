@@ -1,6 +1,7 @@
 
 #include "core/FrameBuffer.h"
-#include "core/memory.h"
+#include "libs/memory.h"    // memcpy
+
 
 
 // PalmyraOS::Color
