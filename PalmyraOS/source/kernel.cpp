@@ -39,6 +39,9 @@ void callConstructors()
 	auto frameHeight = vbe_mode_info->height;
 	auto* framebufferAddr = (uint32_t*)(uintptr_t)vbe_mode_info->framebuffer;
 
+
+	fonts::FontManager::initialize();
+
 	kernel::FrameBuffer frameBuffer(frameWidth, frameHeight, framebufferAddr, (uint32_t*)0x00E6'0000);
 
 	// Initialize color components to zero
