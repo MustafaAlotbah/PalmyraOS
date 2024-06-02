@@ -51,6 +51,12 @@ namespace PalmyraOS::kernel
 	  // Puts a character on the screen at the current x, y position
 	  void putChar(char ch);
 
+	  // change the position of the text rendering area
+	  void setPosition(uint32_t x, uint32_t y);
+
+	  // change the width and height of the text rendering area
+	  void setSize(uint32_t w, uint32_t h);
+
 	  // Puts a string on the screen
 	  void putString(const char* str);
 

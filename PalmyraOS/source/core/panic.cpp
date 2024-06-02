@@ -1,0 +1,74 @@
+
+#include "core/panic.h"
+#include "libs/stdio.h"
+#include "core/kernel.h"
+#include "core/Font.h"
+#include "core/VBE.h"
+
+#include <cstdarg>  // Include for va_list and related functions
+
+
+extern "C" void disable_interrupts();
+
+
+[[noreturn]] void kernelPanic_(const char* message)
+{
+	using namespace PalmyraOS;
+
+	// first avoid any other interrupts
+	disable_interrupts();
+
+	// reference system variables
+	auto& vbe = *PalmyraOS::kernel::vbe_ptr;
+
+	// render some information
+	kernel::Brush        brush(vbe.getFrameBuffer());
+	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
+
+	// define text area boundaries
+	uint16_t offset = 100;
+	uint16_t width  = vbe.getWidth() - 2 * offset;
+	uint16_t height = vbe.getHeight() - 2 * offset;
+
+	textRenderer.setPosition(offset, offset);
+	textRenderer.setSize(width, height);
+
+	// define window boundaries
+	uint16_t extendWindow  = 4;
+	uint16_t window_offset = offset - extendWindow;
+	uint16_t window_x2     = window_offset + width + 2 * extendWindow;
+	uint16_t window_y2     = window_offset + height + 2 * extendWindow;
+
+	// Window Background
+	brush.fillRectangle(window_offset, window_offset, window_x2, window_y2, Color::DarkRed);
+	brush.drawHLine(window_offset, window_x2, window_offset, Color::White);
+	brush.drawHLine(window_offset, window_x2, window_y2, Color::White);
+	brush.drawVLine(window_offset, window_offset, window_y2, Color::White);
+	brush.drawVLine(window_x2, window_offset, window_y2, Color::White);
+
+	uint16_t window_bar_offset = window_offset + 2;
+	uint16_t window_bar_x2     = window_x2 - 2;
+	uint16_t window_bar_y2     = window_offset + 2 * extendWindow + 14;
+	brush.fillRectangle(window_bar_offset, window_bar_offset, window_bar_x2, window_bar_y2, Color::Black);
+
+	textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
+	textRenderer << Color::White << "Panic Screen\n" << message;
+
+
+	// update video memory
+	vbe.getFrameBuffer().swapBuffers();
+
+	// halt
+	while (true);
+}
+
+void PalmyraOS::kernel::kernelPanic(const char* format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	char buffer[4096];  // Adjust size as necessary for your needs
+	vsnprintf(buffer, sizeof(buffer), format, args);
+	va_end(args);
+
+	kernelPanic_(buffer);
+}

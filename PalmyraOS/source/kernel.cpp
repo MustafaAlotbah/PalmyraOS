@@ -2,6 +2,8 @@
 #include "core/FrameBuffer.h"
 #include "core/Font.h"
 #include "core/VBE.h"
+#include "core/kernel.h"
+#include "core/panic.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -23,27 +25,47 @@ void callConstructors()
 }
 
 // Entry point of the kernel; this function is called by the bootloader
+// This function should initialize and set up the CPU and vital kernel variables
 [[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info)
 {
 	using namespace PalmyraOS;
 	// first construct globals
 	callConstructors();
 
+	// enter protected mode (32-bit)
 	enable_protected_mode();
-	// test VBE
 
 	// Retrieve VBE mode information from the multiboot info structure
 	auto* vbe_mode_info = (vbe_mode_info_t*)(uintptr_t)x86_multiboot_info->vbe_mode_info;
 	auto* vbe_control_info = (vbe_control_info_t*)(uintptr_t)x86_multiboot_info->vbe_control_info;
 
+	// main block (so it is never destructed)
+	kernel::VBE          vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
+	kernel::vbe_ptr = &vbe;
+
+	// initialize the fonts
 	fonts::FontManager::initialize();
 
-	kernel::VBE          vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
+	kernel::setup();
+
+	// should never arrive here
+	while (true);
+}
+
+[[noreturn]] void PalmyraOS::kernel::setup()
+{
+
+	// reference system variables
+	auto& vbe = *vbe_ptr;
+
+	// render some information
 	kernel::Brush        brush(vbe.getFrameBuffer());
 	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
 
 	// dummy time just to make sure the loop is running smoothly
 	uint64_t dummy_up_time = 0;
+
+//	kernelPanic("wow sth happened %d", 456);
 
 	// Infinite loop to cycle through colors and fill the screen
 	while (true)
@@ -69,4 +91,8 @@ void callConstructors()
 		// update video memory
 		vbe.getFrameBuffer().swapBuffers();
 	}
+
+
+	// should never arrive here
+	while (true);
 }

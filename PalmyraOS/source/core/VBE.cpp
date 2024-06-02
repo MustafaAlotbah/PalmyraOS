@@ -228,6 +228,18 @@ PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(Pal
 	return *this;
 }
 
+void PalmyraOS::kernel::TextRenderer::setPosition(uint32_t x, uint32_t y)
+{
+	position_x = x;
+	position_y = y;
+}
+
+void PalmyraOS::kernel::TextRenderer::setSize(uint32_t w, uint32_t h)
+{
+	width  = w;
+	height = h;
+}
+
 ///endregion
 
 
