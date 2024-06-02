@@ -8,12 +8,17 @@
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
 extern "C" void (* last_constructor)();
+
+// Enable protected mode. Defined in bootloader.asm.
 extern "C" void enable_protected_mode();
 
-// Functions with C linkage for compatibility with assembly
+/**
+ * Kernel entry point called from the bootloader with multiboot information.
+ * @param x86_multiboot_info Pointer to the multiboot information structure.
+ */
 extern "C" [[noreturn]] [[maybe_unused]] void kernelEntry(multiboot_info_t* x86_multiboot_info);
 
-// Calls all global constructors; this is invoked before kernelMain (see loader in loader.s)
+//  Calls all constructors for global/static objects.
 void callConstructors()
 {
 	// Iterate through the constructors and call each one
@@ -24,11 +29,15 @@ void callConstructors()
 	}
 }
 
-// Entry point of the kernel; this function is called by the bootloader
-// This function should initialize and set up the CPU and vital kernel variables
+/**
+ * Kernel entry function that is called from the bootloader.
+ * Initializes VBE, sets up the kernel, and enters the main loop.
+ * @param x86_multiboot_info Pointer to the multiboot information structure.
+ */
 [[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info)
 {
 	using namespace PalmyraOS;
+
 	// first construct globals
 	callConstructors();
 
@@ -40,21 +49,22 @@ void callConstructors()
 	auto* vbe_control_info = (vbe_control_info_t*)(uintptr_t)x86_multiboot_info->vbe_control_info;
 
 	// main block (so it is never destructed)
-	kernel::VBE          vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
+	kernel::VBE vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
 	kernel::vbe_ptr = &vbe;
 
-	// initialize the fonts
+	// initialize the fonts and setup the kernel
 	fonts::FontManager::initialize();
-
 	kernel::setup();
 
 	// should never arrive here
 	while (true);
 }
 
+/**
+ * Kernel setup function that initializes various subsystems and enters the main loop.
+ */
 [[noreturn]] void PalmyraOS::kernel::setup()
 {
-
 	// reference system variables
 	auto& vbe = *vbe_ptr;
 
@@ -89,7 +99,7 @@ void callConstructors()
 		textRenderer.reset();
 
 		// update video memory
-		vbe.getFrameBuffer().swapBuffers();
+		vbe.swapBuffers();
 	}
 
 

@@ -273,14 +273,17 @@ size_t PalmyraOS::kernel::VBE::getHeight() const
 {
 	return vbe_mode_info_.height;
 }
+
 size_t PalmyraOS::kernel::VBE::getVideoMemorySize() const
 {
 	return vbe_control_info_.video_memory * 64 * 1024; // video_memory is in 64KB blocks
 }
+
 size_t PalmyraOS::kernel::VBE::getColorDepth() const
 {
 	return vbe_mode_info_.bpp;
 }
+
 uint16_t PalmyraOS::kernel::VBE::getWindowAttributes() const
 {
 	return vbe_mode_info_.attributes;

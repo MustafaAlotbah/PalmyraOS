@@ -1,21 +1,22 @@
-
+# Set parameters for the compiler and assembler
 # 32-Bit output
 GPP_PARAMS = -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore
 AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 
-
+# Define subdirectories containing source files
 SUBDIRS := source/ source/core/ source/boot/ source/libs/
 
-# Source files
+# Find all .cpp and .asm source files in the specified subdirectories
 SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))
 SRC_ASM_FILES := $(wildcard $(addsuffix /*.asm, $(SUBDIRS)))
 
-# remove preceding source/ and replace .cpp/.asm with .o
+# Remove preceding 'source/' and replace .cpp/.asm with .o
 OBJ_CPP_FILES := $(patsubst source/%,%, $(SRC_CPP_FILES:.cpp=.o))
 OBJ_ASM_FILES := $(patsubst source/%,%, $(SRC_ASM_FILES:.asm=.o))
 objects := $(OBJ_CPP_FILES) $(OBJ_ASM_FILES)
 
+# Print the list of object files
 objects:
 	echo $(objects)
 
@@ -29,7 +30,7 @@ bin/%.o: source/%.asm
 	@mkdir -p $(@D)
 	nasm $(AS_PARAMS) -o $@ $<
 
-# compile linker.ld DEPENDING on $(objects) using the following command into kernel.bin
+# Link all object files using the linker script to create the kernel binary
 kernel.bin: linker.ld $(addprefix bin/, $(objects))
 	ld $(LD_PARAMS) -T $< -o bin/$@ $(addprefix bin/, $(objects))
 

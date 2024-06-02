@@ -99,5 +99,5 @@ def get_folder_content(path: str, excludes: Optional[List[str]] = None) -> str:
 
 
 if __name__ == "__main__":
-    result = get_folder_content("../PalmyraOS", excludes=["bin", "cmake-build-debug"])
+    result = get_folder_content("../PalmyraOS", excludes=["bin", "cmake-build-debug", "libs"])
     pyperclip.copy(result)

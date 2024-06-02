@@ -53,11 +53,12 @@ multiboot_info_low      dd 0
 
 ; Stack grows down!
 ; Leave empty 4 MByte before the kernel stack starts
+
 kernel_stack_end:
     times 4*1024*1024 db 0  ; Allocates Space for the stack
 kernel_stack_start:
 
-
+section .text
 kernel_start:
     ; at the start:
 
@@ -80,10 +81,12 @@ _stop:
     hlt
     jmp _stop
 
+; Function to get the start address of the stack
 get_stack_start:
     mov eax, kernel_stack_start
     ret
 
+; Function to get the end address of the stack
 get_stack_end:
     mov eax, kernel_stack_end
     ret
@@ -92,17 +95,13 @@ get_stack_end:
 ; Function to enable the protected mode
 ; Protection Enable bit (PE) is the least significant bit of Control Register 0 (CR0)
 enable_protected_mode:
-    push eax        ; temporarily save eax onto the stack (as we will use the register)
+    push eax            ; temporarily save eax onto the stack (as we will use the register)
 
     mov dword eax, cr0  ; Load the current value of the CR0 register into eax (cr0 cannot perform arithmetic operations)
     or eax, 1           ; Set the Protection Enable (PE) bit in eax
     mov dword cr0, eax  ; Update the CR0 register with the modified value (enabling protected mode)
 
-    pop eax         ; restore the original value of eax from the stack
+    pop eax             ; restore the original value of eax from the stack
     ret
-
-section .bss alloc write
-resb 8192
-kernel_stack:
 
 

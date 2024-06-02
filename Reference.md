@@ -17,3 +17,12 @@ PalmyraOS/
     ├── bootloader.asm
     └── kernel.cpp
 ```
+
+TODO
+
+- GDT
+- Interrupts
+- Memory
+- Paging
+- Paging + Memory
+- 

@@ -1,11 +1,15 @@
 
 #pragma once
-
 #include <cstdint>
 
-typedef struct {
+
+/**
+ * Structure representing VBE mode information.
+ */
+typedef struct
+{
 	uint16_t attributes;                // Mode attributes (e.g., supported, color, graphics)
-	uint8_t window_a, window_b;         // Window identifiers for accessing video memory
+	uint8_t window_a, window_b;        // Window identifiers for accessing video memory
 	uint16_t granularity;               // Window granularity in kilobytes
 	uint16_t window_size;               // Window size in kilobytes
 	uint16_t segment_a, segment_b;      // Window segments in real mode addressing
@@ -13,30 +17,34 @@ typedef struct {
 
 	uint16_t pitch;                     // Bytes per scanline, important for calculating memory layout
 
-	uint16_t width, height;             // Screen width and height in pixels
-	uint8_t w_char, y_char;             // Character cell dimensions in pixels
-	uint8_t planes;                     // Number of memory planes
-	uint8_t bpp;                        // Bits per pixel
-	uint8_t banks;                      // Number of banks in banked mode
-	uint8_t memory_model;               // Type of memory model (e.g., text, CGA, linear)
-	uint8_t bank_size;                  // Size of each bank in kilobytes
-	uint8_t image_pages;                // Number of images pages that fit in memory
-	uint8_t reserved0;                  // Reserved byte for alignment padding
+	uint16_t width, height;              // Screen width and height in pixels
+	uint8_t  w_char, y_char;             // Character cell dimensions in pixels
+	uint8_t  planes;                     // Number of memory planes
+	uint8_t  bpp;                        // Bits per pixel
+	uint8_t  banks;                      // Number of banks in banked mode
+	uint8_t  memory_model;               // Type of memory model (e.g., text, CGA, linear)
+	uint8_t  bank_size;                  // Size of each bank in kilobytes
+	uint8_t  image_pages;                // Number of images pages that fit in memory
+	uint8_t  reserved0;                  // Reserved byte for alignment padding
 
-	uint8_t red_mask, red_position;       // Mask and position of red component
-	uint8_t green_mask, green_position;     // Mask and position of green component
-	uint8_t blue_mask, blue_position;      // Mask and position of blue component
+	uint8_t red_mask, red_position;            // Mask and position of red component
+	uint8_t green_mask, green_position;        // Mask and position of green component
+	uint8_t blue_mask, blue_position;          // Mask and position of blue component
 	uint8_t reserved_mask, reserved_position;  // Masks and positions for reserved field
-	uint8_t direct_color_attributes;            // How color information is interpreted
+	uint8_t direct_color_attributes;           // How color information is interpreted
 
 	uint32_t framebuffer;                       // Physical address of the linear framebuffer
 	uint32_t off_screen_mem_off;                // Pointer to start of off screen memory
 	uint16_t off_screen_mem_size;               // Amount of off screen memory in kilobytes
-	uint8_t reserved1[206];             // Padding to make the structure a certain size or for future expansion
+	uint8_t reserved1[206];                    // Padding to make the structure a certain size or for future expansion
 } __attribute__((packed)) vbe_mode_info_t;
 
-typedef struct {
-	char signature[4];               // Signature to identify VBE; should be "VESA"
+/**
+ * Structure representing VBE control information.
+ */
+typedef struct
+{
+	char signature[4];           // Signature to identify VBE; should be "VESA"
 	uint16_t version;                // VBE version number
 	uint32_t oem;                    // Pointer to OEM string
 	uint32_t capabilities;           // Capabilities of the graphics controller
@@ -52,7 +60,11 @@ typedef struct {
 	uint8_t oem_data[256];           // OEM BIOSes can store their own data here
 } __attribute__((packed)) vbe_control_info_t;
 
-typedef struct {
+/**
+ * Structure representing multiboot information.
+ */
+typedef struct
+{
 	/* Multiboot info version number */
 	uint32_t flags;
 
@@ -61,10 +73,12 @@ typedef struct {
 	uint32_t mem_upper;     // Amount of upper memory in kilobytes. Upper memory starts at address 1 megabyte.
 
 	/* "root" partition */
-	uint32_t boot_device;   // Encoded value indicating the BIOS disk device number and partition from which the boot was performed
+	uint32_t
+		boot_device;   // Encoded value indicating the BIOS disk device number and partition from which the boot was performed
 
 	/* Kernel command line */
-	uint32_t cmdline;       // Physical address of the command line to be passed to the kernel; a zero-terminated ASCII string
+	uint32_t
+				   cmdline;       // Physical address of the command line to be passed to the kernel; a zero-terminated ASCII string
 
 	/*----Boot-Module list--------*/
 	uint32_t mods_count;    // Number of boot modules loaded along with the kernel
@@ -93,14 +107,14 @@ typedef struct {
 
 	/*-----Video---------------------*/
 	vbe_control_info_t* vbe_control_info;   // Pointer to the VBE control information returned by the VBE function 00h
-	vbe_mode_info_t* vbe_mode_info;         // Pointer to the VBE mode information returned by the VBE function 01h
+	vbe_mode_info_t* vbe_mode_info;      // Pointer to the VBE mode information returned by the VBE function 01h
 	uint16_t vbe_mode;                      // Current VBE mode
 	uint16_t vbe_interface_seg;             // Real mode segment of a protected mode interface
 	uint32_t vbe_interface_off;             // Offset of a protected mode interface
 	uint32_t vbe_interface_len;             // Length of the VBE protected mode interface
 
 	/*----FrameBuffer----------------*/
-	char* framebuffer_addr;         // Physical address of the linear framebuffer; valid if the framebuffer_type is not 0
+	char* framebuffer_addr;         // Physical addr of the linear framebuffer; valid if the framebuffer_type is not 0
 	uint32_t framebuffer_pitch;     // Number of bytes per scanline of the framebuffer
 	uint32_t framebuffer_width;     // Width of the framebuffer in pixels
 	uint32_t framebuffer_height;    // Height of the framebuffer in pixels
@@ -112,5 +126,8 @@ typedef struct {
 
 } multiboot_info_t;
 
+/**
+ * Macro to create a color value from individual ARGB components.
+ */
 #define COLOR(A, R, G, B) ((uint32_t)(A) << 24 | (uint32_t)(R) << 16 | (uint32_t)(G) << 8 | (uint32_t)(B))
 

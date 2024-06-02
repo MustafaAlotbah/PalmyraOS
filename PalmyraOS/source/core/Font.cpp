@@ -1,48 +1,85 @@
 
 #include "core/Font.h"
+#include "libs/string.h"
+
+
+// Static instance of the Arial font
+PalmyraOS::fonts::Font PalmyraOS::fonts::FontManager::arial("Arial-12");
 
 
 
+///region PalmyraOS::fonts::Glyph
+/**
+ * Assignment operator for the Glyph structure.
+ * Performs a deep copy of the bitmap data.
+ * @param other The glyph to copy from.
+ * @return Reference to this glyph.
+ */
 PalmyraOS::fonts::Glyph& PalmyraOS::fonts::Glyph::operator=(const Glyph& other)
 {
+	// Protect against self-assignment
+	if (this == &other) return *this;
 
-	if (this != &other)
-	{  // Protect against self-assignment
-		for (size_t i = 0; i < other.width; i++) bitmap[i] = other.bitmap[i];
-		width   = other.width;
-		height  = other.height;
-		offsetX = other.offsetX;
-		offsetY = other.offsetY;
-	}
+	for (size_t i = 0; i < other.width; i++) bitmap[i] = other.bitmap[i];
+	width   = other.width;
+	height  = other.height;
+	offsetX = other.offsetX;
+	offsetY = other.offsetY;
 
 	return *this;
 }
 
+/**
+ * Constructor that initializes a font with a given name.
+ * @param name The name of the font.
+ */
 PalmyraOS::fonts::Font::Font(const char* name)
 {
 	name_ = name;
 }
 
+/**
+ * Retrieves a glyph for a given character.
+ * @param character The character for which to retrieve the glyph.
+ * @return The glyph corresponding to the character.
+ */
 const PalmyraOS::fonts::Glyph& PalmyraOS::fonts::Font::getGlyph(uint32_t character)
 {
-	if (character > MAX_FONT_SIZE) return glyphs_[0];
+	if (character >= MAX_FONT_SIZE) return glyphs_[0];    // Return a default glyph if character is out of range
 	return glyphs_[character];
 }
 
+///endregion
+
+
+///region PalmyraOS::fonts::Font
+
+/**
+ * Sets a glyph for a given character.
+ * @param character The character for which to set the glyph.
+ * @param glyph The glyph to set.
+ */
 void PalmyraOS::fonts::Font::setGlyph(uint32_t character, Glyph glyph)
 {
 	glyphs_[character] = glyph;
 }
 
+///endregion
 
-PalmyraOS::fonts::Font PalmyraOS::fonts::FontManager::arial("Arial-12");
-
+/**
+ * Retrieves a font by its name.
+ * @param name The name of the font to retrieve.
+ * @return The font corresponding to the name.
+ */
 PalmyraOS::fonts::Font& PalmyraOS::fonts::FontManager::getFont(const char* name)
 {
-	if (name == "Arial-12") return arial;
+	if (strcmp(name, "Arial-12") == 0) return arial;
 	return arial;
 }
 
+/**
+ * Initializes the font manager and loads default fonts.
+ */
 void PalmyraOS::fonts::FontManager::initialize()
 {
 	for (size_t i = 0; i < 32; i++)
