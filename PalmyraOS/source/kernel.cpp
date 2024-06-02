@@ -1,12 +1,12 @@
 #include "boot/multiboot.h"
 #include "core/FrameBuffer.h"
+#include "core/Font.h"
+#include "core/VBE.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
 extern "C" void (* last_constructor)();
 extern "C" void enable_protected_mode();
-extern "C" void enable_sse();
-extern "C" void enable_sse2();
 
 // Functions with C linkage for compatibility with assembly
 extern "C" [[noreturn]] [[maybe_unused]] void kernelEntry(multiboot_info_t* x86_multiboot_info);
@@ -30,40 +30,43 @@ void callConstructors()
 	callConstructors();
 
 	enable_protected_mode();
-	enable_sse();
 	// test VBE
 
 	// Retrieve VBE mode information from the multiboot info structure
 	auto* vbe_mode_info = (vbe_mode_info_t*)(uintptr_t)x86_multiboot_info->vbe_mode_info;
-	auto frameWidth  = vbe_mode_info->width;
-	auto frameHeight = vbe_mode_info->height;
-	auto* framebufferAddr = (uint32_t*)(uintptr_t)vbe_mode_info->framebuffer;
-
+	auto* vbe_control_info = (vbe_control_info_t*)(uintptr_t)x86_multiboot_info->vbe_control_info;
 
 	fonts::FontManager::initialize();
 
-	kernel::FrameBuffer frameBuffer(frameWidth, frameHeight, framebufferAddr, (uint32_t*)0x00E6'0000);
+	kernel::VBE          vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
+	kernel::Brush        brush(vbe.getFrameBuffer());
+	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
 
-	// Initialize color components to zero
-	uint32_t red   = 0x00;
-	uint32_t green = 0x00;
-	uint32_t blue  = 0x00;
+	// dummy time just to make sure the loop is running smoothly
+	uint64_t dummy_up_time = 0;
 
 	// Infinite loop to cycle through colors and fill the screen
 	while (true)
 	{
-		if (red < 240) red += 1;
-		else if (green < 240) green += 1;
-		else if (blue < 240) blue += 1;
-		else
-		{
-			red   = 0x00;
-			green = 0x00;
-			blue  = 0x00;
-		}
+		dummy_up_time++;
 
-		// Fill the screen with the current color
-		frameBuffer.fill(Color(red, green, blue));
-		frameBuffer.swapBuffers();
+		// Clear the screen
+		brush.fill(Color::Black);
+
+		// Logo
+		textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
+		textRenderer << Color::White << "v0.01\n";
+		brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
+		textRenderer << "\n";
+
+		// Information
+		textRenderer << "Screen Resolution: " << vbe.getWidth() << "x" << vbe.getHeight() << "\n";
+		textRenderer << "Video Memory: " << vbe.getVideoMemorySize() / 1024 / 1024 << " MB\n";
+		textRenderer << "Memory Model Code: " << vbe.getMemoryModel() << "\n";
+		textRenderer << "Time: " << dummy_up_time << "\n";
+		textRenderer.reset();
+
+		// update video memory
+		vbe.getFrameBuffer().swapBuffers();
 	}
 }
