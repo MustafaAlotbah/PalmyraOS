@@ -30,8 +30,10 @@ dd 0                         ; VbeInterfaceOff
 
 ; Screen width, height, depth (if you want GRUB to set a specific video mode)
 dd 0                         ; 0: Graphics, 1: Text Mode
-dd 1024                      ; Screen width requested
-dd 768                       ; Screen height requested
+; dd 1024                      ; Screen width requested
+; dd 768                       ; Screen height requested
+dd 800                      ; Screen width requested
+dd 600                       ; Screen height requested
 dd 32                        ; Bits per pixel
 
 ; ----------------------------------------------------------

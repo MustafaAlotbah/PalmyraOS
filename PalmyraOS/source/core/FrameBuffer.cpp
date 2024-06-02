@@ -22,6 +22,23 @@ uint32_t PalmyraOS::Color::getColorValue() const
 	return color;
 }
 
+// Define the static color constants
+const PalmyraOS::Color PalmyraOS::Color::Red        = Color(252, 3, 32);
+const PalmyraOS::Color PalmyraOS::Color::Green      = Color(90, 252, 3);
+const PalmyraOS::Color PalmyraOS::Color::Blue       = Color(3, 53, 252);
+const PalmyraOS::Color PalmyraOS::Color::Cyan       = Color(3, 173, 252);
+const PalmyraOS::Color PalmyraOS::Color::Magenta    = Color(252, 3, 198);
+const PalmyraOS::Color PalmyraOS::Color::Yellow     = Color(223, 252, 3);
+const PalmyraOS::Color PalmyraOS::Color::Black      = Color(2, 2, 2);
+const PalmyraOS::Color PalmyraOS::Color::White      = Color(245, 245, 245);
+const PalmyraOS::Color PalmyraOS::Color::Gray       = Color(128, 128, 128);
+const PalmyraOS::Color PalmyraOS::Color::DarkRed    = Color(145, 4, 21);
+const PalmyraOS::Color PalmyraOS::Color::DarkGreen  = Color(58, 122, 9);
+const PalmyraOS::Color PalmyraOS::Color::DarkBlue   = Color(10, 44, 145);
+const PalmyraOS::Color PalmyraOS::Color::LightRed   = Color(237, 116, 134);
+const PalmyraOS::Color PalmyraOS::Color::LightGreen = Color(144, 238, 144);
+const PalmyraOS::Color PalmyraOS::Color::LightBlue  = Color(173, 216, 230);
+const PalmyraOS::Color PalmyraOS::Color::Orange     = Color(252, 177, 3);
 
 // PalmyraOS::kernel::FrameBuffer
 

@@ -35,6 +35,24 @@ namespace PalmyraOS
 
 	  // Method to return the uint32_t color value
 	  [[nodiscard]] uint32_t getColorValue() const;
+
+	  // Predefined static colors
+	  static const Color Red;
+	  static const Color Green;
+	  static const Color Blue;
+	  static const Color Cyan;
+	  static const Color Magenta;
+	  static const Color Yellow;
+	  static const Color Black;
+	  static const Color White;
+	  static const Color Gray;
+	  static const Color DarkRed;
+	  static const Color DarkGreen;
+	  static const Color DarkBlue;
+	  static const Color LightRed;
+	  static const Color LightGreen;
+	  static const Color LightBlue;
+	  static const Color Orange;
   };
 
   namespace kernel
