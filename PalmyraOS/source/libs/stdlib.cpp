@@ -1,6 +1,8 @@
 #include "libs/stdlib.h"
 #include "libs/ctype.h"
 
+
+// Convert string to signed long
 long strtol(const char* nptr, char** endptr, int base)
 {
 	long result = 0;
@@ -60,6 +62,7 @@ long strtol(const char* nptr, char** endptr, int base)
 	return result*sign;
 }
 
+// Convert string to unsigned long
 unsigned long strtoul(const char* nptr, char** endptr, int base)
 {
 	unsigned long result = 0;
@@ -113,11 +116,13 @@ unsigned long strtoul(const char* nptr, char** endptr, int base)
 	return result;
 }
 
+// Convert string to int
 int atoi(const char* str)
 {
 	return (int) strtol(str, nullptr, 10);
 }
 
+// Convert integer to string
 void itoa(int num, char* str, int base, bool upper_case)
 {
 	int i = 0;
@@ -149,6 +154,121 @@ void itoa(int num, char* str, int base, bool upper_case)
 	// If number is negative, append '-'
 	if (isNegative && base == 10) {
 		str[i++] = '-';
+	}
+
+	str[i] = '\0'; // Null-terminate string
+
+	// Reverse the string
+	reverse(str, i);
+}
+
+// Convert unsigned integer to string
+void itoa(uint32_t num, char* str, int base, bool upper_case)
+{
+	int i = 0;
+
+	if (num == 0)
+	{
+		str[i++] = '0';
+		str[i]   = '\0';
+		return;
+	}
+
+	// Process individual digits
+	while (num != 0)
+	{
+		uint32_t rem = num % base;
+		if (rem > 9)
+		{
+			char offset = upper_case ? 'A' - 10 : 'a' - 10;
+			str[i++] = rem + offset;
+		}
+		else
+		{
+			str[i++] = rem + '0';
+		}
+		num = num / base;
+	}
+
+	str[i] = '\0'; // Null-terminate string
+
+	// Reverse the string
+	reverse(str, i);
+}
+
+// Convert 64-bit integer to string
+void itoa64(int64_t num, char* str, int base, bool upper_case)
+{
+	int  i          = 0;
+	bool isNegative = false;
+
+	if (num == 0)
+	{
+		str[i++] = '0';
+		str[i]   = '\0';
+		return;
+	}
+
+	if (num < 0 && base == 10)
+	{
+		isNegative = true;
+		num        = -num;
+	}
+
+	// Process individual digits
+	while (num != 0)
+	{
+		int64_t rem = num % base;
+		if (rem > 9)
+		{
+			char offset = upper_case ? 'A' - 10 : 'a' - 10;
+			str[i++] = rem + offset;
+		}
+		else
+		{
+			str[i++] = rem + '0';
+		}
+		num = num / base;
+	}
+
+	// If number is negative, append '-'
+	if (isNegative && base == 10)
+	{
+		str[i++] = '-';
+	}
+
+	str[i] = '\0'; // Null-terminate string
+
+	// Reverse the string
+	reverse(str, i);
+}
+
+// Convert 64-bit unsigned integer to string
+void uitoa64(uint64_t num, char* str, int base, bool upper_case)
+{
+	int i = 0;
+
+	if (num == 0)
+	{
+		str[i++] = '0';
+		str[i]   = '\0';
+		return;
+	}
+
+	// Process individual digits
+	while (num != 0)
+	{
+		uint64_t rem = num % base;
+		if (rem > 9)
+		{
+			char offset = upper_case ? 'A' - 10 : 'a' - 10;
+			str[i++] = rem + offset;
+		}
+		else
+		{
+			str[i++] = rem + '0';
+		}
+		num = num / base;
 	}
 
 	str[i] = '\0'; // Null-terminate string

@@ -187,6 +187,9 @@ namespace PalmyraOS::kernel
 	  TextRenderer& operator<<(uint64_t num);
 
 	  // Overload for << streaming operator for color commands
+	  TextRenderer& operator<<(int64_t num);
+
+	  // Overload for << streaming operator for color commands
 	  TextRenderer& operator<<(uint32_t num);
 
 	  // Overload for << streaming operator for color commands

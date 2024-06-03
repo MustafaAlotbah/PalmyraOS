@@ -2,6 +2,7 @@
 #include "core/VBE.h"
 #include "libs/stdio.h"        // snprintf
 #include "libs/string.h"
+#include "libs/stdlib.h"
 
 ///region PalmyraOS::kernel::Brush
 
@@ -193,8 +194,15 @@ char PalmyraOS::kernel::TextRenderer::getFormat()
 PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(uint64_t num)
 {
 	char buffer[1024];  // Adjust size as necessary for your needs
-	char format[3] = { '%', getFormat(), '\0' };    // %d, %x ...
-	snprintf(buffer, sizeof(buffer), format, num);
+	uitoa64(num, buffer, 10, false);
+	putString(buffer);
+	return *this;
+}
+
+PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(int64_t num)
+{
+	char buffer[1024];  // Adjust size as necessary for your needs
+	itoa64(num, buffer, 10, false);
 	putString(buffer);
 	return *this;
 }
@@ -203,6 +211,7 @@ PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(uin
 {
 	char buffer[1024];  // Adjust size as necessary for your needs
 	char format[3] = { '%', getFormat(), '\0' };    // %d, %x ...
+	if (representation == NumeralSystem::Dec) format[1] = 'u';
 	snprintf(buffer, sizeof(buffer), format, num);
 	putString(buffer);
 	return *this;
@@ -219,7 +228,11 @@ PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(uin
 
 PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(int num)
 {
-	return operator<<((uint32_t)num);
+	char buffer[1024];  // Adjust size as necessary for your needs
+	char format[3] = { '%', getFormat(), '\0' };    // %d, %x ...
+	snprintf(buffer, sizeof(buffer), format, num);
+	putString(buffer);
+	return *this;
 }
 
 PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(PalmyraOS::kernel::TextRenderer::NumeralSystem system)

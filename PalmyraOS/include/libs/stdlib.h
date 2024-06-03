@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /**
  * Converts the initial part of the string pointed to by `nptr` to a long integer value according to the given base,
  * which must be between 2 and 36 inclusive, or be the special value 0.
@@ -37,6 +39,10 @@ int atoi(const char *str);
  */
 void itoa(int num, char* str, int base, bool upper_case=false);
 
+void itoa(uint32_t num, char* str, int base, bool upper_case = false);
 
+void itoa64(int64_t num, char* str, int base, bool upper_case);
+
+void uitoa64(uint64_t num, char* str, int base, bool upper_case);
 
 void reverse(char str[], int length);

@@ -8,58 +8,68 @@
 size_t vsprintf(char* str, const char* format, va_list args)
 {
 	const char* traverse;
-	char* s;
+	char      * s;
 	int d;
 	char* out = str;
 
-	for (traverse = format; *traverse; traverse++) {
-		if (*traverse != '%') {
+	for (traverse = format; *traverse; traverse++)
+	{
+		if (*traverse != '%')
+		{
 			*out++ = *traverse;
 			continue;
 		}
 
 		traverse++;  // Move past '%'
 
-		if (*traverse == '%') {  // Handle escaped percent sign (%%)
+		if (*traverse == '%')
+		{  // Handle escaped percent sign (%%)
 			*out++ = '%';
 			continue;
 		}
 
-		switch (*traverse) {
-		case 's':  // String
-			s = va_arg(args, char*);
-			strcpy(out, s);
-			out += strlen(s);
-			break;
-		case 'd':  // Decimal
-			d = va_arg(args, int);
-			char num_str[20];
-			itoa(d, num_str, 10);
-			strcpy(out, num_str);
-			out += strlen(num_str);
-			break;
-		case 'b':  // binary
-			d = va_arg(args, int);
-			itoa(d, num_str, 2);
-			strcpy(out, num_str);
-			out += strlen(num_str);
-			break;
-		case 'x':  // Hexadecimal (lowercase)
-			d = va_arg(args, int);
-			itoa(d, num_str, 16);
-			strcpy(out, num_str);
-			out += strlen(num_str);
-			break;
-		case 'X':  // Hexadecimal (uppercase)
-			d = va_arg(args, int);
-			itoa(d, num_str, 16, true);
-			strcpy(out, num_str);
-			out += strlen(num_str);
-			break;
-		default:
-			*out++ = '%'; // Include the '%'
-			*out++ = *traverse;  // and the following character as they are
-			break;
+		switch (*traverse)
+		{
+			case 's':  // String
+				s = va_arg(args, char*);
+				strcpy(out, s);
+				out += strlen(s);
+				break;
+			case 'd':  // Decimal
+				d = va_arg(args, int32_t);
+				char num_str[20];
+				itoa((int)d, num_str, 10);
+				strcpy(out, num_str);
+				out += strlen(num_str);
+				break;
+			case 'u':  // uint32_t
+				d = va_arg(args, uint32_t);
+				itoa((uint32_t)d, num_str, 10);
+				strcpy(out, num_str);
+				out += strlen(num_str);
+				break;
+			case 'b':  // binary
+				d = va_arg(args, uint32_t);
+				itoa(d, num_str, 2);
+				strcpy(out, num_str);
+				out += strlen(num_str);
+				break;
+			case 'x':  // Hexadecimal (lowercase)
+				d = va_arg(args, uint32_t);
+				itoa(d, num_str, 16);
+				strcpy(out, num_str);
+				out += strlen(num_str);
+				break;
+			case 'X':  // Hexadecimal (uppercase)
+				d = va_arg(args, uint32_t);
+				itoa(d, num_str, 16, true);
+				strcpy(out, num_str);
+				out += strlen(num_str);
+				break;
+			default:
+				*out++ = '%'; // Include the '%'
+				*out++ = *traverse;  // and the following character as they are
+				break;
 		}
 	}
 
@@ -68,7 +78,8 @@ size_t vsprintf(char* str, const char* format, va_list args)
 }
 
 // Implementation of a simplified sprintf
-size_t sprintf(char* str, const char* format, ...) {
+size_t sprintf(char* str, const char* format, ...)
+{
 	va_list ap;
 	va_start(ap, format);
 	size_t written = vsprintf(str, format, ap);
@@ -77,7 +88,8 @@ size_t sprintf(char* str, const char* format, ...) {
 }
 
 // Implementation of a simplified vsnprintf
-size_t vsnprintf(char* str, size_t size, const char* format, va_list ap) {
+size_t vsnprintf(char* str, size_t size, const char* format, va_list ap)
+{
 	char buffer[1024] = { 0 };
 
 	size_t written = vsprintf(buffer, format, ap);
@@ -90,7 +102,8 @@ size_t vsnprintf(char* str, size_t size, const char* format, va_list ap) {
 }
 
 // Implementation of a simplified snprintf
-size_t snprintf(char* str, size_t size, const char* format, ...) {
+size_t snprintf(char* str, size_t size, const char* format, ...)
+{
 	va_list ap;
 	va_start(ap, format);
 	size_t written = vsnprintf(str, size, format, ap);
