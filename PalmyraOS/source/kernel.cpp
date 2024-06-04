@@ -4,6 +4,7 @@
 #include "core/VBE.h"
 #include "core/kernel.h"
 #include "core/panic.h"
+#include "core/cpu.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -78,6 +79,8 @@ void callConstructors()
 //	kernelPanic("wow sth happened %d", 456);
 
 	// Infinite loop to cycle through colors and fill the screen
+	uint64_t last_tsc = CPU::getTSC();
+
 	while (true)
 	{
 		dummy_up_time++;
@@ -95,6 +98,49 @@ void callConstructors()
 		textRenderer << "Screen Resolution: " << vbe.getWidth() << "x" << vbe.getHeight() << "\n";
 		textRenderer << "Video Memory: " << vbe.getVideoMemorySize() / 1024 / 1024 << " MB\n";
 		textRenderer << "Memory Model Code: " << vbe.getMemoryModel() << "\n";
+
+		// ---
+		{
+			textRenderer << "Ticks Per Frame: " << CPU::getTSC() - last_tsc << "\n";
+			last_tsc = CPU::getTSC();
+		}
+
+		textRenderer << "Logical Cores: " << CPU::getNumLogicalCores() << "\n";
+		textRenderer << "Physical Cores: " << CPU::getNumPhysicalCores() << "\n";
+		char buffer[128] = { 0 };
+		CPU::getVendorID(buffer);
+		textRenderer << "Vendor: '" << buffer << "'\n";
+		CPU::getProcessorBrand(buffer);
+		textRenderer << "Brand: '" << buffer << "'\n";
+
+		textRenderer << "Features: [";
+		textRenderer << (CPU::isSSEAvailable() ? "SSE " : "");
+		textRenderer << (CPU::isSSE2Available() ? "SSE2 " : "");
+		textRenderer << (CPU::isSSE3Available() ? "SSE3 " : "");
+		textRenderer << (CPU::isSSSE3Available() ? "SSSE3 " : "");
+		textRenderer << (CPU::isSSE41Available() ? "SSSE41 " : "");
+		textRenderer << (CPU::isSSE42Available() ? "SSSE42 " : "");
+		textRenderer << (CPU::isAVXAvailable() ? "AVX " : "");
+		textRenderer << (CPU::isAVX2Available() ? "AVX2 " : "");
+		textRenderer << (CPU::isHyperThreadingAvailable() ? "HypT " : "");
+		textRenderer << (CPU::is64BitSupported() ? "64BIT " : "");
+		textRenderer << (CPU::isBMI1Available() ? "BMI1 " : "");
+		textRenderer << (CPU::isBMI2Available() ? "BMI2 " : "");
+		textRenderer << (CPU::isFMAAvailable() ? "FMA " : "");
+		textRenderer << (CPU::isAESAvailable() ? "AES " : "");
+		textRenderer << (CPU::isSHAAvailable() ? "SHA " : "");
+		textRenderer << "]\n";
+
+		textRenderer << "Caches: [";
+		textRenderer << CPU::getCacheLineSize() << " ";
+		textRenderer << CPU::getL1CacheSize() << " ";
+		textRenderer << CPU::getL2CacheSize() << " ";
+		textRenderer << CPU::getL3CacheSize();
+		textRenderer << "]\n";
+
+
+
+		// ---
 		textRenderer << "Time: " << dummy_up_time << "\n";
 		textRenderer.reset();
 
