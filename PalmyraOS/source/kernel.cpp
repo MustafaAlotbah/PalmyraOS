@@ -7,6 +7,7 @@
 #include "core/cpu.h"
 #include "core/GlobalDescriptorTable.h"
 #include "core/Interrupts.h"
+#include "core/SystemClock.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -55,7 +56,7 @@ void callConstructors()
 	kernel::VBE vbe(vbe_mode_info, vbe_control_info, (uint32_t*)0x00E6'0000);
 	kernel::vbe_ptr = &vbe;
 
-	// initialize the fonts and setup the kernel
+	// initialize the fonts and set up the kernel
 	fonts::FontManager::initialize();
 	kernel::setup();
 
@@ -91,17 +92,23 @@ void callConstructors()
 	PalmyraOS::kernel::interrupts::InterruptController interruptController(&gdt);
 	textRenderer << "Loaded IDT\n";
 	vbe.swapBuffers();
+
+	// initialize system clock with frequency of 250 Hz
+	PalmyraOS::kernel::SystemClock::initialize(250);
+
+	// Now enable maskable interrupts
 	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
 
 	// dummy time just to make sure the loop is running smoothly
-	uint64_t dummy_up_time = 0;
+	uint64_t dummy_up_time = PalmyraOS::kernel::SystemClock::getTicks();
 
 	while (true)
 	{
-		dummy_up_time++;
-
 		// Clear the screen
 		update(dummy_up_time);
+
+		// update the up-time
+		dummy_up_time = PalmyraOS::kernel::SystemClock::getTicks();
 
 		// update video memory
 		vbe.swapBuffers();
@@ -112,15 +119,12 @@ void callConstructors()
 	while (true);
 }
 
-void PalmyraOS::kernel::update(uint64_t dummy_up_time)
+void PalmyraOS::kernel::update(uint64_t up_time)
 {
 	// render some information
 	auto& vbe = *vbe_ptr;
 	kernel::Brush        brush(vbe.getFrameBuffer());
 	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
-
-
-	dummy_up_time++;
 
 	// Clear the screen
 	brush.fill(Color::Black);
@@ -173,10 +177,11 @@ void PalmyraOS::kernel::update(uint64_t dummy_up_time)
 	textRenderer << CPU::getL3CacheSize();
 	textRenderer << "]\n";
 
-
-
 	// ---
-	textRenderer << "Time: " << dummy_up_time << "\n";
+	uint64_t fps = (PalmyraOS::kernel::SystemClock::getTicks() - up_time);
+	textRenderer << "Ticks per Frame: " << fps << " \n";
+	textRenderer << "System Time: " << PalmyraOS::kernel::SystemClock::getSeconds() << " s\n";
+
 
 	textRenderer.reset();
 }
