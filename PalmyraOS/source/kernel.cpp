@@ -5,6 +5,7 @@
 #include "core/kernel.h"
 #include "core/panic.h"
 #include "core/cpu.h"
+#include "core/GlobalDescriptorTable.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -73,76 +74,27 @@ void callConstructors()
 	kernel::Brush        brush(vbe.getFrameBuffer());
 	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
 
+	// Logo
+	brush.fill(Color::Black);
+	textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
+	textRenderer << Color::White << "v0.01\n";
+	brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
+	vbe.swapBuffers();
+
+	// initialize the global descriptor table with the kernel stack at 30 MB offset
+	PalmyraOS::kernel::GDT::GlobalDescriptorTable gdt(30 * 1024 * 1024);
+	textRenderer << "Loaded GDT\n";
+	vbe.swapBuffers();
+
 	// dummy time just to make sure the loop is running smoothly
 	uint64_t dummy_up_time = 0;
-
-//	kernelPanic("wow sth happened %d", 456);
-
-	// Infinite loop to cycle through colors and fill the screen
-	uint64_t last_tsc = CPU::getTSC();
 
 	while (true)
 	{
 		dummy_up_time++;
 
 		// Clear the screen
-		brush.fill(Color::Black);
-
-		// Logo
-		textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
-		textRenderer << Color::White << "v0.01\n";
-		brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
-		textRenderer << "\n";
-
-		// Information
-		textRenderer << "Screen Resolution: " << vbe.getWidth() << "x" << vbe.getHeight() << "\n";
-		textRenderer << "Video Memory: " << vbe.getVideoMemorySize() / 1024 / 1024 << " MB\n";
-		textRenderer << "Memory Model Code: " << vbe.getMemoryModel() << "\n";
-
-		// ---
-		{
-			textRenderer << "Ticks Per Frame: " << CPU::getTSC() - last_tsc << "\n";
-			last_tsc = CPU::getTSC();
-		}
-
-		textRenderer << "Logical Cores: " << CPU::getNumLogicalCores() << "\n";
-		textRenderer << "Physical Cores: " << CPU::getNumPhysicalCores() << "\n";
-		char buffer[128] = { 0 };
-		CPU::getVendorID(buffer);
-		textRenderer << "Vendor: '" << buffer << "'\n";
-		CPU::getProcessorBrand(buffer);
-		textRenderer << "Brand: '" << buffer << "'\n";
-
-		textRenderer << "Features: [";
-		textRenderer << (CPU::isSSEAvailable() ? "SSE " : "");
-		textRenderer << (CPU::isSSE2Available() ? "SSE2 " : "");
-		textRenderer << (CPU::isSSE3Available() ? "SSE3 " : "");
-		textRenderer << (CPU::isSSSE3Available() ? "SSSE3 " : "");
-		textRenderer << (CPU::isSSE41Available() ? "SSSE41 " : "");
-		textRenderer << (CPU::isSSE42Available() ? "SSSE42 " : "");
-		textRenderer << (CPU::isAVXAvailable() ? "AVX " : "");
-		textRenderer << (CPU::isAVX2Available() ? "AVX2 " : "");
-		textRenderer << (CPU::isHyperThreadingAvailable() ? "HypT " : "");
-		textRenderer << (CPU::is64BitSupported() ? "64BIT " : "");
-		textRenderer << (CPU::isBMI1Available() ? "BMI1 " : "");
-		textRenderer << (CPU::isBMI2Available() ? "BMI2 " : "");
-		textRenderer << (CPU::isFMAAvailable() ? "FMA " : "");
-		textRenderer << (CPU::isAESAvailable() ? "AES " : "");
-		textRenderer << (CPU::isSHAAvailable() ? "SHA " : "");
-		textRenderer << "]\n";
-
-		textRenderer << "Caches: [";
-		textRenderer << CPU::getCacheLineSize() << " ";
-		textRenderer << CPU::getL1CacheSize() << " ";
-		textRenderer << CPU::getL2CacheSize() << " ";
-		textRenderer << CPU::getL3CacheSize();
-		textRenderer << "]\n";
-
-
-
-		// ---
-		textRenderer << "Time: " << dummy_up_time << "\n";
-		textRenderer.reset();
+		update(dummy_up_time);
 
 		// update video memory
 		vbe.swapBuffers();
@@ -151,4 +103,74 @@ void callConstructors()
 
 	// should never arrive here
 	while (true);
+}
+
+void PalmyraOS::kernel::update(uint64_t dummy_up_time)
+{
+	// render some information
+	auto& vbe = *vbe_ptr;
+	kernel::Brush        brush(vbe.getFrameBuffer());
+	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
+
+
+	dummy_up_time++;
+
+	// Clear the screen
+	brush.fill(Color::Black);
+
+	// Logo
+	textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
+	textRenderer << Color::White << "v0.01\n";
+	brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
+	textRenderer << "\n";
+
+	// Information
+	textRenderer << "Screen Resolution: " << vbe.getWidth() << "x" << vbe.getHeight() << "\n";
+	textRenderer << "Video Memory: " << vbe.getVideoMemorySize() / 1024 / 1024 << " MB\n";
+	textRenderer << "Memory Model Code: " << vbe.getMemoryModel() << "\n";
+
+	// ---
+	{
+		textRenderer << "TSC: " << CPU::getTSC() << "\n";
+	}
+
+	textRenderer << "Logical Cores: " << CPU::getNumLogicalCores() << "\n";
+	textRenderer << "Physical Cores: " << CPU::getNumPhysicalCores() << "\n";
+	char buffer[128] = { 0 };
+	CPU::getVendorID(buffer);
+	textRenderer << "Vendor: '" << buffer << "'\n";
+	CPU::getProcessorBrand(buffer);
+	textRenderer << "Brand: '" << buffer << "'\n";
+
+	textRenderer << "Features: [";
+	textRenderer << (CPU::isSSEAvailable() ? "SSE " : "");
+	textRenderer << (CPU::isSSE2Available() ? "SSE2 " : "");
+	textRenderer << (CPU::isSSE3Available() ? "SSE3 " : "");
+	textRenderer << (CPU::isSSSE3Available() ? "SSSE3 " : "");
+	textRenderer << (CPU::isSSE41Available() ? "SSSE41 " : "");
+	textRenderer << (CPU::isSSE42Available() ? "SSSE42 " : "");
+	textRenderer << (CPU::isAVXAvailable() ? "AVX " : "");
+	textRenderer << (CPU::isAVX2Available() ? "AVX2 " : "");
+	textRenderer << (CPU::isHyperThreadingAvailable() ? "HypT " : "");
+	textRenderer << (CPU::is64BitSupported() ? "64BIT " : "");
+	textRenderer << (CPU::isBMI1Available() ? "BMI1 " : "");
+	textRenderer << (CPU::isBMI2Available() ? "BMI2 " : "");
+	textRenderer << (CPU::isFMAAvailable() ? "FMA " : "");
+	textRenderer << (CPU::isAESAvailable() ? "AES " : "");
+	textRenderer << (CPU::isSHAAvailable() ? "SHA " : "");
+	textRenderer << "]\n";
+
+	textRenderer << "Caches (KB): [";
+	textRenderer << CPU::getCacheLineSize() << " ";
+	textRenderer << CPU::getL1CacheSize() << " ";
+	textRenderer << CPU::getL2CacheSize() << " ";
+	textRenderer << CPU::getL3CacheSize();
+	textRenderer << "]\n";
+
+
+
+	// ---
+	textRenderer << "Time: " << dummy_up_time << "\n";
+
+	textRenderer.reset();
 }

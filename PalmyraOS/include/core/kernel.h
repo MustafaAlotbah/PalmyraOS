@@ -16,6 +16,8 @@ namespace PalmyraOS::kernel
    */
   [[noreturn]] void setup();
 
+  void update(uint64_t dummy_up_time);
+
   /**
    * Pointer to the VBE (VESA BIOS Extensions) object.
    * This global pointer is used to access VBE functions and information.
