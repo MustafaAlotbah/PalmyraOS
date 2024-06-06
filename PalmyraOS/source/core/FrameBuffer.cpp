@@ -3,7 +3,6 @@
 #include "libs/memory.h"    // memcpy
 
 
-
 // PalmyraOS::Color
 PalmyraOS::Color::Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
 	: red(red), green(green), blue(blue), alpha(alpha)
@@ -32,6 +31,7 @@ const PalmyraOS::Color PalmyraOS::Color::Yellow     = Color(223, 252, 3);
 const PalmyraOS::Color PalmyraOS::Color::Black      = Color(2, 2, 2);
 const PalmyraOS::Color PalmyraOS::Color::White      = Color(245, 245, 245);
 const PalmyraOS::Color PalmyraOS::Color::Gray       = Color(128, 128, 128);
+const PalmyraOS::Color PalmyraOS::Color::DarkGray = Color(32, 32, 32);
 const PalmyraOS::Color PalmyraOS::Color::DarkRed    = Color(145, 4, 21);
 const PalmyraOS::Color PalmyraOS::Color::DarkGreen  = Color(58, 122, 9);
 const PalmyraOS::Color PalmyraOS::Color::DarkBlue   = Color(10, 44, 145);

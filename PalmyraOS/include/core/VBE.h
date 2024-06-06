@@ -168,6 +168,9 @@ namespace PalmyraOS::kernel
 	  // change the position of the text rendering area
 	  void setPosition(uint32_t x, uint32_t y);
 
+	  // change the position of the cursor
+	  void setCursor(uint32_t x, uint32_t y);
+
 	  // change the width and height of the text rendering area
 	  void setSize(uint32_t w, uint32_t h);
 

@@ -253,6 +253,12 @@ void PalmyraOS::kernel::TextRenderer::setSize(uint32_t w, uint32_t h)
 	height = h;
 }
 
+void PalmyraOS::kernel::TextRenderer::setCursor(uint32_t x, uint32_t y)
+{
+	cursor_x = x;
+	cursor_y = y;
+}
+
 ///endregion
 
 
