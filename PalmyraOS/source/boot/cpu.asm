@@ -1,11 +1,9 @@
 ; File: PalmyraOS\source\core\cpu.asm
 
 BITS 32
-global read_tsc
 
-global read_tsc_low
-global read_tsc_high
-global read_cpuid
+global read_tsc_low:function
+global read_tsc_high:function
 
 ; Function to read the low 32 bits of the time stamp counter
 read_tsc_low:

@@ -114,15 +114,39 @@ bool PalmyraOS::kernel::CPU::isAVX2Available()
 
 uint32_t PalmyraOS::kernel::CPU::getCacheLineSize()
 {
-	auto result = cpuid(1, 0);
-	return (result.ebx & 0xFF00) >> 5;
+	CPUIDOutput output = cpuid(4, 0);
+	return (output.ebx & 0xFFF) + 1;
 }
 
 uint32_t PalmyraOS::kernel::CPU::getL1CacheSize()
 {
-	auto result = cpuid(4, 0);
-	return ((result.ebx >> 22) + 1) * ((result.ebx >> 12 & 0x3FF) + 1) * ((result.ebx & 0xFFF) + 1) * (result.ecx + 1)
-		/ 1024;
+	// Call cpuid with leaf 0x04 and subleaf 1 to get information about the L1 cache.
+	CPUIDOutput output = cpuid(0x04, 1);
+
+	// Extract the number of ways of associativity.
+	// This indicates the number of cache lines in a set (how many ways the cache is associative).
+	// This is found in bits 22-31 of EBX and is represented as (ways - 1).
+	uint32_t ways = ((output.ebx >> 22) & 0x3FF) + 1;
+
+	// Extract the number of partitions.
+	// This indicates how the cache is partitioned.
+	// This is found in bits 12-21 of EBX and is represented as (partitions - 1).
+	uint32_t partitions = ((output.ebx >> 12) & 0x3FF) + 1;
+
+	// Extract the system coherency line size.
+	// This indicates the size of a cache line in bytes.
+	// This is found in bits 0-11 of EBX and is represented as (line size - 1).
+	uint32_t line_size = (output.ebx & 0xFFF) + 1;
+
+	// Extract the number of sets.
+	// This indicates the number of unique sets in the cache.
+	// This is found in ECX and is represented as (sets - 1).
+	uint32_t sets = output.ecx + 1;
+
+	// Calculate the L1 cache size in KB.
+	// The formula is: cache size = (ways * partitions * line_size * sets) / 1024
+	uint32_t l1_cache_size = (ways * partitions * line_size * sets) / 1024;
+	return l1_cache_size;
 }
 
 uint32_t PalmyraOS::kernel::CPU::getL2CacheSize()
