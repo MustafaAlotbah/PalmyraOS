@@ -6,6 +6,7 @@
 #include "core/panic.h"
 #include "core/cpu.h"
 #include "core/GlobalDescriptorTable.h"
+#include "core/Interrupts.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -86,6 +87,12 @@ void callConstructors()
 	textRenderer << "Loaded GDT\n";
 	vbe.swapBuffers();
 
+	// initialize the interrupts
+	PalmyraOS::kernel::interrupts::InterruptController interruptController(&gdt);
+	textRenderer << "Loaded IDT\n";
+	vbe.swapBuffers();
+	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+
 	// dummy time just to make sure the loop is running smoothly
 	uint64_t dummy_up_time = 0;
 
@@ -160,8 +167,7 @@ void PalmyraOS::kernel::update(uint64_t dummy_up_time)
 	textRenderer << (CPU::isSHAAvailable() ? "SHA " : "");
 	textRenderer << "]\n";
 
-	textRenderer << "Caches (KB): [";
-	textRenderer << CPU::getCacheLineSize() << " ";
+	textRenderer << "L Caches (KB): [";
 	textRenderer << CPU::getL1CacheSize() << " ";
 	textRenderer << CPU::getL2CacheSize() << " ";
 	textRenderer << CPU::getL3CacheSize();
