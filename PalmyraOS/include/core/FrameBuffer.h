@@ -119,6 +119,7 @@ namespace PalmyraOS
 		// Public interface to access screen properties might be added here
 		[[nodiscard]] uint16_t getWidth() const;
 		[[nodiscard]] uint16_t getHeight() const;
+		[[nodiscard]] uint32_t getSize() const;
 
 		REMOVE_COPY(FrameBuffer);
 

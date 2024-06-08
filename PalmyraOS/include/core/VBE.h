@@ -12,6 +12,7 @@
 #define HEX() kernel::TextRenderer::NumeralSystem::Hex
 #define DEC() kernel::TextRenderer::NumeralSystem::Dec
 #define BIN() kernel::TextRenderer::NumeralSystem::Bin
+#define SWAP_BUFF() kernel::TextRenderer::Command::SwapBuffers
 
 namespace PalmyraOS::kernel
 {
@@ -125,6 +126,7 @@ namespace PalmyraOS::kernel
 	   */
 	  void drawHLine(uint32_t x1, uint32_t x2, uint32_t y, Color color);
 
+	  REMOVE_COPY(Brush);
 	  // TODO: Circles, Bresenham lines, Curves
    private:
 	  FrameBuffer& frameBuffer_; // Reference to the frame buffer
@@ -142,6 +144,10 @@ namespace PalmyraOS::kernel
 	  enum class NumeralSystem
 	  {
 		  Hex, Dec, Bin
+	  };
+	  enum class Command
+	  {
+		  SwapBuffers
 	  };
 
    public:
@@ -204,6 +210,10 @@ namespace PalmyraOS::kernel
 	  // Overload for << streaming operator for color commands
 	  TextRenderer& operator<<(NumeralSystem system);
 
+	  // Overload for << streaming operator for some commands
+	  TextRenderer& operator<<(Command command);
+
+	  REMOVE_COPY(TextRenderer);
    private:
 	  char getFormat();
 

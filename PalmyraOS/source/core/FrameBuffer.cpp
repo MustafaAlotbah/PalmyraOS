@@ -108,3 +108,8 @@ uint16_t PalmyraOS::kernel::FrameBuffer::getHeight() const
 {
 	return height_;
 }
+
+uint32_t PalmyraOS::kernel::FrameBuffer::getSize() const
+{
+	return width_ * height_ * sizeof(uint32_t);
+}

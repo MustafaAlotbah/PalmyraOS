@@ -259,6 +259,18 @@ void PalmyraOS::kernel::TextRenderer::setCursor(uint32_t x, uint32_t y)
 	cursor_y = y;
 }
 
+PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(PalmyraOS::kernel::TextRenderer::Command command)
+{
+	switch (command)
+	{
+		case Command::SwapBuffers:
+			frameBuffer_.swapBuffers();
+			break;
+
+	}
+	return *this;
+}
+
 ///endregion
 
 

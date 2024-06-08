@@ -50,19 +50,19 @@ size_t vsprintf(char* str, const char* format, va_list args)
 				break;
 			case 'b':  // binary
 				d = va_arg(args, uint32_t);
-				itoa(d, num_str, 2);
+				itoa((uint32_t)d, num_str, 2);
 				strcpy(out, num_str);
 				out += strlen(num_str);
 				break;
 			case 'x':  // Hexadecimal (lowercase)
 				d = va_arg(args, uint32_t);
-				itoa(d, num_str, 16);
+				itoa((uint32_t)d, num_str, 16);
 				strcpy(out, num_str);
 				out += strlen(num_str);
 				break;
 			case 'X':  // Hexadecimal (uppercase)
 				d = va_arg(args, uint32_t);
-				itoa(d, num_str, 16, true);
+				itoa((uint32_t)d, num_str, 16, true);
 				strcpy(out, num_str);
 				out += strlen(num_str);
 				break;

@@ -38,11 +38,22 @@ kernel.bin: linker.ld $(addprefix bin/, $(objects))
 build: kernel.bin
 
 iso: kernel.bin
-	mkdir -p bin/iso
-	mkdir -p bin/iso/boot
-	mkdir -p bin/iso/boot/grub
-	cp bin/kernel.bin bin/iso/boot
-	cp source/boot/grub.cfg bin/iso/boot/grub/grub.cfg
-	grub-mkrescue --output bin/kernel.iso bin/iso
-# 	rm -rf bin/iso
-	rm bin/*.o
+	@echo "Creating ISO image"
+	@mkdir -p bin/iso
+	@mkdir -p bin/iso/boot
+	@mkdir -p bin/iso/boot/grub
+	@cp bin/kernel.bin bin/iso/boot
+	@cp source/boot/grub.cfg bin/iso/boot/grub/grub.cfg
+	@grub-mkrescue --output bin/kernel.iso bin/iso
+	@echo "ISO image created"
+
+	@echo "Cleaning generated subdirectories and object files"
+	@rm bin/*.o
+	@rm -rf bin/iso
+	@for dir in $(SUBDIRS); do \
+		rm -rf bin/$$(basename $$dir); \
+	done
+	@echo "Clean completed"
+
+
+.PHONY: objects build iso

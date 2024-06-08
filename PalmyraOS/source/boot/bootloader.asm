@@ -30,18 +30,24 @@ dd 0                         ; VbeInterfaceOff
 
 ; Screen width, height, depth (if you want GRUB to set a specific video mode)
 dd 0                         ; 0: Graphics, 1: Text Mode
-; dd 1024                      ; Screen width requested
+
+; dd 1280                      ; Screen width requested
+; dd 1024                       ; Screen height requested
+
+; dd 1024                     ; Screen width requested
 ; dd 768                       ; Screen height requested
+
 dd 800                      ; Screen width requested
 dd 600                       ; Screen height requested
+
 dd 32                        ; Bits per pixel
 
 ; ----------------------------------------------------------
 
 ; Globals
 GLOBAL kernel_start:function
-GLOBAL get_stack_start:function
-GLOBAL get_stack_end:function
+GLOBAL get_kernel_stack_start:function
+GLOBAL get_kernel_stack_end:function
 GLOBAL enable_protected_mode:function
 
 ; Externs from CPP
@@ -65,7 +71,7 @@ kernel_start:
     ; multiboot_info_struct := ebx (temporarily)
     mov dword [multiboot_info_struct], ebx
 
-    ; set up the stack pointer (esp) 2MB after memory start.
+    ; set up the stack pointer (esp) 4MB after memory start.
     ; Before calling C++ functions (hence push/pop to stack)
     ; esp = kernel_stack_start
     mov dword esp, kernel_stack_start     
@@ -104,4 +110,12 @@ enable_protected_mode:
     pop eax             ; restore the original value of eax from the stack
     ret
 
+; Function to retrive the kernel stack start
+get_kernel_stack_start:
+    mov eax, kernel_stack_start
+    ret
 
+; Function to retrive the kernel stack end
+get_kernel_stack_end:
+    mov eax, kernel_stack_end
+    ret

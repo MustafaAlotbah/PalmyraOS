@@ -100,8 +100,8 @@ char* strcat(char *dest, const char *src);
  */
 char* strpbrk(const char* s, const char* accept);
 
-
-namespace mustyOS::types {
+namespace PalmyraOS::types
+{
 
 template<size_t MAX_LEN = 1024>
 class string {

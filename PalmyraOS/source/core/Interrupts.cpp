@@ -74,6 +74,7 @@ extern "C" void primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters*
 		}
 		// Always send EOI to the master PIC
 		InterruptController::activePicManager->getMasterPicCommand().write(PICManager::PIC_EOI);
+		handled = true;
 	}
 
 	// Check secondary handlers array if a handler exists for this particular interrupt number

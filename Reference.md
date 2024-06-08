@@ -18,11 +18,17 @@ PalmyraOS/
     └── kernel.cpp
 ```
 
-TODO
+## Roadmap
 
-- GDT
-- Interrupts
-- Memory
-- Paging
-- Paging + Memory
-- 
+1. Booting
+2. Simple KHeap
+3. VBE VESA (Graphics)
+4. Panic
+5. CPU-ID (extra)
+6. GDT
+7. Ports
+8. PIC Manager (Hardware Interrupts)
+9. Interrupts
+10. Physical Memory
+11. Paging
+12. Multiprocessing
