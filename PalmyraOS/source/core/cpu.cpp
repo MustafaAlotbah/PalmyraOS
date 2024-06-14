@@ -44,7 +44,7 @@ uint32_t PalmyraOS::kernel::CPU::getNumPhysicalCores()
 void PalmyraOS::kernel::CPU::getVendorID(char* vendorID)
 {
 	auto result = cpuid(0, 0);
-	*((uint32_t*)vendorID)       = result.ebx;
+	*((uint32_t*)(vendorID + 0)) = result.ebx;
 	*((uint32_t*)(vendorID + 4)) = result.edx;
 	*((uint32_t*)(vendorID + 8)) = result.ecx;
 	vendorID[12] = '\0';
@@ -56,7 +56,7 @@ void PalmyraOS::kernel::CPU::getProcessorBrand(char* brand)
 	for (int i = 0; i < 3; ++i)
 	{
 		auto result = cpuid(0x80000002 + i, 0);
-		*((uint32_t*)(brand + i * 16))      = result.eax;
+		*((uint32_t*)(brand + i * 16 + 0)) = result.eax;
 		*((uint32_t*)(brand + i * 16 + 4))  = result.ebx;
 		*((uint32_t*)(brand + i * 16 + 8))  = result.ecx;
 		*((uint32_t*)(brand + i * 16 + 12)) = result.edx;

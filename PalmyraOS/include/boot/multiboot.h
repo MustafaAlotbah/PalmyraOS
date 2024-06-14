@@ -52,9 +52,9 @@ typedef struct
 	uint16_t video_memory;           // Number of 64KB memory blocks available for video
 
 	uint16_t software_rev;           // Software revision number
-	uint32_t vendor;                 // Pointer to vendor name string
-	uint32_t product_name;           // Pointer to product name string
-	uint32_t product_rev;            // Pointer to product revision string
+	char* vendor;                 // Pointer to vendor name string
+	char* product_name;           // Pointer to product name string
+	char* product_rev;            // Pointer to product revision string
 
 	uint8_t reserved[222];           // Reserved for future use
 	uint8_t oem_data[256];           // OEM BIOSes can store their own data here
@@ -73,12 +73,12 @@ typedef struct
 	uint32_t mem_upper;     // Amount of upper memory in kilobytes. Upper memory starts at address 1 megabyte.
 
 	/* "root" partition */
-	uint32_t
-		boot_device;   // Encoded value indicating the BIOS disk device number and partition from which the boot was performed
+	// Encoded value indicating the BIOS disk device number and partition from which the boot was performed
+	uint32_t boot_device;
 
 	/* Kernel command line */
-	uint32_t
-				   cmdline;       // Physical address of the command line to be passed to the kernel; a zero-terminated ASCII string
+	// Physical address of the command line to be passed to the kernel; a zero-terminated ASCII string
+	uint32_t cmdline;
 
 	/*----Boot-Module list--------*/
 	uint32_t mods_count;    // Number of boot modules loaded along with the kernel

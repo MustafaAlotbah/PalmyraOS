@@ -25,7 +25,7 @@ namespace PalmyraOS::kernel
 	  static uint64_t getMilliseconds();
 	  static uint64_t getSeconds();
    private:
-	  static void handle_interrupt(interrupts::CPURegisters*);
+	  static uint32_t* handle_interrupt(interrupts::CPURegisters*);
    private:
 	  static ports::BytePort PITCommandPort;
 	  static ports::BytePort PITDataPort;

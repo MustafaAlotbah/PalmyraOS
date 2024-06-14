@@ -1,6 +1,6 @@
 # Set parameters for the compiler and assembler
 # 32-Bit output
-GPP_PARAMS = -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore
+GPP_PARAMS = -g -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore  -Werror=return-type
 AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 

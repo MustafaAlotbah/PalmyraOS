@@ -96,6 +96,9 @@ _primary_isr_handler:
     call primary_isr_handler    ; Call the C++ primary handler. This function is expected to handle the interrupt
                                 ; with all necessary context provided by the stack pointer argument.
 
+    ; Switch stack pointer
+    mov esp, eax
+
     ; pop esp                     ; Clean up the stack pointer from the stack after the call returns.
     add esp, 4                            ; This restores the original ESP value which pointed to the interrupt context.
 

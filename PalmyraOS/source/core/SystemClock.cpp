@@ -59,13 +59,15 @@ uint64_t PalmyraOS::kernel::SystemClock::getSeconds()
 	return getTicks() / frequency_;
 }
 
-void PalmyraOS::kernel::SystemClock::handle_interrupt(interrupts::CPURegisters* regs)
+uint32_t* PalmyraOS::kernel::SystemClock::handle_interrupt(interrupts::CPURegisters* regs)
 {
 	ticks_++;
 	if (handler_)
 	{
 		handler_(regs);  // Call the attached handler if it exists
 	}
+
+	return (uint32_t*)regs;
 }
 uint16_t PalmyraOS::kernel::SystemClock::readCurrentCount()
 {

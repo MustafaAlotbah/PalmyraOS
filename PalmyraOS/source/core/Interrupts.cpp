@@ -54,7 +54,7 @@ PalmyraOS::kernel::interrupts::PICManager
 uint64_t sysClock = 0;
 
 // Primary ISR handler, all activated handlers point here first.
-extern "C" void primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters* registers)
+extern "C" uint32_t* primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters* registers)
 {
 	using namespace PalmyraOS::kernel::interrupts;
 	bool handled = false;
@@ -80,10 +80,8 @@ extern "C" void primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters*
 	// Check secondary handlers array if a handler exists for this particular interrupt number
 	if (secondary_interrupt_handlers[registers->intNo] != nullptr)
 	{
-		((void (*)(PalmyraOS::kernel::interrupts::CPURegisters*))(secondary_interrupt_handlers[registers->intNo]))(
-			registers
-		);
-		handled = true;
+		auto newStackPointer = secondary_interrupt_handlers[registers->intNo](registers);
+		return newStackPointer - 1;
 	}
 
 	if (!handled)
@@ -91,6 +89,7 @@ extern "C" void primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters*
 		PalmyraOS::kernel::kernelPanic("Unhandled Interrupt! (%d)", registers->intNo);
 	}
 
+	return (uint32_t*)(registers) - 1;
 }
 
 
@@ -252,7 +251,8 @@ void PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts()
 
 void PalmyraOS::kernel::interrupts::InterruptController::setInterruptHandler(
 	uint8_t interrupt_number,
-	void (* interrupt_handler)(CPURegisters*))
+	InterruptHandler interrupt_handler
+)
 {
 	secondary_interrupt_handlers[interrupt_number] = interrupt_handler;
 }

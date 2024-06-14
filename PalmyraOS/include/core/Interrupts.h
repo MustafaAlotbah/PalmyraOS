@@ -12,7 +12,7 @@ namespace PalmyraOS::kernel::interrupts
   struct CPURegisters;
 
   // Types
-  typedef void (* InterruptHandler)(CPURegisters* regs);
+  typedef uint32_t* (* InterruptHandler)(CPURegisters* regs);
 
   // Definitions and Enums
   // Enum class to represent types of gates in the IDT.
@@ -141,7 +141,7 @@ namespace PalmyraOS::kernel::interrupts
 
 	  static void enableInterrupts();
 	  static void disableInterrupts();
-	  static void setInterruptHandler(uint8_t interrupt_number, void (* interrupt_handler)(CPURegisters* regs));
+	  static void setInterruptHandler(uint8_t interrupt_number, InterruptHandler interrupt_handler);
 
    public:
 	  static PICManager* activePicManager;        // to be accessed by the global isr handler

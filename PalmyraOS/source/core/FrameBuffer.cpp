@@ -3,6 +3,9 @@
 #include "libs/memory.h"    // memcpy
 
 
+extern "C" void* memcpy_sse(void* destination, const void* source, size_t num);
+
+
 // PalmyraOS::Color
 PalmyraOS::Color::Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
 	: red(red), green(green), blue(blue), alpha(alpha)
@@ -96,7 +99,8 @@ void PalmyraOS::kernel::FrameBuffer::drawPixel(
 
 void PalmyraOS::kernel::FrameBuffer::swapBuffers()
 {
-	memcpy(buffer_, backBuffer_, width_ * height_);
+//	memcpy(buffer_, backBuffer_, width_ * height_);
+	memcpy_sse(buffer_, backBuffer_, width_ * height_ * sizeof(uint32_t));
 }
 
 uint16_t PalmyraOS::kernel::FrameBuffer::getWidth() const
