@@ -5,7 +5,7 @@ AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 
 # Define subdirectories containing source files
-SUBDIRS := source/ source/core/ source/boot/ source/libs/
+SUBDIRS := source/ source/boot/ source/libs/ source/core/ source/core/memory source/tests
 
 # Find all .cpp and .asm source files in the specified subdirectories
 SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))

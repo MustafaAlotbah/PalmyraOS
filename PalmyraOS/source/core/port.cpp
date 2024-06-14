@@ -25,7 +25,16 @@ namespace PalmyraOS::kernel::ports
   // Write a byte to a port with a delay (for slower ports)
   void SlowBytePort::write(uint32_t data) const
   {
-	  __asm__ __volatile__("outb %0, %1\njmp 1f\n1: jmp 1f\n1:" : : "a"(static_cast<uint8_t>(data)), "Nd"(portNumber_));
+	  __asm__ __volatile__(
+		  "outb %0, %1\n"
+		  "jmp 1f\n"
+		  "1: jmp 1f\n"
+		  "1:"
+		  :
+		  :
+		  "a"(static_cast<uint8_t>(data)),
+		  "Nd"(portNumber_)
+		  );
   }
 
   // Write a word (2 bytes) to a port
@@ -57,4 +66,4 @@ namespace PalmyraOS::kernel::ports
   }
 
 
-} // namespace mustyOS
+} // namespace PalmyraOS
