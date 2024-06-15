@@ -3,6 +3,7 @@
 #include "core/memory/paging.h"
 #include "core/panic.h"
 #include "tests/pagingTests.h"
+#include "tests/allocatorTests.h"
 
 #include <new>
 
@@ -270,6 +271,7 @@ void PalmyraOS::kernel::testMemory()
 	 * to ensure their correct operation.
 	 */
 
+	// paging
 	if (!Tests::Paging::testPagingBoundaries())
 		kernel::kernelPanic("Testing Paging boundaries failed!");
 
@@ -279,9 +281,18 @@ void PalmyraOS::kernel::testMemory()
 	if (!Tests::Paging::testNullPointerException())
 		kernel::kernelPanic("Testing Paging nullptr allocation failed!");
 
+	// heap
 	if (!Tests::Heap::testHeapAllocation())
 		kernel::kernelPanic("Testing Heap allocation failed!");
 
 //	if (!Tests::Heap::testHeapCoalescence())
 //		kernel::kernelPanic("Testing Heap Coalescence failed!");
+
+	// standard library
+	if (!Tests::Allocator::testVector())
+		kernel::kernelPanic("Testing Allocator Vector failed!");
+
+	if (!Tests::Allocator::testVectorOfClasses())
+		kernel::kernelPanic("Testing Allocator Vector Classes failed!");
+
 }

@@ -4,7 +4,6 @@
 #include "tests/pagingTests.h"
 #include "core/panic.h"
 
-
 ///region PagingTester
 // Initialize static members of PagingTester
 bool     PalmyraOS::Tests::Paging::PagingTester::pageFaultOccurred_ = false;
@@ -248,10 +247,10 @@ bool PalmyraOS::Tests::Heap::testHeapCoalescence()
 		constexpr uint32_t numBlocks = 10;
 		void* addresses[numBlocks] = { nullptr };
 
-		for (uint32_t i = 0; i < numBlocks; ++i)
+		for (auto& address : addresses)
 		{
-			addresses[i] = heap.alloc(blockSize);
-			if (!addresses[i])
+			address = heap.alloc(blockSize);
+			if (!address)
 			{
 				result = false;
 				goto clean;

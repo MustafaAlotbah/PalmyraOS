@@ -31,7 +31,7 @@ void* memcpy(void* destination, void* source, size_t num) {
 	return destination;
 }
 
-uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint32_t num)
+extern "C" uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint32_t num)
 {
 	for (size_t i = 0; i < num; i++) {
 		destination[i] = source[i];
@@ -47,7 +47,8 @@ void *memset(void* ptr, uint8_t value, size_t num) {
 	return ptr;
 }
 
-void *memmove(void *dest, const void *src, size_t n) {
+extern "C" void* memmove(void* dest, const void* src, size_t n)
+{
 	auto* d = (unsigned char*) dest;
 	const auto* s = (const unsigned char*) src;
 	if (d < s) {

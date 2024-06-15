@@ -2,7 +2,8 @@
 #include "libs/ctype.h"
 
 
-size_t strlen(const char* str) {
+extern "C" size_t strlen(const char* str)
+{
 	const char* s;
 	for (s = str; *s; ++s);
 	return s - str;

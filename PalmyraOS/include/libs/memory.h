@@ -37,7 +37,7 @@ void* memcpy(void* destination, void* source, size_t num);
  * @param num Number of double words to copy.
  * @return A pointer to `destination`.
  */
-uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint32_t num);
+extern "C" uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint32_t num);
 
 /**
  * Fills the first `num` bytes of the memory area pointed to by `ptr` with the constant byte `value`.
@@ -56,4 +56,4 @@ void *memset(void* ptr, uint8_t value, size_t num);
  * @param n Number of bytes to move.
  * @return A pointer to the destination memory area `dest`.
  */
-void *memmove(void *dest, const void *src, size_t n);
+extern "C" void* memmove(void* dest, const void* src, size_t n);

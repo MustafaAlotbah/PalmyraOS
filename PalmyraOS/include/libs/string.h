@@ -7,7 +7,7 @@
  * @param str Pointer to the null-terminated byte string to be examined.
  * @return The number of characters in the string pointed to by `str`.
  */
-size_t strlen(const char* str);
+extern "C" size_t strlen(const char* str);
 
 /**
  * Breaks a string into a series of tokens using a delimiter.

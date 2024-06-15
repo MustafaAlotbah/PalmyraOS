@@ -56,7 +56,7 @@ namespace PalmyraOS::kernel
 	   * @tparam U The new type for the allocator.
 	   */
 	  template<typename U>
-	  explicit HeapAllocator(const HeapAllocator<U>&)
+	  explicit HeapAllocator(const HeapAllocator<U>& other) noexcept : heapManager_(other.heapManager_)
 	  {}
 
 	  /**
@@ -129,7 +129,7 @@ namespace PalmyraOS::kernel
 		  return *this != other;
 	  }
 
-   private:
+   public:
 	  HeapManager& heapManager_;     ///< Reference to the heap manager.
   };
 

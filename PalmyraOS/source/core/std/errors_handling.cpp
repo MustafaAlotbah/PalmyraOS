@@ -1,13 +1,21 @@
 
+#include "core/std/error_handling.h"
 #include "core/panic.h"
 #include "libs/stdio.h"
+
 
 #include <cstdarg>
 
 
+// globals
+PalmyraOS::kernel::runtime::ExceptionHandler lengthErrorHandler_     = nullptr;
+PalmyraOS::kernel::runtime::ExceptionHandler outOfRangeErrorHandler_ = nullptr;
+
+
+
 /**
  * @namespace std
- * @brief Namespace for standard library extensions.
+ * @brief Namespace for standard library extensions. (replacing -fno-exceptions)
  */
 namespace std
 {
@@ -22,7 +30,8 @@ namespace std
    */
   void __throw_length_error(const char* msg)
   {
-	  PalmyraOS::kernel::kernelPanic("Length Error: %s", msg);
+	  if (lengthErrorHandler_) lengthErrorHandler_(msg);
+	  else PalmyraOS::kernel::kernelPanic("Length Error: %s", msg);
   }
 
   /**
@@ -44,9 +53,28 @@ namespace std
 	  vsnprintf(buffer, sizeof(buffer), fmt, args);
 
 	  // pass the formatted message to kernel panic
-	  PalmyraOS::kernel::kernelPanic("Out of Range Error: %s", buffer);
+	  if (outOfRangeErrorHandler_) outOfRangeErrorHandler_(buffer);
+	  else PalmyraOS::kernel::kernelPanic("Out of Range Error: %s", buffer);
 
 	  va_end(args);
   }
 
+  void __throw_out_of_range(const char* message)
+  {
+	  // pass the formatted message to kernel panic
+	  if (outOfRangeErrorHandler_) outOfRangeErrorHandler_(message);
+	  else PalmyraOS::kernel::kernelPanic("Out of Range Error: %s", message);
+  }
+
 }
+
+void PalmyraOS::kernel::runtime::setLengthErrorHandler(ExceptionHandler handler)
+{
+	lengthErrorHandler_ = handler;
+}
+
+void PalmyraOS::kernel::runtime::setOutOfRangeHandler(ExceptionHandler handler)
+{
+	outOfRangeErrorHandler_ = handler;
+}
+
