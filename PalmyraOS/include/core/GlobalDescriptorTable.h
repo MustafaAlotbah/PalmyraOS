@@ -18,19 +18,19 @@ namespace PalmyraOS::kernel::GDT
 
   typedef struct tss_entry
   {
-	  uint32_t
-			   prev_tss;    // The previous TSS - with hardware task switching these form a kind of backward linked list.
+	  uint32_t prev_tss;    // The previous TSS, with hardware task switching these form a kind of backward linked list.
 	  uint32_t esp0;        // The stack pointer to load when changing to kernel mode.
-	  uint32_t ss0;        // The stack segment to load when changing to kernel mode.
+	  uint32_t ss0;         // The stack segment to load when changing to kernel mode.
 
 	  // Everything below here is unused.
-	  uint32_t esp1; // esp and ss 1 and 2 would be used when switching to rings 1 or 2.
-	  uint32_t ss1;
-	  uint32_t esp2;
-	  uint32_t ss2;
-	  uint32_t cr3;
-	  uint32_t eip;
-	  uint32_t eflags;
+	  uint32_t esp1;        // Stack pointer for ring 1 (not used in this implementation).
+	  uint32_t ss1;         // Stack segment for ring 1 (not used in this implementation).
+	  uint32_t esp2;        // Stack pointer for ring 2 (not used in this implementation).
+	  uint32_t ss2;         // Stack segment for ring 2 (not used in this implementation).
+
+	  uint32_t cr3;         // Page directory base register (CR3).
+	  uint32_t eip;         // Instruction pointer.
+	  uint32_t eflags;      // Flags register.
 	  uint32_t eax;
 	  uint32_t ecx;
 	  uint32_t edx;

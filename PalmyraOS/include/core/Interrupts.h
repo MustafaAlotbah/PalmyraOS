@@ -143,6 +143,7 @@ namespace PalmyraOS::kernel::interrupts
 	  static void disableInterrupts();
 	  static void setInterruptHandler(uint8_t interrupt_number, InterruptHandler interrupt_handler);
 
+	  REMOVE_COPY(InterruptController);
    public:
 	  static PICManager* activePicManager;        // to be accessed by the global isr handler
    private:

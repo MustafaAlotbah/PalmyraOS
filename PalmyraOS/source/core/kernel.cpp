@@ -23,7 +23,7 @@ namespace PalmyraOS::kernel
 
   // Memory
   PalmyraOS::kernel::PagingDirectory* kernelPagingDirectory_ptr = nullptr;
-
+  PalmyraOS::kernel::HeapManager heapManager;
 
 }
 

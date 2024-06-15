@@ -64,7 +64,7 @@ uint32_t* PalmyraOS::kernel::SystemClock::handle_interrupt(interrupts::CPURegist
 	ticks_++;
 	if (handler_)
 	{
-		handler_(regs);  // Call the attached handler if it exists
+		return handler_(regs);  // Call the attached handler if it exists
 	}
 
 	return (uint32_t*)regs;

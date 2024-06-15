@@ -5,13 +5,13 @@
 #include "core/kernel.h"
 #include "core/panic.h"
 #include "core/cpu.h"
-#include "core/GlobalDescriptorTable.h"
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
 #include "core/memory/PhysicalMemory.h"
-#include "core/memory/Heap.h"
-//#include "core/paging.h"
 #include "core/Logger.h"
+
+#include "core/memory/HeapAllocator.h"
+#include <vector>
 
 
 // Pointers to the start and end of the constructors section (see linker.ld)
@@ -145,7 +145,23 @@ void callConstructors()
 
 
 	kernel::testMemory();
+	// from here we can use the kernel heap
 
+	std::vector<int, kernel::KernelHeapAllocator<int>> vec;
+
+	// Use the vector as usual
+	vec.push_back(1);
+	vec.push_back(2);
+	vec.push_back(3);
+
+	// Print the vector contents
+	for (int value : vec)
+	{
+		textRenderer << value << "\n";
+	}
+	textRenderer << SWAP_BUFF();
+
+	textRenderer << vec.at(5) << SWAP_BUFF();
 
 	LOG_INFO("Moving to setup()...");
 	kernel::setup();

@@ -37,7 +37,7 @@ size_t vsprintf(char* str, const char* format, va_list args)
 				break;
 			case 'd':  // Decimal
 				d = va_arg(args, int32_t);
-				char num_str[20];
+				char num_str[40];
 				itoa((int)d, num_str, 10);
 				strcpy(out, num_str);
 				out += strlen(num_str);
@@ -65,6 +65,21 @@ size_t vsprintf(char* str, const char* format, va_list args)
 				itoa((uint32_t)d, num_str, 16, true);
 				strcpy(out, num_str);
 				out += strlen(num_str);
+				break;
+			case 'z':  // size_t with 'u' for unsigned
+				if (*(traverse + 1) == 'u')
+				{
+					traverse++;
+					uint64_t z = va_arg(args, size_t);
+					uitoa64(z, num_str, 10, false);
+					strcpy(out, num_str);
+					out += strlen(num_str);
+				}
+				else
+				{
+					*out++ = '%';
+					*out++ = 'z';
+				}
 				break;
 			default:
 				*out++ = '%'; // Include the '%'

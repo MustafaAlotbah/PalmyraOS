@@ -6,10 +6,10 @@
 #include "boot/multiboot.h"
 #include "core/VBE.h"
 #include "core/memory/paging.h"
+#include "core/memory/Heap.h"
 
 
 extern uint32_t placement_address;
-
 
 namespace PalmyraOS::kernel
 {
@@ -45,6 +45,7 @@ namespace PalmyraOS::kernel
   extern PalmyraOS::kernel::PagingDirectory                * kernelPagingDirectory_ptr;
   extern PalmyraOS::kernel::GDT::GlobalDescriptorTable     * gdt_ptr;
   extern PalmyraOS::kernel::interrupts::InterruptController* idt_ptr;
+  extern PalmyraOS::kernel::HeapManager heapManager;
 
   /**
    * @brief Initializes the graphics system.

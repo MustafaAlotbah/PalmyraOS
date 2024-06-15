@@ -87,6 +87,8 @@ namespace PalmyraOS::kernel
 	   * @param p Pointer to the memory block to free.
 	   */
 	  void free(void* p);
+
+	  REMOVE_COPY(HeapManager);
    public:
 
 	  /**
