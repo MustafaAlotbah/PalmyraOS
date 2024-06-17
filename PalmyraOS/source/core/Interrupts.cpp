@@ -2,6 +2,8 @@
 
 #include "core/Interrupts.h"
 #include "core/panic.h"
+#include "core/memory/paging.h"
+#include "core/kernel.h"
 
 
 // External functions for the IDT. (Check interrupt_asm.asm)
@@ -56,7 +58,15 @@ uint64_t sysClock = 0;
 // Primary ISR handler, all activated handlers point here first.
 extern "C" uint32_t* primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegisters* registers)
 {
+	using namespace PalmyraOS::kernel;
 	using namespace PalmyraOS::kernel::interrupts;
+
+	// if there is a paging directory, switch to kernel directory
+	if (PagingManager::isEnabled())
+		PagingManager::switchPageDirectory(PalmyraOS::kernel::kernelPagingDirectory_ptr);
+
+
+	// flag to panic or not
 	bool handled = false;
 
 	// send EOI: End of Interrupt (to get more interrupts) if IRQ
@@ -142,10 +152,10 @@ void PalmyraOS::kernel::interrupts::InterruptDescriptorTable::setDescriptor(
 
 void PalmyraOS::kernel::interrupts::InterruptDescriptorTable::flush()
 {
-	InterruptPointer idt_ptr{};
-	idt_ptr.size    = 256 * sizeof(InterruptEntry) - 1;
-	idt_ptr.address = (uint32_t)(descriptors);
-	flush_idt_table((uint32_t)&idt_ptr);
+	InterruptPointer idt_ptr_{};
+	idt_ptr_.size    = 256 * sizeof(InterruptEntry) - 1;
+	idt_ptr_.address = (uint32_t)(descriptors);
+	flush_idt_table((uint32_t)&idt_ptr_);
 }
 ///endregion
 

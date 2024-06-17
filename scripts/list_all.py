@@ -6,7 +6,12 @@ Author: Mustafa Alotbah
 import os
 from typing import *
 import pyperclip
+import re
 
+
+def remove_block_comments(content: str) -> str:
+    pattern = re.compile(r'/\*.*?\*/', re.DOTALL)
+    return re.sub(pattern, '', content)
 
 def get_folders(path: str) -> List[str]:
     try:
@@ -30,12 +35,26 @@ def read_file(path: str) -> str:
     content = []
     try:
         with open(path, 'r', encoding='utf-8') as file:
+            in_comment_block = False
             for line in file:
                 stripped_line = line.strip()
                 if not stripped_line or stripped_line.startswith('//'):
                     continue
+
+                if '/*' in stripped_line:
+                    in_comment_block = True
+                if '*/' in stripped_line:
+                    in_comment_block = False
+                    continue
+
+                if in_comment_block:
+                    continue
+
                 content.append(line)
-        return ''.join(content)
+
+        content_str = ''.join(content)
+        content_str = remove_block_comments(content_str)
+        return content_str
     except Exception as e:
         print(f"An error occurred: {e}")
         return ""

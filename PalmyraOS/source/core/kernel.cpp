@@ -25,6 +25,7 @@ namespace PalmyraOS::kernel
   // Memory
   PalmyraOS::kernel::PagingDirectory* kernelPagingDirectory_ptr = nullptr;
   PalmyraOS::kernel::HeapManager heapManager;
+  uint32_t                       kernelLastPage = 0;
 
 }
 
@@ -222,21 +223,16 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 	if ((uint32_t)kernel::kernelPagingDirectory_ptr & (PAGE_SIZE - 1))
 		kernel::kernelPanic("Unaligned Kernel Directory at 0x%X", kernel::kernelPagingDirectory_ptr);
 
-
 	// Map kernel space by identity
 	{
 		auto     kernelSpace = (uint32_t)PhysicalMemory::allocateFrame();
-		uint32_t kernelUpper = kernelSpace >> PAGE_BITS;
-
-		for (int i = 0; i < kernelUpper; ++i)
-		{
-			uint32_t address = i << PAGE_BITS;
-			kernel::kernelPagingDirectory_ptr->mapPage(
-				(void*)(address),
-				(void*)(address),
-				0x3    // Present and writable
-			);
-		}
+		kernel::kernelLastPage = kernelSpace >> PAGE_BITS;
+		kernel::kernelPagingDirectory_ptr->mapPages(
+			nullptr,
+			nullptr,
+			kernel::kernelLastPage,
+			PageFlags::Present | PageFlags::ReadWrite
+		);
 	}
 
 	// Map video memory by identity
@@ -244,15 +240,12 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 	{
 		uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
 		uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
-
-		for (int i = 0; i < frameBufferFrames; ++i)
-		{
-			kernel::kernelPagingDirectory_ptr->mapPage(
-				(void*)(vbe_mode_info->framebuffer + (i << PAGE_BITS)),
-				(void*)(vbe_mode_info->framebuffer + (i << PAGE_BITS)),
-				0x3    // Present and writable
-			);
-		}
+		kernel::kernelPagingDirectory_ptr->mapPages(
+			(void*)vbe_mode_info->framebuffer,
+			(void*)vbe_mode_info->framebuffer,
+			frameBufferFrames,
+			PageFlags::Present | PageFlags::ReadWrite
+		);
 	}
 
 	// Switch to the new kernel paging directory and initialize paging

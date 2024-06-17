@@ -83,7 +83,7 @@ void* PalmyraOS::kernel::HeapManager::alloc(uint32_t size, bool page_align)
 void* PalmyraOS::kernel::HeapManager::requestMoreMemory(size_t size)
 {
 	// Align the requested size to the next page boundary
-	size = (size + 0xFFF) & ~0xFFF;
+	size = (size + sizeof(HeapChunk) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
 	// Allocate the required number of pages
 	void* newMemory = PagingManager::allocatePages(size >> PAGE_BITS);

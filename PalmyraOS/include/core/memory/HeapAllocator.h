@@ -3,10 +3,9 @@
 
 
 #include <utility>
-
 #include "core/definitions.h"
-#include "core/memory/Heap.h"
 #include "core/kernel.h"
+#include "core/panic.h"
 
 
 namespace PalmyraOS::kernel
@@ -67,7 +66,9 @@ namespace PalmyraOS::kernel
 	   */
 	  pointer allocate(size_type n)
 	  {
-		  return static_cast<pointer>(heapManager_.alloc(n * sizeof(T)));
+		  pointer p = static_cast<pointer>(heapManager_.alloc(n * sizeof(T)));
+		  if (p == nullptr) kernel::kernelPanic("Heap Allocator Error::allocate p=nullptr!");
+		  return p;
 	  }
 
 	  /**
@@ -92,6 +93,7 @@ namespace PalmyraOS::kernel
 	  template<typename U, typename... Args>
 	  void construct(U* p, Args&& ... args)
 	  {
+		  if (p == nullptr) kernel::kernelPanic("Heap Allocator Error::construct p=nullptr!");
 		  ::new((void*)p) U(std::forward<Args>(args)...);
 	  }
 
@@ -104,6 +106,7 @@ namespace PalmyraOS::kernel
 	  template<typename U>
 	  void destroy(U* p)
 	  {
+		  if (p == nullptr) kernel::kernelPanic("Heap Allocator Error::destroy p=nullptr!");
 		  p->~U();
 	  }
 

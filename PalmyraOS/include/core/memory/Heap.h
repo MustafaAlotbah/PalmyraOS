@@ -88,6 +88,7 @@ namespace PalmyraOS::kernel
 	   */
 	  void free(void* p);
 
+	  DEFINE_DEFAULT_MOVE(HeapManager);
 	  REMOVE_COPY(HeapManager);
    public:
 

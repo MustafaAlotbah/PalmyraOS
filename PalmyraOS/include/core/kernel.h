@@ -46,6 +46,7 @@ namespace PalmyraOS::kernel
   extern PalmyraOS::kernel::GDT::GlobalDescriptorTable     * gdt_ptr;
   extern PalmyraOS::kernel::interrupts::InterruptController* idt_ptr;
   extern PalmyraOS::kernel::HeapManager heapManager;
+  extern uint32_t                       kernelLastPage;
 
   /**
    * @brief Initializes the graphics system.

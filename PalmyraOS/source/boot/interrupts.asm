@@ -24,11 +24,11 @@ disable_interrupts:
     ret         ; return
 
 
-; load the pointer to the IDT table to the CPU
+; Load the pointer to the IDT table to the CPU
 flush_idt_table:
 
     mov dword eax, [esp+4]      ; Load the first argument passed to the function
-                                ; here (address of IDT) from the stack to the EAX registe.
+                                ; here (address of IDT) from the stack to the EAX register.
 
     lidt [eax]                  ; Load the IDT pointer to its register
 
@@ -51,21 +51,21 @@ flush_idt_table:
 %endmacro
 
 
-; For Interrupt Stubs that already push an Error Code (8, 10, ..., 14)
+; Macro for Interrupt Stubs that already push an Error Code (8, 10, ..., 14)
 %macro InterruptServiceRoutine_PushesErrorCode 1
 global InterruptServiceRoutine_%1       ; expose the function
 InterruptServiceRoutine_%1:
     cli                                 ; clear the interrupts
                                         ; error code was pushed automatically
-    push dword %1                        ; push interrupt number
+    push dword %1                       ; push interrupt number
     jmp _primary_isr_handler
 %endmacro
 
-; For Interrupt Stubs that don't push an Error code
+; Macro for Interrupt Stubs that don't push an Error code
 %macro InterruptServiceRoutine_NoErrorCode 1
 global InterruptServiceRoutine_%1
 InterruptServiceRoutine_%1:
-    cli                                 ; Clear interrupts to prevent nesting
+    cli                                  ; Clear interrupts to prevent nesting
     push dword 0                         ; Push dummy error code to standardize stack frame
     push dword %1                        ; Push the interrupt number onto the stack
     jmp _primary_isr_handler
@@ -73,24 +73,27 @@ InterruptServiceRoutine_%1:
 ; ---------------------- END: ISR MACROS ----------------------
 
 
-; Actual functions
+; Actual ISR handler functions
 
 
 _primary_isr_handler:
     pusha                       ; preserve general purpose registers        [eax, ecx, edx, ebx, esp, ebp, esi, edi]
     push_data_segment           ; preserve data segment registers (GDT)     [ds, es, fs, gs]
 
-    ; ss and cs are pushed automatically by TSS (if prev CPL=3)
-    ; load kernel data segments
+    ; Load kernel data segments (ss and cs are pushed automatically by TSS if prev CPL=3)
     mov ax, 16
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
+    mov eax, cr3                ; Push cr3 register value
+    push eax
+
     push esp                    ; Push the stack pointer onto the stack, effectively passing a pointer
                                 ; to the current stack (where all registers and possibly the error code are saved)
                                 ; to the primary_isr_handler function as a parameter.
+
 
 
     call primary_isr_handler    ; Call the C++ primary handler. This function is expected to handle the interrupt
@@ -99,15 +102,24 @@ _primary_isr_handler:
     ; Switch stack pointer
     mov esp, eax
 
-    ; pop esp                     ; Clean up the stack pointer from the stack after the call returns.
-    add esp, 4                            ; This restores the original ESP value which pointed to the interrupt context.
+    ; pop esp                   ; Clean up the stack pointer from the stack after the call returns.
+    add esp, 4                  ; This restores the original ESP value which pointed to the interrupt context.
 
-    pop_data_segment            ; restore data segment registers
-    popa                        ; restore general purpose registers
+    pop eax                     ; Pop cr3
+    mov ebx, cr3
+
+    cmp eax, ebx                ; Compare old cr3 with current cr3
+    je SkipCR3Write             ; If no change, avoid the overhead of rewriting to CR3
+
+    mov cr3, eax                ; Update CR3 Register (Paging Directory Pointer)
+
+SkipCR3Write:
+    pop_data_segment            ; Restore data segment registers
+    popa                        ; Restore general purpose registers
 
     add esp, 8                  ; Clean up the `error code` and `interrupt number` from the stack
 
-    iret                        ; interrupt return
+    iret                        ; Interrupt return
 
 _default_isr_handler:
     iret

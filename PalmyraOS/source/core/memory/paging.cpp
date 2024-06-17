@@ -3,10 +3,13 @@
 #include "libs/memory.h"
 #include "core/panic.h"
 #include "core/memory/PhysicalMemory.h"
+#include "core/kernel.h"
 
 // External functions from assembly (paging.asm)
 extern "C" void set_page_directory(uint32_t*);
 extern "C" void enable_paging();
+extern "C" bool is_paging_enabled();
+extern "C" uint32_t get_cr3();
 
 
 // Initialize static member
@@ -27,7 +30,7 @@ PalmyraOS::kernel::PagingDirectory::PagingDirectory()
 	memset(pageTables_, 0, sizeof(PageTableEntry*) * NUM_ENTRIES);
 }
 
-uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex)
+uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex, PageFlags flags)
 {
 	// Check if the table is already present
 	if (pageDirectory_[tableIndex].present) return (uint32_t*)pageTables_[tableIndex];
@@ -40,10 +43,16 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex)
 	pageTables_[tableIndex] = (PageTableEntry*)newTable;
 
 	// Set the table in the directory with present and writable flags
-	setTable(tableIndex, (uint32_t)newTable, 0x3); // Present and writable
+	setTable(tableIndex, (uint32_t)newTable, flags);
 
 	// Initialize the new table, assume here we have access to newTable address (kernel must be mapped)
-	mapPage(newTable, newTable, 0x3);    // make sure you map first, before you memset (if paging is active)
+	// make sure you map first, before you memset (if paging is active)
+	if (PagingManager::getCurrentPageDirectory())
+	{
+		PagingManager::getCurrentPageDirectory()->mapPage(
+			newTable, newTable, PageFlags::Present | PageFlags::ReadWrite
+		);
+	}
 	{
 		/*
 		 * WARNING: here we might override mapPage if 1-1 mapping points the table to itself
@@ -54,7 +63,7 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex)
 	}
 	// map the page again, for the case if the page is mapped in itself
 	// this is only important before paging is activated
-	mapPage(newTable, newTable, 0x3);
+	mapPage(newTable, newTable, flags);
 	pagesCount_--; // to avoid double increment by mapPage()
 
 	return (uint32_t*)pageTables_[tableIndex];
@@ -71,16 +80,16 @@ void PalmyraOS::kernel::PagingDirectory::destruct()
 		}
 }
 
-void PalmyraOS::kernel::PagingDirectory::setTable(uint32_t tableIndex, uint32_t tableAddress, uint32_t flags)
+void PalmyraOS::kernel::PagingDirectory::setTable(uint32_t tableIndex, uint32_t tableAddress, PageFlags flags)
 {
 	// Set the page directory entry for the table
-	pageDirectory_[tableIndex].present      = (flags >> 0) & 0x1;
-	pageDirectory_[tableIndex].rw           = (flags >> 1) & 0x1;
-	pageDirectory_[tableIndex].user         = (flags >> 2) & 0x1;
+	pageDirectory_[tableIndex].present = ((uint32_t)flags >> 0) & 0x1;
+	pageDirectory_[tableIndex].rw      = ((uint32_t)flags >> 1) & 0x1;
+	pageDirectory_[tableIndex].user    = ((uint32_t)flags >> 2) & 0x1;
 	pageDirectory_[tableIndex].tableAddress = tableAddress >> 12;
 }
 
-void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtualAddr, uint32_t flags)
+void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtualAddr, PageFlags flags)
 {
 	// Check for null pointers
 	if (physicalAddr == nullptr || virtualAddr == nullptr) return;
@@ -95,7 +104,7 @@ void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtu
 	uint32_t pageIndex = ((uint32_t)virtualAddr >> 12) & 0x3FF;
 
 	// Get or create the corresponding table
-	uint32_t* table = getTable(tableIndex);
+	uint32_t* table = getTable(tableIndex, flags);
 
 	// Set the page in the table
 	setPage(table, pageIndex, (uint32_t)physicalAddr, flags);
@@ -139,14 +148,14 @@ void PalmyraOS::kernel::PagingDirectory::unmapPage(void* virtualAddr)
 }
 
 void PalmyraOS::kernel::PagingDirectory::setPage(
-	uint32_t* table, uint32_t pageIndex, uint32_t physicalAddr, uint32_t flags
+	uint32_t* table, uint32_t pageIndex, uint32_t physicalAddr, PageFlags flags
 )
 {
 	// Set the page table entry
 	auto* entry = (PageTableEntry*)&table[pageIndex];
-	entry->present         = flags & 0x1;
-	entry->rw              = (flags >> 1) & 0x1;
-	entry->user            = (flags >> 2) & 0x1;
+	entry->present = ((uint32_t)flags >> 0) & 0x1;
+	entry->rw      = ((uint32_t)flags >> 1) & 0x1;
+	entry->user    = ((uint32_t)flags >> 2) & 0x1;
 	entry->physicalAddress = physicalAddr >> 12;
 }
 
@@ -155,7 +164,7 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getDirectory() const
 	return (uint32_t*)pageDirectory_;
 }
 
-void* PalmyraOS::kernel::PagingDirectory::allocatePage()
+void* PalmyraOS::kernel::PagingDirectory::allocatePage(PageFlags flags)
 {
 	// Allocate a frame
 	void* frame = PhysicalMemory::allocateFrame();
@@ -171,7 +180,7 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePage()
 	if (pageIndex == 1023)
 	{
 		PhysicalMemory::freeFrame(frame);
-		getTable(tableIndex + 1);
+		getTable(tableIndex + 1, flags);
 		return allocatePage();
 	}
 
@@ -201,7 +210,7 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePage()
 	//
 
 	// Map the frame to itself
-	mapPage(frame, frame, 0x3);
+	mapPage(frame, frame, flags);
 
 	return frame;
 }
@@ -215,7 +224,7 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePages(size_t numPages)
 	for (size_t i = 0; i < numPages; ++i)
 	{
 		auto address = (uint32_t)frame + (0x1000 * i);
-		mapPage((void*)address, (void*)address, 0x3);
+		mapPage((void*)address, (void*)address, PageFlags::Present | PageFlags::ReadWrite);
 	}
 
 	return frame;
@@ -258,6 +267,21 @@ void PalmyraOS::kernel::PagingDirectory::freePage(void* pageAddress)
 
 }
 
+void PalmyraOS::kernel::PagingDirectory::mapPages(
+	void* physicalAddr,
+	void* virtualAddr,
+	uint32_t numPages,
+	PalmyraOS::kernel::PageFlags flags
+)
+{
+	for (int i = 0; i < numPages; ++i)
+	{
+		auto physicalAddr_ = (uint32_t)physicalAddr + (i * PAGE_SIZE);
+		auto virtualAddr_  = (uint32_t)virtualAddr + (i * PAGE_SIZE);
+		mapPage((void*)physicalAddr_, (void*)virtualAddr_, flags);
+	}
+}
+
 
 ///endregion
 
@@ -281,6 +305,8 @@ void PalmyraOS::kernel::PagingManager::switchPageDirectory(PagingDirectory* newP
 {
 	// Ensure the new page directory is valid
 	if (newPageDirectory == nullptr) kernelPanic("Cannot initialize paging: Invalid Page Directory");
+
+	if (newPageDirectory->getDirectory() == (void*)get_cr3()) return;
 
 	// Switch to the new page directory
 	currentPageDirectory_ = newPageDirectory;
@@ -355,20 +381,29 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 	{
 		// Handle page fault by triggering a kernel panic  TODO (for example, crash current process)
 		kernelPanic(
-			"Page Fault (0x%x) (0x%x) at 0x%x\n"
+			"Page Fault (0x%X) (0x%X) at 0x%X\n"
+			"System: CR3: 0x%X, Kernel CR3: 0x%X\n"
 			"isPresent: %s\n"
 			"isWrite: %s\n"
 			"isUser: %s\n"
-			"isInstructionFetch: %s\n",
+			"isInstructionFetch: %s\n"
+			"Faulting Instruction: 0x%X\n",
 			regs->intNo, regs->errorCode, faultingAddress,
+			currentPageDirectory_->getDirectory(), kernel::kernelPagingDirectory_ptr->getDirectory(),
 			(present ? "YES" : "NO"),
 			(write ? "YES" : "NO"),
 			(userMode ? "YES" : "NO"),
-			(instructionFetch ? "YES" : "NO")
+			(instructionFetch ? "YES" : "NO"),
+			regs->eip
 		);
 	}
 
 	return (uint32_t*)regs;
+}
+
+bool PalmyraOS::kernel::PagingManager::isEnabled()
+{
+	return is_paging_enabled();
 }
 ///endregion
 

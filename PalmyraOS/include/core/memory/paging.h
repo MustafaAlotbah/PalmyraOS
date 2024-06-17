@@ -8,7 +8,7 @@
 
 namespace PalmyraOS::kernel
 {
-  // types
+  // Type Definitions
   /**
    * @brief Type definition for a Page Fault Handler function.
    *
@@ -31,11 +31,41 @@ namespace PalmyraOS::kernel
 	  bool instructionFetch
   );
 
-/**
- * @brief Structure representing a Page Directory Entry
- *
- * A Page Directory Entry (PDE) points to a Page Table.
- */
+  /**
+   * @enum PageFlags
+   * @brief Enum class representing page table entry flags.
+   *
+   * This enum class encapsulates the various flags used for page table entries,
+   * providing a clear and type-safe way to manage paging attributes.
+   */
+  enum class PageFlags : uint32_t
+  {
+	  Present        = 0x1,       ///< Page is present in memory.
+	  ReadWrite      = 0x2,       ///< Page is writable.
+	  UserSupervisor = 0x4,       ///< Page is accessible from user mode.
+	  WriteThrough   = 0x8,       ///< Write-through caching is enabled.
+	  CacheDisabled  = 0x10,      ///< Cache is disabled.
+	  Accessed       = 0x20,      ///< Page has been accessed.
+	  Dirty          = 0x40,      ///< Page has been written to.
+	  PageSize       = 0x80,      ///< Page size (0 for 4KB, 1 for 4MB).
+	  Global         = 0x100,     ///< Global page (not updated in TLB on CR3 load).
+	  Custom0        = 0x200,     ///< Custom flag, for system-specific use.
+	  Custom1        = 0x400,     ///< Custom flag, for system-specific use.
+	  Custom2        = 0x800,     ///< Custom flag, for system-specific use.
+	  FrameAddress   = 0xFFFFF000 ///< Mask to extract frame address.
+  };
+
+  // Enable bitwise operations for PageFlags enum
+  inline PageFlags operator|(PageFlags lhs, PageFlags rhs)
+  {
+	  return static_cast<PageFlags>(static_cast<uint32_t>(lhs) | static_cast<uint32_t>(rhs));
+  }
+
+  /**
+   * @brief Structure representing a Page Directory Entry
+   *
+   * A Page Directory Entry (PDE) points to a Page Table.
+   */
   struct PageDirectoryEntry
   {
 	  uint32_t present: 1;         ///< Page present in memory
@@ -51,11 +81,11 @@ namespace PalmyraOS::kernel
 	  uint32_t tableAddress: 20;   ///< Physical address of the page table (aligned)
   } __attribute__((packed));
 
-/**
- * @brief Structure representing a Page Table Entry
- *
- * A Page Table Entry (PTE) maps a virtual address to a physical address.
- */
+  /**
+   * @brief Structure representing a Page Directory Entry
+   *
+   * A Page Directory Entry (PDE) points to a Page Table.
+   */
   struct PageTableEntry
   {
 	  uint32_t present: 1;         ///< Page present in memory
@@ -95,9 +125,10 @@ namespace PalmyraOS::kernel
 
 	  /**
 	   * @brief Allocates a page and returns its virtual address
+	   * @param flags PageFlags specifying the attributes of the page
 	   * @return void* Pointer to the allocated page
 	   */
-	  void* allocatePage();                // returns virtual address
+	  void* allocatePage(PageFlags flags = PageFlags::Present | PageFlags::ReadWrite);   // returns virtual address
 
 	  /**
 	   * @brief Allocates multiple pages and returns the starting virtual address
@@ -131,7 +162,16 @@ namespace PalmyraOS::kernel
 	   * @param virtualAddr Virtual address
 	   * @param flags Flags for page table entry
 	   */
-	  void mapPage(void* physicalAddr, void* virtualAddr, uint32_t flags);
+	  void mapPage(void* physicalAddr, void* virtualAddr, PageFlags flags);
+
+	  /**
+	   * @brief Maps multiple contiguous pages
+	   * @param physicalAddr Physical address
+	   * @param virtualAddr Virtual address
+	   * @param numPages Number of pages to map
+	   * @param flags Flags for page table entries
+	   */
+	  void mapPages(void* physicalAddr, void* virtualAddr, uint32_t numPages, PageFlags flags);
 
 	  /**
 	   * @brief Unmaps a virtual address
@@ -139,6 +179,7 @@ namespace PalmyraOS::kernel
 	   */
 	  void unmapPage(void* virtualAddr);
 
+	  DEFINE_DEFAULT_MOVE(PagingDirectory);
 	  REMOVE_COPY(PagingDirectory);
    private:
 	  /**
@@ -147,7 +188,7 @@ namespace PalmyraOS::kernel
 	   * @param tableAddress Address of the table
 	   * @param flags Flags for the table entry
 	   */
-	  void setTable(uint32_t tableIndex, uint32_t tableAddress, uint32_t flags);
+	  void setTable(uint32_t tableIndex, uint32_t tableAddress, PageFlags flags);
 
 	  /**
 	   * @brief Sets a page in a table
@@ -156,14 +197,14 @@ namespace PalmyraOS::kernel
 	   * @param physicalAddr Physical address of the page
 	   * @param flags Flags for the page entry
 	   */
-	  void setPage(uint32_t* table, uint32_t pageIndex, uint32_t physicalAddr, uint32_t flags);
+	  void setPage(uint32_t* table, uint32_t pageIndex, uint32_t physicalAddr, PageFlags flags);
 
 	  /**
 	   * @brief Gets a page table by index
 	   * @param tableIndex Index of the table
 	   * @return uint32_t* Pointer to the page table
 	   */
-	  uint32_t* getTable(uint32_t tableIndex);
+	  uint32_t* getTable(uint32_t tableIndex, PageFlags flags);
 
 
    private:
@@ -222,6 +263,12 @@ namespace PalmyraOS::kernel
 	   * @return PagingDirectory* Pointer to the current page directory
 	   */
 	  [[nodiscard]] static PagingDirectory* getCurrentPageDirectory();
+
+	  /**
+	   * @brief Checks if paging is enabled
+	   * @return bool True if paging is enabled, false otherwise
+	   */
+	  static bool isEnabled();
    public:
 
 	  /**

@@ -9,6 +9,7 @@
 
 
 extern "C" void disable_interrupts();
+extern "C" void disable_paging();
 
 
 [[noreturn]] void kernelPanic_(const char* message)
@@ -65,6 +66,8 @@ extern "C" void disable_interrupts();
 
 void PalmyraOS::kernel::kernelPanic(const char* format, ...)
 {
+	disable_paging();
+
 	va_list args;
 	va_start(args, format);
 	char buffer[4096];  // Adjust size as necessary for your needs

@@ -2,9 +2,9 @@
 #include "tests/allocatorTests.h"
 #include "core/memory/HeapAllocator.h"
 #include <vector>
-#include <map>
-#include <set>
-#include <string>
+//#include <map>
+//#include <set>
+//#include <string>
 
 
 bool PalmyraOS::Tests::Allocator::ExceptionTester::exceptionOccurred_ = false;
@@ -71,6 +71,9 @@ class SomeData
 	uint32_t y;
 	SomeData(uint32_t x, uint32_t y) : x(x), y(y)
 	{}
+
+	REMOVE_COPY(SomeData);
+	DEFINE_DEFAULT_MOVE(SomeData);
 };
 
 bool PalmyraOS::Tests::Allocator::testVectorOfClasses()
@@ -84,12 +87,12 @@ bool PalmyraOS::Tests::Allocator::testVectorOfClasses()
 
 
 	// define our vector and pass the allocator to it
-	std::vector<SomeData, kernel::HeapAllocator<SomeData>> vec(allocator);
+	std::vector<SomeData, kernel::KernelHeapAllocator<SomeData>> vec;
 	vec.reserve(2);
 	vec.emplace_back(0x1111'1111, 0x1212'1212);
 	vec.emplace_back(0x2222'2222, 0x2f2f'2f2f);
 
-	volatile SomeData var = vec.at(5);    // should throw an exception
+	volatile SomeData& var = vec.at(5);    // should throw an exception
 	if (!ExceptionTester::exceptionOccurred()) result = false;
 
 	vec.emplace_back(0x3333'3333, 0x3f3f'3f3f);
@@ -99,7 +102,7 @@ bool PalmyraOS::Tests::Allocator::testVectorOfClasses()
 	vec.emplace_back(0x7777'7777, 0x7f7f'7f7f);
 	vec.emplace_back(0x8888'8888, 0x8f8f'8f8f);
 
-	volatile SomeData var2 = vec.at(5);    // should not throw an exception
+	volatile SomeData& var2 = vec.at(5);    // should not throw an exception
 	if (ExceptionTester::exceptionOccurred()) result = false;
 
 

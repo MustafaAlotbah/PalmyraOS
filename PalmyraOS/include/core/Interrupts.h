@@ -26,6 +26,9 @@ namespace PalmyraOS::kernel::interrupts
   // Process Control Block (PCB)does
   struct CPURegisters
   {
+	  /* 5. Paging */
+	  uint32_t cr3;                // Pointer to Paging Directory
+
 	  /* 4. Data Segment Registers */
 	  uint32_t gs;
 	  uint32_t fs;
