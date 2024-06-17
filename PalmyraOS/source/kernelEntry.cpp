@@ -9,9 +9,9 @@
 #include "core/SystemClock.h"
 #include "core/memory/PhysicalMemory.h"
 #include "core/Logger.h"
+#include "core/tasks/ProcessManager.h"
+#include "core/tasks/SystemCalls.h"
 
-#include "core/memory/HeapAllocator.h"
-#include <vector>
 
 
 // Pointers to the start and end of the constructors section (see linker.ld)
@@ -42,6 +42,79 @@ extern "C" uint32_t get_kernel_stack_start();
 extern "C" uint32_t get_kernel_stack_end();
 extern "C" uint32_t get_esp();
 extern "C" uint32_t get_ss();
+
+namespace Processes
+{
+  uint32_t proc_0_esp     = 0;
+  uint64_t proc_0_counter = 0;
+  uint32_t proc_1_pid     = 0;
+
+  uint32_t get_pid()
+  {
+	  uint32_t pid;
+	  asm("mov $20, %%eax\n\t"  // System call number for getpid (20)
+		  "int $0x80\n\t"       // Interrupt to trigger system call
+		  "mov %%eax, %0"
+		  : "=r" (pid)          // Output: store the result in pid
+		  :                     // No inputs
+		  : "%eax"              // Clobbered register
+		  );
+	  return pid;
+  }
+
+  void print_number(uint32_t number, uint64_t counter)
+  {
+	  using namespace PalmyraOS;
+	  auto& vbe = *PalmyraOS::kernel::vbe_ptr;
+	  kernel::Brush        brush(vbe.getFrameBuffer());
+	  kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
+
+	  // Clear the screen
+	  brush.fill(Color::DarkBlue);
+
+	  // Logo
+	  textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
+	  textRenderer << Color::White << "v0.01\n";
+	  brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
+	  textRenderer << "\n";
+
+	  // Information
+	  textRenderer << "Stack Pointer 0: " << HEX() << get_esp() << "\n";
+	  textRenderer << "Stack Pointer 1: " << HEX() << number << "\n";
+	  textRenderer << "Counter: " << DEC() << counter << "\n";
+	  textRenderer << "proc_0_pid: " << DEC() << get_pid() << "\n";
+	  textRenderer << "proc_1_pid: " << DEC() << proc_1_pid << "\n";
+
+	  textRenderer << "proc 0 esp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.esp << "\n";
+	  textRenderer << "proc 0 usp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.userEsp << "\n";
+
+	  textRenderer << "proc 1 esp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.esp << "\n";
+	  textRenderer << "proc 1 usp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.userEsp << "\n";
+
+
+	  textRenderer << SWAP_BUFF();
+  }
+
+  int process_0()
+  {
+	  while (true)
+	  {
+		  print_number(proc_0_esp, proc_0_counter);
+	  }
+  }
+
+  int process_1()
+  {
+	  while (true)
+	  {
+		  proc_0_esp = get_esp();
+		  proc_0_counter++;
+		  proc_1_pid = get_pid();
+	  }
+  }
+}
+
+
 
 /**
  * Kernel entry point called from the bootloader with multiboot information.
@@ -128,9 +201,6 @@ void callConstructors()
 	PalmyraOS::kernel::SystemClock::initialize(kernel::SystemClockFrequency);
 	LOG_INFO("Initialized System Clock at %d Hz.", kernel::SystemClockFrequency);
 
-	// Now enable maskable interrupts
-	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-	LOG_INFO("Enabled Interrupts.");
 
 
 	// ----------------------- Initialize Physical Memory -------------------------------
@@ -145,23 +215,30 @@ void callConstructors()
 
 
 	kernel::testMemory();
-	// from here we can use the kernel heap
+	// from here we can use th
 
-	std::vector<int, kernel::KernelHeapAllocator<int>> vec;
-
-	// Use the vector as usual
-	vec.push_back(1);
-	vec.push_back(2);
-	vec.push_back(3);
-
-	// Print the vector contents
-	for (int value : vec)
 	{
-		textRenderer << value << "\n";
-	}
-	textRenderer << SWAP_BUFF();
+		std::vector<int, kernel::KernelHeapAllocator<int>> vec;
+		vec.push_back(5);
 
-	textRenderer << vec.at(5) << SWAP_BUFF();
+	}
+
+
+	kernel::TaskManager::initialize();
+	kernel::SystemCallsManager::initialize();
+
+	kernel::TaskManager::newProcess(Processes::process_0, kernel::Process::Mode::Kernel);
+	kernel::TaskManager::newProcess(Processes::process_1, kernel::Process::Mode::User);
+
+
+
+	// Now enable maskable interrupts
+	LOG_INFO("Enabling Interrupts.");
+	textRenderer << "Enabling Interrupts.\n" << SWAP_BUFF();
+	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+
+
+	while (true);
 
 	LOG_INFO("Moving to setup()...");
 	kernel::setup();

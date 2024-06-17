@@ -156,3 +156,7 @@ namespace PalmyraOS::kernel::interrupts
 
 
 }
+
+const char* interruptName(uint32_t intNo);
+const char* segmentName(uint32_t num);
+void panicRegisters(const char* message, PalmyraOS::kernel::interrupts::CPURegisters* regs);

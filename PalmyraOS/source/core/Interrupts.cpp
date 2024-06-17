@@ -11,6 +11,8 @@ extern "C" void flush_idt_table(uint32_t idt_pointer);
 extern "C" void enable_interrupts();
 extern "C" void disable_interrupts();
 extern "C" void _default_isr_handler();
+extern "C" uint32_t get_esp();
+extern "C" uint32_t get_ss();
 
 ///region ASM ISRs
 extern "C" void InterruptServiceRoutine_0x00(); // Division Error (Fault)
@@ -96,7 +98,7 @@ extern "C" uint32_t* primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegis
 
 	if (!handled)
 	{
-		PalmyraOS::kernel::kernelPanic("Unhandled Interrupt! (%d)", registers->intNo);
+		panicRegisters("Unhandled Interrupt!", registers);
 	}
 
 	return (uint32_t*)(registers) - 1;
@@ -267,4 +269,117 @@ void PalmyraOS::kernel::interrupts::InterruptController::setInterruptHandler(
 	secondary_interrupt_handlers[interrupt_number] = interrupt_handler;
 }
 
+///endregion
+
+
+///region Help Functions
+const char* interruptName(uint32_t intNo)
+{
+	if (intNo == 0x00) return "Division Error";
+	if (intNo == 0x01) return "Debug";
+	if (intNo == 0x02) return "Non-maskable Interrupt";
+	if (intNo == 0x03) return "Breakpoint";
+	if (intNo == 0x04) return "Overflow";
+	if (intNo == 0x05) return "Bound Range Exceeded Fault";
+	if (intNo == 0x06) return "Invalid Opcode Fault";
+	if (intNo == 0x07) return "Device Not Available Fault";
+	if (intNo == 0x08) return "Double Fault";
+	if (intNo == 0x0A) return "Invalid TSS Fault";
+	if (intNo == 0x0B) return "Segment Not Present Fault";
+	if (intNo == 0x0C) return "Stack-Segment Fault";
+	if (intNo == 0x0D) return "General Protection Fault";
+	if (intNo == 0x0E) return "Paging Fault";
+	if (intNo == 0x20) return "IRQ0 System Clock";
+	if (intNo == 0x21) return "IRQ1 Keyboard";
+	if (intNo == 0x22) return "IRQ2 Cascade (for 2nd PIC)";
+	if (intNo == 0x23) return "IRQ3 COM2 (shared with COM4)";
+	if (intNo == 0x24) return "IRQ4 COM1 (shared with COM3)";
+	if (intNo == 0x25) return "IRQ5 LPT2 (shared with sound card)";
+	if (intNo == 0x26) return "IRQ6 Floppy Disk Controller";
+	if (intNo == 0x27) return "IRQ7 LPT1";
+	if (intNo == 0x28) return "IRQ8 CMOS Real-time Clock";
+	if (intNo == 0x29) return "IRQ9 Free for Peripherals";
+	if (intNo == 0x2A) return "IRQ10 Free for Peripherals";
+	if (intNo == 0x2B) return "IRQ11 Free for Peripherals";
+	if (intNo == 0x2C) return "IRQ12 Mouse";
+	if (intNo == 0x2D) return "IRQ13 FPU/Coprocessor/Interrupt for CPU to Communicate with FPU";
+	if (intNo == 0x2E) return "IRQ14 Primary ATA Hard Disk";
+	if (intNo == 0x2F) return "IRQ15 Secondary ATA Hard Disk";
+	if (intNo == 0x80) return "System Call";
+	return "Unknown Interrupt";
+}
+
+const char* segmentName(uint32_t num)
+{
+	if (num < 8) return "Null Segment";
+	if (num < 16) return "Kernel Code Segment";
+	if (num < 24) return "Kernel Data Segment";
+	if (num < 32) return "User Code Segment";
+	if (num < 40) return "User Data Segment";
+	if (num < 48) return "Task Switch Segment";
+	return "Invalid Segment";
+}
+
+void panicRegisters(const char* message, PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	PalmyraOS::kernel::kernelPanic(
+		R"(
+	%s
+	----------------------------
+	Registers:
+	Data Segment:	gs:		%d	(%s)
+				fs:		%d	(%s)
+				es:		%d	(%s)
+				ds:		%d	(%s)
+	Pointers:		edi:		%d
+				esi:		%d
+				ebp:		%d
+				esp:		%d
+	General P:		eax:		%d
+				ebx:		%d
+				ecx:		%d
+				edx:		%d
+	Interrupt:		intNo:	%d	(%s)
+				errorCode:%d
+	Hardware:		eip:		%d
+				cs:		%d	(%s)
+				eflags:	%d
+				ss:esp:	%d
+				ss:		%d	(%s)
+	----------------------------
+	curr_esp:	%d
+	curr_ss:	%d	(%s)
+)",
+		message,
+		regs->gs,
+		segmentName(regs->gs),
+		regs->fs,
+		segmentName(regs->fs),
+		regs->es,
+		segmentName(regs->es),
+		regs->ds,
+		segmentName(regs->ds),
+		regs->edi,
+		regs->esi,
+		regs->ebp,
+		regs->esp,
+		regs->eax,
+		regs->ebx,
+		regs->ecx,
+		regs->edx,
+		regs->intNo,
+		interruptName(regs->intNo),
+		regs->errorCode,
+		regs->eip,
+		regs->cs,
+		segmentName(regs->cs),
+		regs->eflags,
+		regs->userEsp,
+		regs->ss,
+		segmentName(regs->ss),
+		get_esp(),
+		get_ss(),
+		segmentName(get_ss())
+	);
+}
 ///endregion
