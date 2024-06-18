@@ -39,6 +39,7 @@ namespace PalmyraOS::kernel
   class Process
   {
    public:
+	  using ProcessEntry = int (*)(uint32_t, char**);
 
 	  /**
 	   * @enum Mode (Privilege Level / Ring)
@@ -63,6 +64,29 @@ namespace PalmyraOS::kernel
 		  Killed
 	  };
 
+	  /**
+	   * @enum Priority
+	   * @brief Enum class representing the execution priority of a process.
+	   */
+	  enum class Priority : uint32_t
+	  {
+		  VeryLow  = 1,
+		  Low      = 2,
+		  Medium   = 5,
+		  High     = 7,
+		  VeryHigh = 10
+	  };
+
+	  /**
+	   * @struct Arguments
+	   * @brief Struct representing the arguments to be passed to a process.
+	   */
+	  struct Arguments
+	  {
+		  ProcessEntry entryPoint; ///< Entry point function for the process
+		  uint32_t     argc;       ///< Argument count
+		  char** argv;             ///< Argument values
+	  };
 
    public:
 	  /**
@@ -70,8 +94,11 @@ namespace PalmyraOS::kernel
 	   * @param entryPoint Entry point function for the process
 	   * @param pid Process ID
 	   * @param mode Execution mode of the process
+	   * @param priority Priority of the process
+	   * @param argc Argument count
+	   * @param argv Argument values
 	   */
-	  Process(int (* entryPoint)(), uint32_t pid, Mode mode);
+	  Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char** argv);
 
 	  /**
 	   * @brief Destructor for Process.
@@ -79,12 +106,25 @@ namespace PalmyraOS::kernel
 	  ~Process() = default;
 
 	  /**
-	   * @brief Initializes the paging directory for the process.
-	   * @param mode Execution mode of the process
+	   * @brief Terminates the process.
+	   * @param exitCode Exit code for the process
 	   */
-	  void initializePagingDirectory(Process::Mode mode);
-//	  void loadContext(interrupts::CPURegisters& context) const;
-//	  void saveContext(const interrupts::CPURegisters& context);
+	  void terminate(int exitCode);
+
+	  /**
+	   * @brief Registers pages for the process to keep track of them.
+	   * Note this does not allocate a new page or maps a page.
+	   * @param physicalAddress Starting physical address of the pages
+	   * @param count Number of pages to register
+	   */
+	  void registerPages(void* physicalAddress, size_t count);
+
+	  /**
+	   * @brief De-registers pages for the process.
+	   * @param physicalAddress Starting physical address of the pages
+	   * @param count Number of pages to deregister
+	   */
+	  void deregisterPages(void* physicalAddress, size_t count);
 
 	  /**
 	   * @brief Gets the execution mode of the process.
@@ -122,22 +162,42 @@ namespace PalmyraOS::kernel
 	  { return stack_; }
 
 
+	  // A process can only be moved
 	  DEFINE_DEFAULT_MOVE(Process);
-
-   public:
-	  // Delete copy constructor and assignment operator to prevent copying
 	  REMOVE_COPY(Process);
+   private:
+
+	  static void dispatcher(Arguments* args);
+
+	  /**
+	   * @brief Initializes the paging directory for the process.
+	   * @param mode Execution mode of the process
+	   */
+	  void initializePagingDirectory(Process::Mode mode);
+
+	  void initializeCPUState();
+
+	  void initializeArguments(ProcessEntry entry, uint32_t argc, char** argv);
+
+
    public:
 	  friend class TaskManager;
 
-	  uint32_t                 pid_;                   ///< Process ID
-	  uint32_t                 age_;                   ///< Age of the process
-	  State                    state_;                 ///< State of the process
-	  Mode                     mode_;                  ///< Execution mode of the process
-	  interrupts::CPURegisters stack_{};               ///< CPU context stack
-	  PagingDirectory* pagingDirectory_;               ///< Pointer to the paging directory
-	  void           * userStack_{ nullptr };          ///< Pointer to the user stack
-	  void           * kernelStack_{ nullptr };        ///< Pointer to the kernel stack
+	  uint32_t                                       pid_;             ///< Process ID
+	  uint32_t                                       age_;             ///< Age of the process
+	  State                                          state_;           ///< State of the process
+	  Mode                                           mode_;            ///< Execution mode of the process
+	  Priority                                       priority_;        ///< Priority of the process
+	  interrupts::CPURegisters                       stack_{};         ///< CPU context stack
+	  int                                            exitCode_{ -1 };  ///< Return value of the process
+	  std::vector<void*, KernelHeapAllocator<void*>> physicalPages_; ///< Holds physical pages to used by the process
+	  std::vector<char, KernelHeapAllocator<char>>   stdin_;           ///< proc/self/fd/0
+	  std::vector<char, KernelHeapAllocator<char>>   stdout_;          ///< proc/self/fd/1
+	  std::vector<char, KernelHeapAllocator<char>>   stderr_;          ///< proc/self/fd/2
+
+	  PagingDirectory* pagingDirectory_{};    ///< Pointer to the paging directory
+	  void           * userStack_{};          ///< Pointer to the user stack
+	  void           * kernelStack_{};        ///< Pointer to the kernel stack
   };
 
   // Type alias for a vector of processes
@@ -161,7 +221,13 @@ namespace PalmyraOS::kernel
 	   * @param mode Execution mode of the new process
 	   * @return Pointer to the created process
 	   */
-	  static Process* newProcess(int (* entryPoint)(), Process::Mode mode);
+	  static Process* newProcess(
+		  Process::ProcessEntry entryPoint,
+		  Process::Mode mode,
+		  Process::Priority priority,
+		  uint32_t argc,
+		  char** argv
+	  );
 
 	  /**
 	   * @brief Gets the current running process.
@@ -176,7 +242,7 @@ namespace PalmyraOS::kernel
 	   */
 	  static Process* getProcess(uint32_t pid);
 
-   private:
+   public:
 	  /**
 	   * @brief Interrupt handler for process switching.
 	   * @param regs Pointer to CPU registers at the time of the interrupt

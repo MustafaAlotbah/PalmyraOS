@@ -12,6 +12,8 @@
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/SystemCalls.h"
 
+#include "palmyraOS/unistd.h"
+#include "libs/string.h"
 
 
 // Pointers to the start and end of the constructors section (see linker.ld)
@@ -29,24 +31,12 @@ extern "C" uint32_t get_ss();
 
 namespace Processes
 {
-  uint32_t proc_0_esp     = 0;
-  uint64_t proc_0_counter = 0;
+  uint64_t proc_1_counter = 0;
+  uint64_t proc_2_counter = 0;
   uint32_t proc_1_pid     = 0;
+  uint32_t proc_2_pid     = 0;
 
-  uint32_t get_pid()
-  {
-	  uint32_t pid;
-	  asm("mov $20, %%eax\n\t"  // System call number for getpid (20)
-		  "int $0x80\n\t"       // Interrupt to trigger system call
-		  "mov %%eax, %0"
-		  : "=r" (pid)          // Output: store the result in pid
-		  :                     // No inputs
-		  : "%eax"              // Clobbered register
-		  );
-	  return pid;
-  }
-
-  void print_number(uint32_t number, uint64_t counter)
+  void print_number()
   {
 	  using namespace PalmyraOS;
 	  auto& vbe = *PalmyraOS::kernel::vbe_ptr;
@@ -62,12 +52,15 @@ namespace Processes
 	  brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
 	  textRenderer << "\n";
 
+	  textRenderer << "Allocated Pages: " << DEC() << kernel::kernelPagingDirectory_ptr->getNumAllocatedPages() << "\n";
+
 	  // Information
-	  textRenderer << "Stack Pointer 0: " << HEX() << get_esp() << "\n";
-	  textRenderer << "Stack Pointer 1: " << HEX() << number << "\n";
-	  textRenderer << "Counter: " << DEC() << counter << "\n";
+	  textRenderer << "Counter 1: " << DEC() << proc_1_counter << "\n";
+	  textRenderer << "Counter 2: " << DEC() << proc_2_counter << "\n";
+
 	  textRenderer << "proc_0_pid: " << DEC() << get_pid() << "\n";
 	  textRenderer << "proc_1_pid: " << DEC() << proc_1_pid << "\n";
+	  textRenderer << "proc_2_pid: " << DEC() << proc_2_pid << "\n";
 
 	  textRenderer << "proc 0 esp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.esp << "\n";
 	  textRenderer << "proc 0 usp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.userEsp << "\n";
@@ -75,27 +68,62 @@ namespace Processes
 	  textRenderer << "proc 1 esp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.esp << "\n";
 	  textRenderer << "proc 1 usp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.userEsp << "\n";
 
+	  textRenderer << "proc 2 ec: " << DEC() << kernel::TaskManager::getProcess(2)->exitCode_ << "\n";
+	  textRenderer << "proc 2 state: " <<
+				   (
+					   kernel::TaskManager::getProcess(2)->state_ == kernel::Process::State::Terminated ?
+					   "Terminated" : "Not terminated"
+				   )
+				   << "\n";
+
+	  char     proc_stdout[50] = { 0 };
+	  for (int i               = 0; i < kernel::TaskManager::getProcess(2)->stdout_.size(); ++i)
+	  {
+		  if (i >= 50) break;
+		  proc_stdout[i] = kernel::TaskManager::getProcess(2)->stdout_[i];
+	  }
+	  textRenderer << "proc 2 stdout: " << proc_stdout << "\n";
 
 	  textRenderer << SWAP_BUFF();
   }
 
-  int process_0()
+  int process_0(uint32_t argc, char* argv[])
   {
 	  while (true)
 	  {
-		  print_number(proc_0_esp, proc_0_counter);
+		  print_number();
 	  }
   }
 
-  int process_1()
+  int process_1(uint32_t argc, char* argv[])
   {
 	  while (true)
 	  {
-		  proc_0_esp = get_esp();
-		  proc_0_counter++;
+		  proc_1_counter++;
 		  proc_1_pid = get_pid();
 	  }
   }
+
+  int process_2(uint32_t argc, char* argv[])
+  {
+	  if (argc > 0)
+	  {
+		  write(1, argv[0], strlen(argv[0]));
+	  }
+	  while (true)
+	  {
+		  proc_2_counter++;
+		  proc_2_pid = get_pid();
+		  if (proc_2_counter >= 1'000'000)
+		  {
+			  const char* message = "\nI am exiting now!!\n";
+			  write(1, message, 19);
+			  _exit(0);
+		  }
+	  }
+  }
+
+
 }
 
 
@@ -211,8 +239,34 @@ void callConstructors()
 	kernel::TaskManager::initialize();
 	kernel::SystemCallsManager::initialize();
 
-	kernel::TaskManager::newProcess(Processes::process_0, kernel::Process::Mode::Kernel);
-	kernel::TaskManager::newProcess(Processes::process_1, kernel::Process::Mode::User);
+	{
+		char* argv0[] = { nullptr };
+		kernel::TaskManager::newProcess(
+			Processes::process_0,
+			kernel::Process::Mode::Kernel,
+			kernel::Process::Priority::Medium,
+			0, argv0
+		);
+
+		char* argv1[] = { const_cast<char*>("proc1.exe"), const_cast<char*>("-count"), nullptr };
+		kernel::TaskManager::newProcess(
+			Processes::process_1,
+			kernel::Process::Mode::User,
+			kernel::Process::Priority::Low,
+			2,
+			argv1
+		);
+
+		char* argv2[] =
+				{ const_cast<char*>("proc2.exe"), const_cast<char*>("-count"), const_cast<char*>("arg3"), nullptr };
+		kernel::TaskManager::newProcess(
+			Processes::process_2,
+			kernel::Process::Mode::User,
+			kernel::Process::Priority::Low,
+			2,
+			argv2
+		);
+	}
 
 
 
