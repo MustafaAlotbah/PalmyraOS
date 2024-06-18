@@ -11,6 +11,23 @@
 
 extern uint32_t placement_address;
 
+// Memory regions defined by the linker script
+extern "C" uint32_t __mem_end;
+extern "C" uint32_t __mem_multiboot_start;
+extern "C" uint32_t __mem_multiboot_end;
+extern "C" uint32_t __mem_rodata_start;
+extern "C" uint32_t __mem_rodata_end;
+extern "C" uint32_t __mem_text_start;
+extern "C" uint32_t __mem_text_end;
+extern "C" uint32_t __mem_cons_start;
+extern "C" uint32_t __mem_cons_end;
+extern "C" uint32_t __mem_data_start;
+extern "C" uint32_t __mem_data_end;
+extern "C" uint32_t __mem_bss_start;
+extern "C" uint32_t __mem_bss_end;
+extern "C" uint32_t __end;
+
+
 namespace PalmyraOS::kernel
 {
   // Frequency of the Advanced Programmable Interrupt Controller (APIC)
@@ -21,18 +38,6 @@ namespace PalmyraOS::kernel
 
   // Space to which we can still call kmalloc after we initialize the physical memory and before paging is enabled
   constexpr uint32_t SafeSpace = 32 * 1024 * 1024;
-
-  /**
-   * Sets up the kernel. This function is called after the system has been initialized.
-   * It initializes various subsystems and enters the main kernel loop.
-   */
-  [[noreturn]] void setup();
-
-  /**
-   * @brief Updates the system with a dummy uptime.
-   * @param dummy_up_time The dummy uptime value.
-   */
-  void update(uint64_t dummy_up_time);
 
   /**
    * Pointer to the VBE (VESA BIOS Extensions) object.

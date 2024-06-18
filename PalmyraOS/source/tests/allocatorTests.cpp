@@ -5,6 +5,7 @@
 //#include <map>
 //#include <set>
 //#include <string>
+#include "libs/string.h" // always on heap, has no problems
 
 
 bool PalmyraOS::Tests::Allocator::ExceptionTester::exceptionOccurred_ = false;
@@ -176,27 +177,33 @@ bool PalmyraOS::Tests::Allocator::testSet()
 bool PalmyraOS::Tests::Allocator::testString()
 {
 	// TODO (Heap overwriting beyond reserved, not reallocating)
+
+	using String = types::string<char, kernel::HeapAllocator<char>>;
+
 	bool result = true;
-//	kernel::HeapManager heapManager;
-//	kernel::HeapAllocator<char> allocator(heapManager);
-//	ExceptionTester::setup();
-//
-//	std::basic_string<char, std::char_traits<char>, kernel::HeapAllocator<char>> str(allocator);
-//	str.reserve(50);	 // force memory on heap
-//	str = "hello";
-//
-//	volatile char ch = str.at(10);    // should throw an exception
+	kernel::HeapManager heapManager;
+	kernel::HeapAllocator<char> allocator(heapManager);
+	kernel::HeapAllocator<String> stringAllocator(heapManager);
+	ExceptionTester::setup();
+
+	String str(allocator);
+	str.reserve(50);     // force memory on heap
+	str = "hello";
+
+	volatile char ch = str.at(10);    // should throw an exception
 //	if (!ExceptionTester::exceptionOccurred()) result = false;
-//
-//	str = "hello world!";
-//
-//	ch = str.at(5);    // should not throw an exception
-//	if (ExceptionTester::exceptionOccurred()) result = false;
-//
-//	str = "123456789 123456789 123456789 123456789 123456789 123456789"; // not working when more than reserved
-//
-//
-//	ExceptionTester::reset();
+
+	str = "hello world!";
+
+	ch = str.at(5);    // should not throw an exception
+	if (ExceptionTester::exceptionOccurred()) result = false;
+
+	str = "123456789 123456789 123456789 123456789 123456789 123456789"; // not working when more than reserved
+
+	auto subs = str.split(stringAllocator, ' ');
+
+
+	ExceptionTester::reset();
 	return result;
 }
 

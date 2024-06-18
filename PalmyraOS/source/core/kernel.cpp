@@ -288,4 +288,7 @@ void PalmyraOS::kernel::testMemory()
 	if (!Tests::Allocator::testVectorOfClasses())
 		kernel::kernelPanic("Testing Allocator Vector Classes failed!");
 
+	if (!Tests::Allocator::testString())
+		kernel::kernelPanic("Testing Allocator String failed!");
+
 }

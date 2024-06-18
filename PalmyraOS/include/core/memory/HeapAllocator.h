@@ -66,7 +66,7 @@ namespace PalmyraOS::kernel
 	   */
 	  pointer allocate(size_type n)
 	  {
-		  pointer p = static_cast<pointer>(heapManager_.alloc(n * sizeof(T)));
+		  auto p = static_cast<pointer>(heapManager_.alloc(n * sizeof(T)));
 		  if (p == nullptr) kernel::kernelPanic("Heap Allocator Error::allocate p=nullptr!");
 		  return p;
 	  }
@@ -94,7 +94,7 @@ namespace PalmyraOS::kernel
 	  void construct(U* p, Args&& ... args)
 	  {
 		  if (p == nullptr) kernel::kernelPanic("Heap Allocator Error::construct p=nullptr!");
-		  ::new((void*)p) U(std::forward<Args>(args)...);
+		  ::new(static_cast<void*>(p)) U(std::forward<Args>(args)...);
 	  }
 
 	  /**
