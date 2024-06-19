@@ -12,6 +12,7 @@
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/SystemCalls.h"
 #include "core/tasks/WindowManager.h"
+#include "core/peripherals/RTC.h"
 
 #include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
@@ -65,7 +66,6 @@ namespace Processes
 		  sched_yield();
 	  }
   }
-
 
   int process_1(uint32_t argc, char* argv[])
   {
@@ -149,8 +149,6 @@ namespace Processes
 
 	  return -1;
   }
-
-
 
 
 }
@@ -256,6 +254,11 @@ void callConstructors()
 
 	kernel::testMemory();
 	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
+
+	// ----------------------- Initialize Peripherals -------------------------------
+
+	kernel::RTC::initialize();
+
 
 	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();

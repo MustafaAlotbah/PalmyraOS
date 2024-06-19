@@ -5,7 +5,7 @@
 
 // Globals
 PalmyraOS::kernel::interrupts::InterruptHandler PalmyraOS::kernel::SystemClock::handler_ = nullptr;
-uint64_t PalmyraOS::kernel::SystemClock::ticks_     = 0;
+uint64_t PalmyraOS::kernel::SystemClock::ticks_ = 1000;
 uint32_t PalmyraOS::kernel::SystemClock::frequency_ = 0;
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::SystemClock::PITCommandPort(PIT_CMD_PORT);
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::SystemClock::PITDataPort(PIT_DAT_PORT);
