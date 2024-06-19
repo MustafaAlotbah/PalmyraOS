@@ -34,11 +34,11 @@ dd 0                         ; 0: Graphics, 1: Text Mode
 ; dd 1280                      ; Screen width requested
 ; dd 1024                       ; Screen height requested
 
-; dd 1024                     ; Screen width requested
-; dd 768                       ; Screen height requested
+dd 1024                     ; Screen width requested
+dd 768                       ; Screen height requested
 
-dd 800                      ; Screen width requested
-dd 600                       ; Screen height requested
+; dd 800                      ; Screen width requested
+; dd 600                       ; Screen height requested
 
 dd 32                        ; Bits per pixel
 

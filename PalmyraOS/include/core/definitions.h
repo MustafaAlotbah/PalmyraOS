@@ -18,6 +18,14 @@
  */
 #define DEFINE_DEFAULT_MOVE(cls) cls(cls&& other) noexcept = default; cls& operator=(cls&& other) noexcept = default;
 
+
+/**
+ * @brief Macro to compute the ceiling of the division of a value by the page size.
+ * This is useful for aligning values to page boundaries.
+ * @param value The value to be divided.
+ */
+#define CEIL_DIV_PAGE_SIZE(value) (((value) + (1 << PAGE_BITS) - 1) >> PAGE_BITS)
+
 /**
  * Typedef for size_t to ensure compatibility with the 32-bit system.
  */

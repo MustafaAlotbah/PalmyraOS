@@ -119,6 +119,9 @@ namespace PalmyraOS::types
 	  explicit string(_Alloc alloc) : data_(alloc)
 	  {}
 
+	  // Constructors
+	  string() = default;
+
 	  // Range constructor with allocator
 	  template<typename InputIt>
 	  string(InputIt first, InputIt last, const _Alloc& alloc)

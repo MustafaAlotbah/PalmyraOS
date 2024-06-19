@@ -24,6 +24,8 @@ namespace PalmyraOS::kernel
 	  static uint64_t getTicks();
 	  static uint64_t getMilliseconds();
 	  static uint64_t getSeconds();
+	  static inline uint32_t getFrequency()
+	  { return frequency_; };
    private:
 	  static uint32_t* handle_interrupt(interrupts::CPURegisters*);
    private:

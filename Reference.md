@@ -18,6 +18,15 @@ PalmyraOS/
     └── kernel.cpp
 ```
 
+## Basic Concepts
+
+1. CPU Registers
+
+2. cdecl Conventions
+    - Returning a value
+    - Passing arguments
+
+
 ## Roadmap
 
 1. [x] MultiBooting
@@ -61,9 +70,9 @@ PalmyraOS/
 # System Calls Roadmap
 
 1. [ ] `int execve(const char *filename, char *const argv[], char *const envp[])`:
-2. [ ] `void _exit(int status)`
+2. [x] `void _exit(int status)`
 3. [ ] `pid_t wait(int *status)`
-4. [ ] `pid_t getpid(void)`
+4. [x] `pid_t getpid(void)`
 5. [ ] `pid_t getppid(void)`
 6. [ ] `int kill(pid_t pid, int sig)`
 

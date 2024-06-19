@@ -58,7 +58,6 @@ PalmyraOS::kernel::Process::Process(
 		// Adjust the stack pointer to point to the interrupt number location.
 		stack_.esp += offsetof(interrupts::CPURegisters, intNo); // 52
 	}
-
 }
 
 void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
@@ -86,6 +85,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
 			PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
 		);
 	}
+	// Page directory is initialized
 
 	// 2. Map the kernel stack for both kernel and user mode processes.
 	kernelStack_ = kernelPagingDirectory_ptr->allocatePage();
@@ -100,13 +100,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
 	if (mode == Process::Mode::User)
 	{
 		// Allocate and map the user stack.
-		userStack_ = kernelPagingDirectory_ptr->allocatePage();
-		registerPages(userStack_, 1);
-		pagingDirectory_->mapPage(
-			userStack_,
-			userStack_,
-			PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
-		);
+		userStack_ = allocatePages(1);
 
 		// TODO Temporarily map the kernel code space for debugging purposes.
 		pagingDirectory_->mapPages(
@@ -167,13 +161,7 @@ void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_
 
 	// Allocate a single block of memory for argv and the strings
 	size_t numPages = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
-	void* argv_block = kernelPagingDirectory_ptr->allocatePages(numPages);
-	registerPages(argv_block, numPages);
-	pagingDirectory_->mapPage(
-		argv_block,
-		argv_block,
-		PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
-	);
+	void* argv_block = allocatePages(numPages);
 	char** argv_copy = static_cast<char**>(argv_block);
 	char* str_copy   = reinterpret_cast<char*>(argv_block) + (argc + 1) * sizeof(char*);
 
@@ -220,14 +208,22 @@ void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_
 
 void PalmyraOS::kernel::Process::terminate(int exitCode)
 {
-	state_    = State::Terminated;
-	age_      = 0;
+	state_ = Process::State::Terminated;
 	exitCode_ = exitCode;
+}
+
+void PalmyraOS::kernel::Process::kill()
+{
+	state_ = State::Killed;
+	age_   = 0;
+	// exitCode_ is set by _exit syscall
 
 	for (auto& physicalPage : physicalPages_)
 	{
 		kernel::kernelPagingDirectory_ptr->freePage(physicalPage);
 	}
+
+	// TODO free directory table arrays if user process
 }
 
 void PalmyraOS::kernel::Process::dispatcher(PalmyraOS::kernel::Process::Arguments* args)
@@ -264,6 +260,41 @@ void PalmyraOS::kernel::Process::deregisterPages(void* physicalAddress, size_t c
 	}
 }
 
+void* PalmyraOS::kernel::Process::allocatePages(size_t count)
+{
+	// allocate the pages in kernel directory (so that they are accessible in syscalls)
+	void* address = kernelPagingDirectory_ptr->allocatePages(count);
+
+	// register them to keep track of them when we terminate
+	registerPages(address, count);
+
+	// Make them accessible to the process
+	pagingDirectory_->mapPages(
+		address,
+		address,
+		count,
+		PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
+	);
+
+	return address;
+}
+
+bool PalmyraOS::kernel::Process::checkStackOverflow() const
+{
+	if (stack_.esp < (reinterpret_cast<uint32_t>(kernelStack_)))
+	{
+		// Trigger a kernel panic or handle stack overflow appropriately
+		kernel::kernelPanic("Kernel Stack overflow detected for PID: %d", pid_);
+		return false;
+	}
+	else if (mode_ == Mode::User && stack_.userEsp < (reinterpret_cast<uint32_t>(userStack_)))
+	{
+		// Trigger a kernel panic or handle stack overflow appropriately
+		kernel::kernelPanic("User Stack overflow detected for PID: %d", pid_);
+		return false;
+	}
+	return true;
+}
 ///endregion
 
 
@@ -309,6 +340,16 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(
 
 uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	// kill terminated processes
+	for (int i = 0; i < processes_.size(); ++i)
+	{
+		if (i == currentProcessIndex_) continue; // we cannot kill the process in its own stack (-> Page Fault)
+		if (processes_[i].state_ == Process::State::Terminated)
+		{
+			processes_[i].kill();
+		}
+	}
+
 	// If there are no processes, or we are in an atomic section, return the current registers.
 	if (processes_.empty()) return reinterpret_cast<uint32_t*>(regs);
 	if (atomicSectionLevel_ > 0) return reinterpret_cast<uint32_t*>(regs);
@@ -319,15 +360,23 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 		// save current process state
 		processes_[currentProcessIndex_].stack_ = *regs;
 
-		// Decrease the age of the current process.
-		if (processes_[currentProcessIndex_].age_ > 0) processes_[currentProcessIndex_].age_--;
-
-		// If the age of the current process is still greater than 0, continue running it.
-		if (processes_[currentProcessIndex_].age_ > 0) return reinterpret_cast<uint32_t*>(regs);
-
-		// If the age reaches 0, set the current process state to Ready.
-		if (processes_[currentProcessIndex_].state_ != Process::State::Terminated)
+		// check stackOverflow
+		if (!processes_[currentProcessIndex_].checkStackOverflow())
 		{
+			// TODO handle here e.g. .terminate(-3)
+		}
+
+		// if the process is not terminated or killed
+		if (processes_[currentProcessIndex_].state_ != Process::State::Terminated
+			&& processes_[currentProcessIndex_].state_ != Process::State::Killed)
+		{
+			// Decrease the age of the current process.
+			if (processes_[currentProcessIndex_].age_ > 0) processes_[currentProcessIndex_].age_--;
+
+			// If the age of the current process is still greater than 0, continue running it.
+			if (processes_[currentProcessIndex_].age_ > 0) return reinterpret_cast<uint32_t*>(regs);
+
+			// If the age reaches 0, set the current process state to Ready.
 			processes_[currentProcessIndex_].state_ = Process::State::Ready;
 			processes_[currentProcessIndex_].age_   = static_cast<uint32_t>(processes_[currentProcessIndex_].priority_);
 		}
@@ -345,14 +394,14 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 		currentProcessIndex_ = nextProcessIndex;
 	}
 
-
 	// Set the new process state to running.
 	processes_[currentProcessIndex_].state_ = Process::State::Running;
 
 	// If the new process is in user mode, set the kernel stack.
 	if (processes_[currentProcessIndex_].mode_ == Process::Mode::User)
+		// set the kernel stack at the top of the kernel stack
 		kernel::gdt_ptr->setKernelStack(
-			reinterpret_cast<uint32_t>(processes_[currentProcessIndex_].kernelStack_)
+			reinterpret_cast<uint32_t>(processes_[currentProcessIndex_].kernelStack_) + STACK_SIZE - 1
 		);
 
 	// Return the new process's stack pointer.
@@ -368,9 +417,21 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::getCurrentProcess()
 {
 	return &processes_[currentProcessIndex_];
 }
+
 PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::getProcess(uint32_t pid)
 {
 	return &processes_[pid];
+}
+
+void PalmyraOS::kernel::TaskManager::startAtomicOperation()
+{
+	if (processes_[currentProcessIndex_].mode_ != Process::Mode::Kernel) return;
+	atomicSectionLevel_++;
+}
+
+void PalmyraOS::kernel::TaskManager::endAtomicOperation()
+{
+	if (atomicSectionLevel_ > 0) atomicSectionLevel_--;
 }
 
 

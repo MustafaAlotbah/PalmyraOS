@@ -328,27 +328,27 @@ void panicRegisters(const char* message, PalmyraOS::kernel::interrupts::CPURegis
 	----------------------------
 	Registers:
 	Data Segment:	gs:		%d	(%s)
-				fs:		%d	(%s)
-				es:		%d	(%s)
-				ds:		%d	(%s)
-	Pointers:		edi:		%d
-				esi:		%d
-				ebp:		%d
-				esp:		%d
-	General P:		eax:		%d
-				ebx:		%d
-				ecx:		%d
-				edx:		%d
+				fs:		%X	(%s)
+				es:		%X	(%s)
+				ds:		%X	(%s)
+	Pointers:		edi:		%X
+				esi:		%X
+				ebp:		%X
+				esp:		%X
+	General P:		eax:		%X
+				ebx:		%X
+				ecx:		%X
+				edx:		%X
 	Interrupt:		intNo:	%d	(%s)
 				errorCode:%d
-	Hardware:		eip:		%d
-				cs:		%d	(%s)
-				eflags:	%d
-				ss:esp:	%d
-				ss:		%d	(%s)
+	Hardware:		eip:		%X
+				cs:		%X	(%s)
+				eflags:	%X
+				ss:esp:	%X
+				ss:		%X	(%s)
 	----------------------------
-	curr_esp:	%d
-	curr_ss:	%d	(%s)
+	curr_esp:	%X
+	curr_ss:	%X	(%s)
 )",
 		message,
 		regs->gs,

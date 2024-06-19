@@ -69,6 +69,7 @@ uint32_t* PalmyraOS::kernel::SystemClock::handle_interrupt(interrupts::CPURegist
 
 	return (uint32_t*)regs;
 }
+
 uint16_t PalmyraOS::kernel::SystemClock::readCurrentCount()
 {
 	uint8_t lsb, msb;

@@ -10,7 +10,8 @@ namespace PalmyraOS::kernel
 {
 
   // Maximum number of processes supported
-  constexpr int MAX_PROCESSES = 512;
+  constexpr uint32_t MAX_PROCESSES = 512;
+  constexpr uint32_t STACK_SIZE    = 0x1000; // 4KB guard
 
   /**
    * @enum EFlags
@@ -57,11 +58,11 @@ namespace PalmyraOS::kernel
 	   */
 	  enum class State : uint32_t
 	  {
-		  New,
-		  Ready,
-		  Running,
-		  Terminated,
-		  Killed
+		  New,            // Unused
+		  Ready,        // Ready to run
+		  Running,        // Currently running
+		  Terminated,    // Awaiting to be killed
+		  Killed        // Killed, memory freed
 	  };
 
 	  /**
@@ -106,10 +107,16 @@ namespace PalmyraOS::kernel
 	  ~Process() = default;
 
 	  /**
-	   * @brief Terminates the process.
+     * @brief Terminates the process with the given exit code.
 	   * @param exitCode Exit code for the process
 	   */
 	  void terminate(int exitCode);
+
+	  /**
+	   * @brief Kills the process.
+	   * Note: This cannot be called within the process stack, as memory will be freed!
+	   */
+	  void kill();
 
 	  /**
 	   * @brief Registers pages for the process to keep track of them.
@@ -125,6 +132,13 @@ namespace PalmyraOS::kernel
 	   * @param count Number of pages to deregister
 	   */
 	  void deregisterPages(void* physicalAddress, size_t count);
+
+	  /**
+	   * @brief Allocates pages for the process.
+	   * @param count Number of pages to allocate.
+	   * @return Pointer to the allocated pages.
+	   */
+	  void* allocatePages(size_t count);
 
 	  /**
 	   * @brief Gets the execution mode of the process.
@@ -161,12 +175,21 @@ namespace PalmyraOS::kernel
 	  [[nodiscard]] const interrupts::CPURegisters& getContext() const
 	  { return stack_; }
 
+	  /**
+	   * @brief Checks for stack overflow.
+	   * @return true if stack is intact
+	   */
+	  [[nodiscard]] bool checkStackOverflow() const;
 
 	  // A process can only be moved
 	  DEFINE_DEFAULT_MOVE(Process);
 	  REMOVE_COPY(Process);
    private:
 
+	  /**
+	   * @brief Wrapper for the process.
+	   * @param args Pointer to the process arguments.
+	   */
 	  static void dispatcher(Arguments* args);
 
 	  /**
@@ -175,8 +198,17 @@ namespace PalmyraOS::kernel
 	   */
 	  void initializePagingDirectory(Process::Mode mode);
 
+	  /**
+	   * @brief Initializes the CPU state for the process.
+	   */
 	  void initializeCPUState();
 
+	  /**
+	   * @brief Initializes the arguments for the process.
+	   * @param entry Entry point function for the process.
+	   * @param argc Argument count.
+	   * @param argv Argument values.
+	   */
 	  void initializeArguments(ProcessEntry entry, uint32_t argc, char** argv);
 
 
@@ -190,7 +222,7 @@ namespace PalmyraOS::kernel
 	  Priority                                       priority_;        ///< Priority of the process
 	  interrupts::CPURegisters                       stack_{};         ///< CPU context stack
 	  int                                            exitCode_{ -1 };  ///< Return value of the process
-	  std::vector<void*, KernelHeapAllocator<void*>> physicalPages_; ///< Holds physical pages to used by the process
+	  std::vector<void*, KernelHeapAllocator<void*>> physicalPages_;   ///< Holds physical pages to used by the process
 	  std::vector<char, KernelHeapAllocator<char>>   stdin_;           ///< proc/self/fd/0
 	  std::vector<char, KernelHeapAllocator<char>>   stdout_;          ///< proc/self/fd/1
 	  std::vector<char, KernelHeapAllocator<char>>   stderr_;          ///< proc/self/fd/2
@@ -241,6 +273,10 @@ namespace PalmyraOS::kernel
 	   * @return Pointer to the process
 	   */
 	  static Process* getProcess(uint32_t pid);
+
+	  // atomic TODO: other solution?
+	  static void startAtomicOperation();
+	  static void endAtomicOperation();
 
    public:
 	  /**
