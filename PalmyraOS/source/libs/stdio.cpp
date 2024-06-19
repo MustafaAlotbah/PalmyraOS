@@ -9,7 +9,9 @@ size_t vsprintf(char* str, const char* format, va_list args)
 {
 	const char* traverse;
 	char      * s;
-	int d;
+	int      d;
+	double   f;
+	uint32_t len;
 	char* out = str;
 
 	for (traverse = format; *traverse; traverse++)
@@ -28,6 +30,24 @@ size_t vsprintf(char* str, const char* format, va_list args)
 			continue;
 		}
 
+		// Parse width and precision
+		int width     = 0;
+		int precision = -1;
+		if (*traverse >= '0' && *traverse <= '9')
+		{
+			width = atoi(traverse);
+			while (*traverse >= '0' && *traverse <= '9')
+				traverse++;
+		}
+
+		if (*traverse == '.')
+		{
+			traverse++;
+			precision = atoi(traverse);
+			while (*traverse >= '0' && *traverse <= '9')
+				traverse++;
+		}
+
 		switch (*traverse)
 		{
 			case 's':  // String
@@ -39,6 +59,15 @@ size_t vsprintf(char* str, const char* format, va_list args)
 				d = va_arg(args, int32_t);
 				char num_str[40];
 				itoa((int)d, num_str, 10);
+
+				// Handle width formatting with padding
+				len = strlen(num_str);
+				if (width > len)
+				{
+					memset(out, '0', width - len);
+					out += width - len;
+				}
+
 				strcpy(out, num_str);
 				out += strlen(num_str);
 				break;
@@ -80,6 +109,13 @@ size_t vsprintf(char* str, const char* format, va_list args)
 					*out++ = '%';
 					*out++ = 'z';
 				}
+				break;
+			case 'f':  // Hexadecimal (uppercase)
+				f = va_arg(args, double);
+				if (precision == -1) precision = 6;  // Default precision is 6
+				ftoa(f, num_str, precision);
+				strcpy(out, num_str);
+				out += strlen(num_str);
 				break;
 			default:
 				*out++ = '%'; // Include the '%'

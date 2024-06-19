@@ -39,7 +39,8 @@ extern "C" uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint3
 	return destination;
 }
 
-void *memset(void* ptr, uint8_t value, size_t num) {
+extern "C" void* memset(void* ptr, uint8_t value, size_t num)
+{
 	auto* p = (unsigned char*) ptr;
 	for (size_t i = 0; i < num; i++) {
 		p[i] = value;

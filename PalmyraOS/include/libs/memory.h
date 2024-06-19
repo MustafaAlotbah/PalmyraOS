@@ -46,7 +46,7 @@ extern "C" uint32_t* memcpy(uint32_t* destination, const uint32_t* source, uint3
  * @param num Number of bytes to be set to the value.
  * @return A pointer to the memory area `ptr`.
  */
-void *memset(void* ptr, uint8_t value, size_t num);
+extern "C" void* memset(void* ptr, uint8_t value, size_t num);
 
 /**
  * Moves `n` bytes from the memory area `src` to the memory area `dest`. The memory areas may overlap: copying takes place as though

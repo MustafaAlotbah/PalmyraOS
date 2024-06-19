@@ -14,6 +14,7 @@
 #define BIN() kernel::TextRenderer::NumeralSystem::Bin
 #define SWAP_BUFF() kernel::TextRenderer::Command::SwapBuffers
 
+
 namespace PalmyraOS::kernel
 {
 
@@ -208,10 +209,15 @@ namespace PalmyraOS::kernel
 	  TextRenderer& operator<<(uint16_t num);
 
 	  // Overload for << streaming operator for color commands
+	  TextRenderer& operator<<(double num);
+
+	  // Overload for << streaming operator for color commands
 	  TextRenderer& operator<<(NumeralSystem system);
 
 	  // Overload for << streaming operator for some commands
 	  TextRenderer& operator<<(Command command);
+
+	  void setPrecision(uint8_t precision);
 
 	  REMOVE_COPY(TextRenderer);
    private:
@@ -222,6 +228,7 @@ namespace PalmyraOS::kernel
 	  fonts::Font& font_;                                   // Reference to the font
 	  Color         textColor_{ 255, 255, 255 };            // Current text color (default is white)
 	  NumeralSystem representation{ NumeralSystem::Dec };   // Current numeral system (default is decimal)
+	  uint8_t precision_{ 3 };                                // Current precision of floats(default is 3)
 
 	  uint32_t cursor_x{ 0 };                                // Current x-coordinate of the cursor
 	  uint32_t cursor_y{ 0 };                                // Current y-coordinate of the cursor

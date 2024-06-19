@@ -270,6 +270,20 @@ PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(Pal
 	}
 	return *this;
 }
+PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(double num)
+{
+	char buffer[1024];  // Adjust size as necessary for your needs
+	char format[8];
+	snprintf(format, sizeof(format), "%%.%df", precision_);
+	snprintf(buffer, sizeof(buffer), format, num);
+	putString(buffer);
+	return *this;
+}
+
+void PalmyraOS::kernel::TextRenderer::setPrecision(uint8_t precision)
+{
+	precision_ = precision;
+}
 
 ///endregion
 

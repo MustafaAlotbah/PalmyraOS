@@ -1,5 +1,6 @@
 #include "libs/stdlib.h"
 #include "libs/ctype.h"
+#include "libs/string.h"
 
 
 // Convert string to signed long
@@ -288,4 +289,39 @@ void reverse(char str[], int length)
 		start++;
 		end--;
 	}
+}
+
+void ftoa(double value, char* str, int precision)
+{
+	char* out = str;
+
+	// Handle negative numbers
+	if (value < 0)
+	{
+		*out++ = '-';
+		value = -value;
+	}
+
+	// Extract integer part
+	int integer_part = (int)value;
+	value -= integer_part;
+
+	// Convert integer part
+	itoa(integer_part, out, 10);
+	out += strlen(out);
+
+	// Add decimal point
+	*out++ = '.';
+
+	// Extract fractional part
+	for (int i = 0; i < precision; i++)
+	{
+		value *= 10;
+		int digit = (int)value;
+		*out++ = '0' + digit;
+		value -= digit;
+	}
+
+	// Null-terminate the string
+	*out = '\0';
 }

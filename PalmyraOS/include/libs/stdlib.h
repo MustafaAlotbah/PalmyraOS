@@ -46,3 +46,6 @@ void itoa64(int64_t num, char* str, int base, bool upper_case);
 void uitoa64(uint64_t num, char* str, int base, bool upper_case);
 
 void reverse(char str[], int length);
+
+// Helper function to convert a floating-point number to string
+void ftoa(double value, char* str, int precision = 6);
