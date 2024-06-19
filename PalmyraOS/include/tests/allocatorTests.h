@@ -23,6 +23,7 @@ namespace PalmyraOS::Tests::Allocator
   bool testVector();
   bool testVectorOfClasses();
   bool testMap();
+  bool testUnorderedMap();
   bool testSet();
   bool testString();
 

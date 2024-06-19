@@ -291,4 +291,13 @@ void PalmyraOS::kernel::testMemory()
 	if (!Tests::Allocator::testString())
 		kernel::kernelPanic("Testing Allocator String failed!");
 
+	if (!Tests::Allocator::testMap())
+		kernel::kernelPanic("Testing Allocator Map failed!");
+
+	if (!Tests::Allocator::testSet())
+		kernel::kernelPanic("Testing Allocator Map failed!");
+
+	if (!Tests::Allocator::testUnorderedMap())
+		kernel::kernelPanic("Testing Allocator Unordered Map failed!");
+
 }
