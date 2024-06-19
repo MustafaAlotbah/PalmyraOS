@@ -1,5 +1,5 @@
 
-#include "core/Logger.h"
+#include "core/peripherals/Logger.h"
 
 #include "core/port.h"
 #include "core/cpu.h"

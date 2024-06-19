@@ -7,10 +7,11 @@ LD_PARAMS = -melf_i386
 # Define subdirectories containing source files
 SUBDIRS := \
 	source/ \
-	source/boot/ \
 	source/libs/ \
 	source/tests \
 	source/core/ \
+	source/core/boot/ \
+	source/core/peripherals/ \
 	source/core/memory \
 	source/core/std \
 	source/core/tasks \
@@ -53,7 +54,7 @@ iso: kernel.bin
 	@mkdir -p bin/iso/boot
 	@mkdir -p bin/iso/boot/grub
 	@cp bin/kernel.bin bin/iso/boot
-	@cp source/boot/grub.cfg bin/iso/boot/grub/grub.cfg
+	@cp source/core/boot/grub.cfg bin/iso/boot/grub/grub.cfg
 	@grub-mkrescue --output bin/kernel.iso bin/iso
 	@echo "ISO image created"
 
