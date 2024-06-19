@@ -135,5 +135,40 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		regs->eax = 0;
 	}
 
+
+	/***** Custom System Calls *****/
+
+	// uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+	if (!handled && regs->eax == INT_INIT_WINDOW)
+	{
+		handled = true;
+
+		auto** userBuffer = (uint32_t**)regs->ebx;
+		uint32_t x      = regs->ecx;
+		uint32_t y      = regs->edx;
+		uint32_t width  = regs->esi;
+		uint32_t height = regs->edi;
+
+		uint32_t requiredSize  = width * height * sizeof(uint32_t);
+		uint32_t requiredPages = CEIL_DIV_PAGE_SIZE(requiredSize);    // ceil (requiredSize / 4096)
+
+		auto* proc          = TaskManager::getCurrentProcess();
+		auto* allocatedAddr = (uint32_t*)proc->allocatePages(requiredPages);    // TODO
+
+		*userBuffer = allocatedAddr;
+		auto* window = WindowManager::requestWindow(allocatedAddr, x, y, width, height);
+		regs->eax = window->getID();
+	}
+
+	// void closeWindow(uint32_t windowID)
+	if (!handled && regs->eax == INT_CLOSE_WINDOW)
+	{
+		handled = true;
+		uint32_t windowId = regs->ebx;
+
+		WindowManager::closeWindow(windowId);
+	}
+
+
 	return (uint32_t*)(regs);
 }

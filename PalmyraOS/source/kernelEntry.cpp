@@ -11,10 +11,12 @@
 #include "core/Logger.h"
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/SystemCalls.h"
+#include "core/tasks/WindowManager.h"
 
 #include "palmyraOS/unistd.h"
-#include "libs/string.h"
+#include "palmyraOS/time.h"
 
+#include "userland/userland.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -36,64 +38,34 @@ namespace Processes
   uint32_t proc_1_pid     = 0;
   uint32_t proc_2_pid     = 0;
 
-  void print_number()
+  void increase(uint64_t* integer)
+  {
+	  (*integer)++;
+  }
+
+  [[noreturn]] int windowManager(uint32_t argc, char* argv[])
   {
 	  using namespace PalmyraOS;
-	  auto& vbe = *PalmyraOS::kernel::vbe_ptr;
-	  kernel::Brush        brush(vbe.getFrameBuffer());
-	  kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
+	  timespec start_time{};
+	  timespec current_time{};
 
-	  // Clear the screen
-	  brush.fill(Color::DarkBlue);
-
-	  // Logo
-	  textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
-	  textRenderer << Color::White << "v0.01\n";
-	  brush.drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
-	  textRenderer << "\n";
-
-	  textRenderer << "Allocated Pages: " << DEC() << kernel::kernelPagingDirectory_ptr->getNumAllocatedPages() << "\n";
-
-	  // Information
-	  textRenderer << "Counter 1: " << DEC() << proc_1_counter << "\n";
-	  textRenderer << "Counter 2: " << DEC() << proc_2_counter << "\n";
-
-	  textRenderer << "proc_0_pid: " << DEC() << get_pid() << "\n";
-	  textRenderer << "proc_1_pid: " << DEC() << proc_1_pid << "\n";
-	  textRenderer << "proc_2_pid: " << DEC() << proc_2_pid << "\n";
-
-	  textRenderer << "proc 0 esp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.esp << "\n";
-	  textRenderer << "proc 0 usp: " << HEX() << kernel::TaskManager::getProcess(0)->stack_.userEsp << "\n";
-
-	  textRenderer << "proc 1 esp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.esp << "\n";
-	  textRenderer << "proc 1 usp: " << HEX() << kernel::TaskManager::getProcess(1)->stack_.userEsp << "\n";
-
-	  textRenderer << "proc 2 ec: " << DEC() << kernel::TaskManager::getProcess(2)->exitCode_ << "\n";
-	  textRenderer << "proc 2 state: " <<
-				   (
-					   kernel::TaskManager::getProcess(2)->state_ == kernel::Process::State::Terminated ?
-					   "Terminated" : "Not terminated"
-				   )
-				   << "\n";
-
-	  char     proc_stdout[50] = { 0 };
-	  for (int i               = 0; i < kernel::TaskManager::getProcess(2)->stdout_.size(); ++i)
-	  {
-		  if (i >= 50) break;
-		  proc_stdout[i] = kernel::TaskManager::getProcess(2)->stdout_[i];
-	  }
-	  textRenderer << "proc 2 stdout: " << proc_stdout << "\n";
-
-	  textRenderer << SWAP_BUFF();
-  }
-
-  int process_0(uint32_t argc, char* argv[])
-  {
+	  clock_gettime(CLOCK_MONOTONIC, &start_time);
 	  while (true)
 	  {
-		  print_number();
+		  // wait update every 16.666 ms ~ 60 fps
+		  clock_gettime(CLOCK_MONOTONIC, &current_time);
+		  while (current_time.tv_nsec - start_time.tv_nsec < 16'666L)
+		  {
+			  clock_gettime(CLOCK_MONOTONIC, &current_time);
+			  sched_yield();
+		  }
+		  start_time = current_time;
+
+		  kernel::WindowManager::composite();
+		  sched_yield();
 	  }
   }
+
 
   int process_1(uint32_t argc, char* argv[])
   {
@@ -101,6 +73,7 @@ namespace Processes
 	  {
 		  proc_1_counter++;
 		  proc_1_pid = get_pid();
+//		  sched_yield();
 	  }
   }
 
@@ -109,19 +82,75 @@ namespace Processes
 	  if (argc > 0)
 	  {
 		  write(1, argv[0], strlen(argv[0]));
+		  const char* message = "\n";
+		  write(1, message, 1);
 	  }
+
+	  // Calculate the total size for 300 pages
+	  size_t total_size = 301 * 4096;
+
+	  // Request 300 pages using mmap
+	  void* addr = mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	  if (addr == MAP_FAILED)
+	  {
+		  const char* message = "Failed to map memory\n";
+		  write(1, message, strlen(message));
+	  }
+	  else
+	  {
+		  const char* message = "Success to map memory\n";
+		  write(1, message, strlen(message));
+	  }
+
+	  uint32_t* frameBuffer = (uint32_t*)0xff11ff22;
+	  uint32_t fb_id = initializeWindow(&frameBuffer, 40, 40, 640, 480);
+	  if (fb_id == 0)
+	  {
+		  const char* message = "Failed to initialize window\n";
+		  write(1, message, strlen(message));
+	  }
+	  else
+	  {
+		  const char* message = "Success to initialize window\n";
+		  write(1, message, strlen(message));
+	  }
+
+	  PalmyraOS::kernel::FrameBuffer  fb(640, 480, frameBuffer, (uint32_t*)addr);
+	  PalmyraOS::kernel::Brush        brush(fb);
+	  PalmyraOS::kernel::TextRenderer textRenderer(fb, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
+
+
+	  for (uint32_t i = 0; i < 640 * 480; ++i) frameBuffer[i] = PalmyraOS::Color::DarkRed.getColorValue();
+
 	  while (true)
 	  {
-		  proc_2_counter++;
+		  increase(&proc_2_counter);
 		  proc_2_pid = get_pid();
-		  if (proc_2_counter >= 1'000'000)
-		  {
-			  const char* message = "\nI am exiting now!!\n";
-			  write(1, message, 19);
-			  _exit(0);
-		  }
+
+		  brush.fill(PalmyraOS::Color::DarkRed);
+		  textRenderer.reset();
+		  textRenderer << "Counter: " << proc_2_counter << "\n";
+		  textRenderer << "Counter proc0: " << proc_1_counter << "\n";
+		  textRenderer << "my pid: " << get_pid() << "\n";
+
+		  fb.swapBuffers();
+
+		  if (proc_2_counter >= 1'000) break;
 	  }
+
+	  const char* message = "I am exiting now!!\n";
+
+	  brush.fill(PalmyraOS::Color::DarkBlue);
+	  fb.swapBuffers();
+
+	  write(1, message, strlen(message));
+	  closeWindow(fb_id);
+	  _exit(0);
+
+	  return -1;
   }
+
+
 
 
 }
@@ -220,66 +249,94 @@ void callConstructors()
 	kernel::initializePhysicalMemory(x86_multiboot_info);
 
 
-	// ----------------------- Initialize Virtual  Memory -------------------------------
+	// ----------------------- Initialize Virtual Memory -------------------------------
 	textRenderer << "Initializing Virtual Memory\n" << SWAP_BUFF();
 	kernel::initializeVirtualMemory(x86_multiboot_info);
 	textRenderer << "Virtual Memory is initialized\n" << SWAP_BUFF();
 
-
 	kernel::testMemory();
-	// from here we can use th
+	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
 
-	{
-		std::vector<int, kernel::KernelHeapAllocator<int>> vec;
-		vec.push_back(5);
-
-	}
-
-
+	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();
+	textRenderer << "TaskManager is initialized.\n" << SWAP_BUFF();
+
 	kernel::SystemCallsManager::initialize();
+	textRenderer << "SystemCallsManager is initialized.\n" << SWAP_BUFF();
 
+	kernel::WindowManager::initialize();
+	textRenderer << "WindowManager is initialized.\n" << SWAP_BUFF();
+
+	// Add Important Processes
 	{
-		char* argv0[] = { nullptr };
-		kernel::TaskManager::newProcess(
-			Processes::process_0,
-			kernel::Process::Mode::Kernel,
-			kernel::Process::Priority::Medium,
-			0, argv0
-		);
+		// Initialize the Window Manager in Kernel Mode
+		{
+			char* argv[] = { nullptr };
+			kernel::TaskManager::newProcess(
+				Processes::windowManager,
+				kernel::Process::Mode::Kernel,
+				kernel::Process::Priority::Medium,
+				0, argv
+			);
+		}
 
-		char* argv1[] = { const_cast<char*>("proc1.exe"), const_cast<char*>("-count"), nullptr };
-		kernel::TaskManager::newProcess(
-			Processes::process_1,
-			kernel::Process::Mode::User,
-			kernel::Process::Priority::Low,
-			2,
-			argv1
-		);
+		// Initialize the menu bar
+		{
+			char* argv[] = {
+				const_cast<char*>("menuBar.exe"), nullptr
+			};
+			kernel::TaskManager::newProcess(
+				PalmyraOS::MenuBar::main,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				1,
+				argv
+			);
+		}
 
-		char* argv2[] =
-				{ const_cast<char*>("proc2.exe"), const_cast<char*>("-count"), const_cast<char*>("arg3"), nullptr };
-		kernel::TaskManager::newProcess(
-			Processes::process_2,
-			kernel::Process::Mode::User,
-			kernel::Process::Priority::Low,
-			2,
-			argv2
-		);
+		// Background process that counts just for testing
+		{
+			char* argv[] = { const_cast<char*>("proc1.exe"), const_cast<char*>("-count"), nullptr };
+			kernel::TaskManager::newProcess(
+				Processes::process_1,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				2,
+				argv
+			);
+		}
+
+		// Process with a window that exists later for testing
+		{
+			char* argv[] = {
+				const_cast<char*>("proc2.exe"),
+				const_cast<char*>("-count"),
+				const_cast<char*>("arg3"), nullptr
+			};
+			kernel::TaskManager::newProcess(
+				Processes::process_2,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				3,
+				argv
+			);
+		}
 	}
 
 
-
+	// ----------------------- System Entry End -------------------------------
 	// Now enable maskable interrupts
-	LOG_INFO("Enabling Interrupts.");
-	textRenderer << "Enabling Interrupts.\n" << SWAP_BUFF();
-	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+	{
+		LOG_INFO("Enabling Interrupts.");
+		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+		textRenderer << "Interrupts are enabled.\n" << SWAP_BUFF();
+		LOG_INFO("Interrupts are enabled.");
+	}
 
-
+	// Scheduler must start somewhere inside the loop
 	while (true);
 
-	LOG_INFO("Moving to setup()...");
-
+	LOG_ERROR("Passed after while(true)!");
 	// Here we loop, until a system clock interrupts and starts scheduling.
 	while (true);
 }

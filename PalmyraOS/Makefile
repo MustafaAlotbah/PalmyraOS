@@ -14,7 +14,8 @@ SUBDIRS := \
 	source/core/memory \
 	source/core/std \
 	source/core/tasks \
-	source/palmyraOS
+	source/palmyraOS \
+	source/userland/systemWidgets
 
 # Find all .cpp and .asm source files in the specified subdirectories
 SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))

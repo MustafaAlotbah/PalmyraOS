@@ -76,13 +76,49 @@ void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t of
 
 	return result;
 }
+
+uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+	uint32_t result;
+	// Prepare the registers for the system call
+	uint32_t eax = INT_INIT_WINDOW; // System call number
+	auto     ebx = reinterpret_cast<uint32_t>(buffer);
+	uint32_t ecx = x;
+	uint32_t edx = y;
+	uint32_t esi = width;
+	uint32_t edi = height;
+
+	// Perform the system call using inline assembly
+	__asm__ volatile (
+		"int $0x80"         // Trigger interrupt 0x80
+		: "=a"(result)      // Output: store result in 'result' from 'eax'
 		:
-		"a" (4),               // Input: system call number (4) in eax
-		"b" (fd),              // Input: file descriptor in ebx
-		"c" (buf),             // Input: buffer pointer in ecx
-		"d" (count)            // Input: number of bytes to write in edx
-		: "memory"             // Clobbered memory,
-		// Tell the compiler, the assembly instruction will modify memory contents
+		"a"(eax),         // Input: system call number
+		"b"(ebx),         // Input: first parameter (buffer)
+		"c"(ecx),         // Input: second parameter (x)
+		"d"(edx),         // Input: third parameter (y)
+		"S"(esi),         // Input: fourth parameter (width)
+		"D"(edi)          // Input: fifth parameter (height)
+		: "memory"          // Clobber: memory might be affected
+		);
+
+	return result;
+}
+
+void closeWindow(uint32_t windowID)
+{
+	register uint32_t syscall_no asm("eax") = INT_CLOSE_WINDOW;
+	register uint32_t windowId asm("ebx")   = windowID;
+
+	// TODO
+	asm volatile(
+		"int $0x80"  // Software interrupt to trigger the syscall
+		:            // No output operands
+		: "r"(syscall_no), "r"(windowId)  // Input operands
+		: "memory"   // Clobbered registers
+		);
+
+}
 
 int sched_yield()
 {
