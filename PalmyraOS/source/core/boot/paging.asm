@@ -33,10 +33,12 @@ disable_paging:
 
 is_paging_enabled:
     push eax            ; Preserve the value of EAX
-    mov eax, cr0        ; Load the current value of CR0
+    mov eax, cr0        ; Load the current value of CR0 into EAX
     and eax, 0x80000000 ; Isolate the PG bit (bit 31)
     shr eax, 31         ; Shift the PG bit to the least significant bit
+    mov ecx, eax        ; Save the result (0 or 1) into ECX
     pop eax             ; Restore the original value of EAX
+    mov eax, ecx        ; Move the result from ECX to EAX
     ret                 ; Return from the function with EAX holding the result (0 or 1)
 
 

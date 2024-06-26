@@ -37,6 +37,10 @@ namespace PalmyraOS::kernel
 	   */
 	  static CPUIDOutput cpuid(uint32_t leaf, uint32_t subleaf);
 
+	  static void initialize();
+
+	  static uint32_t detectCpuFrequency();
+
 	  /**
 	   * @brief Get the number of logical CPU cores.
 	   * @return The number of logical CPU cores.
@@ -170,5 +174,14 @@ namespace PalmyraOS::kernel
 	   * @return True if SHA is available, false otherwise.
 	   */
 	  static bool isSHAAvailable();
+
+   private:
+	  CPUID_Features_A features_a_;
+	  CPUID_Features_B features_b_;
+	  CPUID_Features_C features_c_;
+	  CPUID_Features_D features_d_;
+	  static uint32_t  CPU_frequency_;
+
+
   };
 }

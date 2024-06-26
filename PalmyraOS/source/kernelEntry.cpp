@@ -238,9 +238,16 @@ void callConstructors()
 
 	// initialize system clock with frequency of 250 Hz
 	PalmyraOS::kernel::SystemClock::initialize(kernel::SystemClockFrequency);
+	textRenderer << "Initialized System Clock at " << kernel::SystemClockFrequency << " Hz.\n" << SWAP_BUFF();
 	LOG_INFO("Initialized System Clock at %d Hz.", kernel::SystemClockFrequency);
 
-
+	// Measurements that depend on system clock
+	{
+		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+		PalmyraOS::kernel::CPU::initialize();
+		textRenderer << "CPU Frequency: " << PalmyraOS::kernel::CPU::detectCpuFrequency() << " MHz.\n" << SWAP_BUFF();
+		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+	}
 
 	// ----------------------- Initialize Physical Memory -------------------------------
 	textRenderer << "Initializing Physical Memory\n" << SWAP_BUFF();

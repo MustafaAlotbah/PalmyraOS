@@ -1,10 +1,12 @@
 
 #include "core/cpu.h"
 #include "libs/memory.h"
-
+#include "core/SystemClock.h"
 
 extern "C" uint64_t read_tsc_low();
 extern "C" uint64_t read_tsc_high();
+
+uint32_t PalmyraOS::kernel::CPU::CPU_frequency_ = 0;
 
 
 uint64_t PalmyraOS::kernel::CPU::getTSC()
@@ -28,6 +30,13 @@ PalmyraOS::kernel::CPU::CPUIDOutput PalmyraOS::kernel::CPU::cpuid(uint32_t leaf,
 		: "a"(leaf), "c"(subleaf));
 	return result;
 }
+
+void PalmyraOS::kernel::CPU::initialize()
+{
+	detectCpuFrequency();
+}
+
+
 
 uint32_t PalmyraOS::kernel::CPU::getNumLogicalCores()
 {
@@ -203,4 +212,49 @@ bool PalmyraOS::kernel::CPU::isSHAAvailable()
 {
 	auto result = cpuid(7, 0);
 	return result.ebx & (1 << 29);
+}
+
+uint32_t PalmyraOS::kernel::CPU::detectCpuFrequency()
+{
+	/*
+	 * Here we measure the difference between the System Clock (ticks)
+	 * and the CPU ticks register TSC
+	 * Elapsed Seconds = Elapsed Ticks / Clock Frequency
+	 * CPU Frequency = Elapsed TSC / (Elapsed Seconds * 10^6)
+	 */
+
+	if (CPU_frequency_ > 500) return CPU_frequency_;
+
+	// Ensure the CPUID serializing instruction
+	cpuid(0, 0);
+
+	// Capture the initial timestamp counter and clock tick
+	uint64_t start_tsc  = getTSC();
+	uint64_t start_tick = SystemClock::getTicks();
+
+	// Wait for several clock ticks to ensure a longer measurement interval
+	constexpr uint64_t tick_interval_count = 100; // Measure over 25 ticks
+	uint64_t           current_tick        = start_tick;
+	while (current_tick < start_tick + tick_interval_count)
+	{
+		current_tick = SystemClock::getTicks();
+	}
+
+	// Capture the timestamp counter at the end of the measurement interval
+	uint64_t end_tsc = getTSC();
+
+	// Calculate the number of ticks in the measurement interval
+	uint64_t elapsed_ticks = current_tick - start_tick;
+
+	// Calculate the number of TSC ticks in the measurement interval
+	uint64_t elapsed_tsc = end_tsc - start_tsc;
+
+	// Get the clock tick frequency
+	uint64_t CLOCK_TICK_FREQ = SystemClock::getFrequency(); // Example: 100 Hz
+
+	uint64_t cpu_freq_mhz = elapsed_tsc * CLOCK_TICK_FREQ / 1e6 / elapsed_ticks;
+
+	CPU_frequency_ = static_cast<uint32_t>(cpu_freq_mhz);
+
+	return CPU_frequency_;
 }
