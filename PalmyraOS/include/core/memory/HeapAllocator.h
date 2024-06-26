@@ -7,6 +7,9 @@
 #include "core/kernel.h"
 #include "core/panic.h"
 
+// for type definitions
+#include "libs/string.h"
+
 
 namespace PalmyraOS::kernel
 {
@@ -156,5 +159,14 @@ namespace PalmyraOS::kernel
 		  using other = KernelHeapAllocator<U>;
 	  };
   };
+
+
+  /* Type Definitions*/
+  /**
+   * @typedef Kernel String
+   * @brief A type definition for a string using the KernelHeapAllocator.
+   */
+  typedef PalmyraOS::types::string<char, KernelHeapAllocator<char>> KString;
+
 
 }

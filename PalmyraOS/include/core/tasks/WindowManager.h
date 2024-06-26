@@ -4,17 +4,12 @@
 
 #include "core/definitions.h"
 #include "core/memory/HeapAllocator.h"
-#include "libs/string.h"
+//#include "libs/string.h"
 
 
 namespace PalmyraOS::kernel
 {
 
-  /**
-   * @typedef String
-   * @brief A type definition for a string using the KernelHeapAllocator.
-   */
-  typedef PalmyraOS::types::string<char, KernelHeapAllocator<char>> String;
 
   /**
    * @class Window
@@ -45,7 +40,7 @@ namespace PalmyraOS::kernel
 	  uint32_t z_;              ///< The z-order of the window.
 	  uint32_t width_;          ///< The width of the window.
 	  uint32_t height_;         ///< The height of the window.
-	  String   name_;           ///< The name of the window.
+	  KString name_;          ///< The name of the window.
 	  uint32_t* buffer_;        ///< Pointer to the buffer for the window's content.
 	  bool visible_{ true };    ///< Visibility status of the window.
 

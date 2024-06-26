@@ -45,8 +45,11 @@ uint64_t PalmyraOS::kernel::RTC::now()
 	uint64_t cpu_now_millis = SystemClock::getMilliseconds();
 
 	// update if at least 250 ms have passed
-	if (cpu_now_millis - lastUpdated_ > 250) update();
-	lastUpdated_ = cpu_now_millis;
+	if (cpu_now_millis - lastUpdated_ > 250)
+	{
+		update();
+		lastUpdated_ = cpu_now_millis;
+	}
 
 	return rtc_time_;
 }

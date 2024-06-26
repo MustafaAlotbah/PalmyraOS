@@ -81,7 +81,9 @@ void PalmyraOS::kernel::Brush::drawHLine(uint32_t x1, uint32_t x2, uint32_t y, P
 
 PalmyraOS::kernel::TextRenderer::TextRenderer(PalmyraOS::kernel::FrameBuffer& frameBuffer, PalmyraOS::fonts::Font& font)
 	: frameBuffer_(frameBuffer), font_(font)
-{}
+{
+	setSize(frameBuffer_.getWidth(), frameBuffer.getHeight());
+}
 
 void PalmyraOS::kernel::TextRenderer::reset()
 {
@@ -127,9 +129,14 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 			{
 
 				uint32_t x_ = position_x + cursor_x + _x;
+				if (x_ >= frameBuffer_.getWidth()) continue;
+
 				uint32_t y_ = position_y + cursor_y + glyph.offsetY + glyph.height - _y;
+				if (y_ >= frameBuffer_.getHeight()) continue;
 
 				uint32_t index = x_ + (y_ * frameBuffer_.getWidth());
+				if (index * sizeof(uint32_t) >= frameBuffer_.getSize()) continue;
+
 				backBuffer[index] = textColor_.getColorValue();
 			}
 		}
@@ -141,7 +148,7 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 	if (cursor_x >= position_x + width)
 	{
 		cursor_x = 0;
-		position_y += advance_y;
+		cursor_y += advance_y;
 	}
 
 

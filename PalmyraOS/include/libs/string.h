@@ -1,3 +1,5 @@
+#pragma once
+
 #include "core/definitions.h"    // stdint + size_t
 #include "libs/stdio.h"
 #include <vector>
@@ -117,16 +119,22 @@ namespace PalmyraOS::types
 
 	  // Constructors
 	  explicit string(_Alloc alloc) : data_(alloc)
-	  {}
+	  {
+		  data_.push_back('\0');
+	  }
 
-	  // Constructors
-	  string() = default;
+	  string()
+	  {
+		  data_.push_back('\0');
+	  }
 
 	  // Range constructor with allocator
 	  template<typename InputIt>
 	  string(InputIt first, InputIt last, const _Alloc& alloc)
 		  : data_(first, last, alloc)
-	  {}
+	  {
+		  ensure_null_terminator();
+	  }
 
 	  // Copy constructor
 	  string(const string& other) : data_(other.data_, other.data_.get_allocator())
@@ -145,6 +153,7 @@ namespace PalmyraOS::types
 		  if (this != &other)
 		  {
 			  data_ = std::move(other.data_);
+			  ensure_null_terminator();
 		  }
 		  return *this;
 	  }
@@ -155,6 +164,7 @@ namespace PalmyraOS::types
 		  if (this != &other)
 		  {
 			  data_ = other.data_;
+			  ensure_null_terminator();
 		  }
 		  return *this;
 	  }
@@ -162,12 +172,14 @@ namespace PalmyraOS::types
 	  string& operator=(const _CharT* s)
 	  {
 		  data_.assign(s, s + strlen(s));
+		  ensure_null_terminator();
 		  return *this;
 	  }
 
 	  string& operator=(std::initializer_list<_CharT> ilist)
 	  {
 		  data_ = ilist;
+		  ensure_null_terminator();
 		  return *this;
 	  }
 
@@ -181,9 +193,15 @@ namespace PalmyraOS::types
 	  void reserve(size_type new_cap)
 	  { data_.reserve(new_cap); }
 	  void resize(size_type count)
-	  { data_.resize(count); }
+	  {
+		  data_.resize(count);
+		  ensure_null_terminator();
+	  }
 	  void resize(size_type count, _CharT ch)
-	  { data_.resize(count, ch); }
+	  {
+		  data_.resize(count, ch);
+		  ensure_null_terminator();
+	  }
 
 	  // Element access
 	  reference operator[](size_type pos)
@@ -253,6 +271,12 @@ namespace PalmyraOS::types
 	  // Comparison operators
 	  bool operator==(const string& other) const
 	  { return data_ == other.data_; }
+
+	  bool operator==(const char* other) const
+	  {
+		  return strcmp(c_str(), other) == 0;
+	  }
+
 	  bool operator!=(const string& other) const
 	  { return *this != other; }
 	  bool operator<(const string& other) const
@@ -303,9 +327,15 @@ namespace PalmyraOS::types
 	  // C-string access
 	  const _CharT* c_str() const
 	  {
-		  data_.push_back('\0');
-		  data_.pop_back();
 		  return &data_[0];
+	  }
+
+	  void ensure_null_terminator()
+	  {
+		  if (data_.empty() || data_.back() != '\0')
+		  {
+			  data_.push_back('\0');
+		  }
 	  }
 
    private:

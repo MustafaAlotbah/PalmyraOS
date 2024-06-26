@@ -103,7 +103,7 @@ namespace Processes
 	  }
 
 	  uint32_t* frameBuffer = (uint32_t*)0xff11ff22;
-	  uint32_t fb_id = initializeWindow(&frameBuffer, 40, 40, 640, 480);
+	  uint32_t fb_id = initializeWindow(&frameBuffer, x, y, width, height);
 	  if (fb_id == 0)
 	  {
 		  const char* message = "Failed to initialize window\n";
@@ -115,7 +115,7 @@ namespace Processes
 		  write(1, message, strlen(message));
 	  }
 
-	  PalmyraOS::kernel::FrameBuffer  fb(640, 480, frameBuffer, (uint32_t*)addr);
+	  PalmyraOS::kernel::FrameBuffer fb(width, height, frameBuffer, (uint32_t*)addr);
 	  PalmyraOS::kernel::Brush        brush(fb);
 	  PalmyraOS::kernel::TextRenderer textRenderer(fb, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
 
@@ -127,8 +127,22 @@ namespace Processes
 		  increase(&proc_2_counter);
 		  proc_2_pid = get_pid();
 
-		  brush.fill(PalmyraOS::Color::DarkRed);
+		  // Draw Window
+		  brush.fill(PalmyraOS::Color::Black);
+		  brush.fillRectangle(0, 0, width, 20, PalmyraOS::Color::DarkRed);
+		  brush.drawHLine(0, width, 0, PalmyraOS::Color::White);
+		  brush.drawHLine(0, width, height - 1, PalmyraOS::Color::White);
+		  brush.drawVLine(0, 0, height - 1, PalmyraOS::Color::White);
+		  brush.drawVLine(width - 1, 0, height - 1, PalmyraOS::Color::White);
+		  brush.drawHLine(0, width, 20, PalmyraOS::Color::White);
+
+		  textRenderer << PalmyraOS::Color::White;
+		  textRenderer.setCursor(1, 1);
+		  textRenderer << "Testy Process\n";
 		  textRenderer.reset();
+		  textRenderer.setCursor(1, 21);
+		  textRenderer << PalmyraOS::Color::LightBlue;
+
 		  textRenderer << "Counter: " << proc_2_counter << "\n";
 		  textRenderer << "Counter proc0: " << proc_1_counter << "\n";
 		  textRenderer << "my pid: " << get_pid() << "\n";
@@ -138,11 +152,27 @@ namespace Processes
 		  if (proc_2_counter >= 1'000) break;
 	  }
 
-	  const char* message = "I am exiting now!!\n";
-
-	  brush.fill(PalmyraOS::Color::DarkBlue);
+//	  brush.fill(PalmyraOS::Color::DarkBlue);
+	  textRenderer << "I will exit in 2 seconds" << "\n";
 	  fb.swapBuffers();
 
+	  // wait
+	  {
+		  timespec start_time{};
+		  timespec current_time{};
+
+		  clock_gettime(CLOCK_MONOTONIC, &start_time);
+		  clock_gettime(CLOCK_MONOTONIC, &current_time);
+
+		  while (current_time.tv_sec - start_time.tv_sec < 2)
+		  {
+			  clock_gettime(CLOCK_MONOTONIC, &current_time);
+			  sched_yield();
+		  }
+	  }
+
+
+	  const char* message = "I am exiting now!!\n";
 	  write(1, message, strlen(message));
 	  closeWindow(fb_id);
 	  _exit(0);
