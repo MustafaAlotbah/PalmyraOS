@@ -106,43 +106,60 @@ namespace PalmyraOS::types
 {
 
   // requires an allocator for the std::vector
-  template<typename _CharT, typename _Alloc>
+  template<typename _CharT, template<typename> class _Alloc>
   class string
   {
    public:
 	  // Type definitions
 	  using value_type = _CharT;
-	  using allocator_type = _Alloc;
-	  using size_type = typename std::vector<_CharT, _Alloc>::size_type;
+	  using allocator_type = _Alloc<_CharT>;
+	  using size_type = typename std::vector<_CharT, _Alloc<_CharT>>::size_type;
 	  using reference = _CharT&;
 	  using const_reference = const _CharT&;
 
 	  // Constructors
-	  explicit string(_Alloc alloc) : data_(alloc)
+	  explicit string(_Alloc<_CharT> alloc) : data_(alloc)
 	  {
-		  data_.push_back('\0');
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
+
+	  // Constructors
+	  explicit string(const char* _cstr) : data_()
+	  {
+		  this->operator=(_cstr);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
 	  }
 
 	  string()
 	  {
-		  data_.push_back('\0');
+		  ensure_null_terminator();
+		  cstr = &data_[0];
 	  }
 
 	  // Range constructor with allocator
 	  template<typename InputIt>
-	  string(InputIt first, InputIt last, const _Alloc& alloc)
+	  string(InputIt first, InputIt last, const _Alloc<_CharT>& alloc)
 		  : data_(first, last, alloc)
 	  {
 		  ensure_null_terminator();
+		  cstr = &data_[0];
 	  }
 
 	  // Copy constructor
 	  string(const string& other) : data_(other.data_, other.data_.get_allocator())
-	  {}
+	  {
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 
 	  // Move constructor
 	  string(string&& other) noexcept: data_(std::move(other.data_))
-	  {}
+	  {
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 
 
 	  // Assignment operators
@@ -154,6 +171,7 @@ namespace PalmyraOS::types
 		  {
 			  data_ = std::move(other.data_);
 			  ensure_null_terminator();
+			  cstr = &data_[0];
 		  }
 		  return *this;
 	  }
@@ -165,6 +183,7 @@ namespace PalmyraOS::types
 		  {
 			  data_ = other.data_;
 			  ensure_null_terminator();
+			  cstr = &data_[0];
 		  }
 		  return *this;
 	  }
@@ -173,6 +192,7 @@ namespace PalmyraOS::types
 	  {
 		  data_.assign(s, s + strlen(s));
 		  ensure_null_terminator();
+		  cstr = &data_[0];
 		  return *this;
 	  }
 
@@ -180,6 +200,7 @@ namespace PalmyraOS::types
 	  {
 		  data_ = ilist;
 		  ensure_null_terminator();
+		  cstr = &data_[0];
 		  return *this;
 	  }
 
@@ -189,41 +210,61 @@ namespace PalmyraOS::types
 	  size_type capacity() const
 	  { return data_.capacity(); }
 	  [[nodiscard]] bool empty() const
-	  { return data_.empty(); }
+	  {
+		  if (data_.empty()) return true;
+		  return data_[0] == '\0';
+	  }
 	  void reserve(size_type new_cap)
-	  { data_.reserve(new_cap); }
+	  {
+		  data_.reserve(new_cap);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 	  void resize(size_type count)
 	  {
 		  data_.resize(count);
 		  ensure_null_terminator();
+		  cstr = &data_[0];
 	  }
 	  void resize(size_type count, _CharT ch)
 	  {
 		  data_.resize(count, ch);
 		  ensure_null_terminator();
+		  cstr = &data_[0];
 	  }
 
 	  // Element access
 	  reference operator[](size_type pos)
-	  { return data_[pos]; }
+	  {
+		  return data_[pos];
+	  }
 	  const_reference operator[](size_type pos) const
 	  { return data_[pos]; }
 
 	  reference front()
-	  { return data_.front(); }
+	  {
+		  return data_.front();
+	  }
 	  const_reference front() const
-	  { return data_.front(); }
+	  {
+		  return data_.front();
+	  }
 
 	  reference back()
-	  { return data_.back(); }
+	  {
+		  return data_[data_.size() - 2];
+	  }
 	  const_reference back() const
-	  { return data_.back(); }
+	  {
+		  return data_[data_.size() - 2];
+	  }
 
 	  reference at(size_type pos)
 	  {
 		  if (pos >= size())
 		  {
-			  pos = pos % size();
+			  // throw std::out_of_range("string::at: pos out of range");
+			  pos = pos % size(); // TODO throw?
 		  }
 		  return data_[pos];
 	  }
@@ -232,6 +273,7 @@ namespace PalmyraOS::types
 	  {
 		  if (pos >= size())
 		  {
+			  // throw std::out_of_range("string::at: pos out of range");
 			  pos = pos % size();
 		  }
 		  return data_[pos];
@@ -239,42 +281,57 @@ namespace PalmyraOS::types
 
 	  // Modifiers
 	  void push_back(const _CharT& c)
-	  { data_.push_back(c); }
+	  {
+		  data_.insert(data_.end() - 1, c);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 
 	  void clear()
-	  { data_.clear(); }
+	  {
+		  data_.clear();
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 
 	  string& operator+=(const _CharT& c)
 	  {
-		  data_.push_back(c);
+		  data_.insert(data_.end() - 1, c);
 		  return *this;
 	  }
 
 	  string& operator+=(const string& other)
 	  {
-		  data_.insert(data_.end(), other.data_.begin(), other.data_.end());
+		  data_.insert(data_.end() - 1, other.data_.begin(), other.data_.end() - 1);
 		  return *this;
 	  }
 
 	  string& operator+=(const _CharT* s)
 	  {
-		  data_.insert(data_.end(), s, s + std::char_traits<_CharT>::length(s));
+		  data_.insert(data_.end() - 1, s, s + std::char_traits<_CharT>::length(s));
 		  return *this;
 	  }
 
 	  string& operator+=(std::initializer_list<_CharT> ilist)
 	  {
-		  data_.insert(data_.end(), ilist);
+		  data_.insert(data_.end() - 1, ilist);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
 		  return *this;
 	  }
 
 	  // Comparison operators
 	  bool operator==(const string& other) const
-	  { return data_ == other.data_; }
+	  { return strcmp(c_str(), other.c_str()) == 0; }
 
 	  bool operator==(const char* other) const
 	  {
 		  return strcmp(c_str(), other) == 0;
+	  }
+
+	  bool operator!=(const char* other) const
+	  {
+		  return !(this->operator==(other));
 	  }
 
 	  bool operator!=(const string& other) const
@@ -288,39 +345,42 @@ namespace PalmyraOS::types
 	  bool operator>=(const string& other) const
 	  { return data_ >= other.data_; }
 
+	  size_type find(_CharT ch, size_type start = 0) const
+	  {
+		  for (size_type i = start; i < size(); ++i)
+		  {
+			  if (data_[i] == ch)
+				  return i;
+		  }
+		  return npos;
+	  }
+
+	  size_type find(const _CharT* str) const
+	  {
+		  size_type len = std::char_traits<_CharT>::length(str);
+		  if (len == 0) return 0;
+
+		  for (size_type i = 0; i <= size() - len; ++i)
+		  {
+			  if (std::char_traits<_CharT>::compare(&data_[i], str, len) == 0)
+				  return i;
+		  }
+		  return npos;
+	  }
+
 	  // Split function
 	  template<typename AllocV>
 	  std::vector<string<_CharT, _Alloc>, AllocV> split(AllocV allocV, _CharT delimiter) const
 	  {
 		  std::vector<string<_CharT, _Alloc>, AllocV> result(allocV);
-		  _Alloc                                      alloc = data_.get_allocator();
-		  size_type                                   start = 0;
-		  size_type                                   end   = 0;
+		  split_(result, delimiter);
+		  return result;
+	  }
 
-		  while (end < size())
-		  {
-			  // Search for the delimiter
-			  while (end < size() && data_[end] != delimiter)
-			  {
-				  ++end;
-			  }
-
-			  // Create a string from the start index to the end index using the range constructor and explicitly passing allocator
-			  string<_CharT, _Alloc> token(data_.begin() + start, data_.begin() + end, alloc);
-			  result.push_back(token);
-
-			  // Skip the delimiter
-			  ++end;
-			  start = end;
-		  }
-
-		  // Handle the case where there is no delimiter at the end of the string
-		  if (start < size())
-		  {
-			  string<_CharT, _Alloc> token(data_.begin() + start, data_.end(), alloc);
-			  result.push_back(token);
-		  }
-
+	  std::vector<string<_CharT, _Alloc>, _Alloc<string<_CharT, _Alloc>>> split(_CharT delimiter) const
+	  {
+		  std::vector<string<_CharT, _Alloc>, _Alloc<string<_CharT, _Alloc>>> result;
+		  split_(result, delimiter);
 		  return result;
 	  }
 
@@ -330,6 +390,9 @@ namespace PalmyraOS::types
 		  return &data_[0];
 	  }
 
+
+   private:
+
 	  void ensure_null_terminator()
 	  {
 		  if (data_.empty() || data_.back() != '\0')
@@ -338,12 +401,46 @@ namespace PalmyraOS::types
 		  }
 	  }
 
+	  template<typename AllocV>
+	  std::vector<string<_CharT, _Alloc>, AllocV> split_(
+		  std::vector<string<_CharT, _Alloc>, AllocV>& result,
+		  _CharT delimiter
+	  ) const
+	  {
+		  _Alloc    alloc = data_.get_allocator();
+		  size_type start = 0;
+		  size_type end   = find(delimiter);
+
+		  while (end != npos)
+		  {
+			  string<_CharT, _Alloc> token(data_.begin() + start, data_.begin() + end, alloc);
+			  result.push_back(token);
+
+			  start = end + 1;
+			  end   = find(delimiter, start);
+		  }
+
+		  if (start < size())
+		  {
+			  string<_CharT, _Alloc> token(data_.begin() + start, data_.end() - 1, alloc);
+			  result.push_back(token);
+		  }
+
+		  return result;
+	  }
+
+   public:
+	  // Definition of npos (not found position)
+	  static const size_type npos = static_cast<size_type>(-1);
+
+
    private:
-	  std::vector<_CharT, _Alloc> data_;
+	  std::vector<_CharT, _Alloc<_CharT>> data_;
+	  const char* cstr;
   };
 
 // Non-member functions
-  template<typename _CharT, typename _Alloc>
+  template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const string<_CharT, _Alloc>& lhs, const string<_CharT, _Alloc>& rhs)
   {
 	  string<_CharT, _Alloc> temp(lhs);
@@ -351,7 +448,7 @@ namespace PalmyraOS::types
 	  return temp;
   }
 
-  template<typename _CharT, typename _Alloc>
+  template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const string<_CharT, _Alloc>& lhs, const _CharT* rhs)
   {
 	  string<_CharT, _Alloc> temp(lhs);
@@ -359,7 +456,7 @@ namespace PalmyraOS::types
 	  return temp;
   }
 
-  template<typename _CharT, typename _Alloc>
+  template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const _CharT* lhs, const string<_CharT, _Alloc>& rhs)
   {
 	  string<_CharT, _Alloc> temp(lhs);
