@@ -147,6 +147,7 @@ bool PalmyraOS::Tests::Allocator::testMap()
 	ExceptionTester::reset();
 	return result;
 }
+
 bool PalmyraOS::Tests::Allocator::testUnorderedMap()
 {
 	// TODO
@@ -214,7 +215,7 @@ bool PalmyraOS::Tests::Allocator::testString()
 {
 	// TODO (Heap overwriting beyond reserved, not reallocating)
 
-	using String = types::string<char, kernel::HeapAllocator<char>>;
+	using String = types::string<char, kernel::HeapAllocator>;
 
 	bool result = true;
 	kernel::HeapManager heapManager;
@@ -226,6 +227,9 @@ bool PalmyraOS::Tests::Allocator::testString()
 	str.reserve(50);     // force memory on heap
 	str = "hello";
 
+	// test comparison
+	if (str != "hello") result = false;
+
 	volatile char ch = str.at(10);    // should throw an exception
 //	if (!ExceptionTester::exceptionOccurred()) result = false;
 
@@ -234,10 +238,14 @@ bool PalmyraOS::Tests::Allocator::testString()
 	ch = str.at(5);    // should not throw an exception
 	if (ExceptionTester::exceptionOccurred()) result = false;
 
-	str = "123456789 123456789 123456789 123456789 123456789 123456789"; // not working when more than reserved
+	str = "123456789 234567891 345678912 456789123 567891234 678912345"; // not working when more than reserved
+
+	volatile size_t p = str.find('5');
+	if (p != 4) result = false;
 
 	auto subs = str.split(stringAllocator, ' ');
 
+	auto subs2 = str.split(stringAllocator, '/');
 
 	ExceptionTester::reset();
 	return result;

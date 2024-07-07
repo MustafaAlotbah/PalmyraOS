@@ -1,8 +1,54 @@
 # __Palmyra OS Reference__
 
+## Coding Guideline
+
+1. **Avoid Using Function Pointers**:
+
+   Prefer virtual classes and polymorphism over pointers to functions.
+
+2. **Adopt the Scandinavian Style (Meyers Style)**:
+
+   n class definitions, declare member functions before member attributes. End attribute names with an underscore `_`.
+
+    ```cpp
+    class Example {
+    public:
+        Example(int value);
+        void doSomething();
+        int getValue() const;
+
+    private:
+        int value_;
+    };
+    ```
+
+3. **Use Descriptive Naming (Self-Documenting Code)**:
+
+   Use whole words instead of abbreviations for variable and function names.
+
+   Example: Prefer `fileSystem_` over `fs_`.
+
+4. **Separate Headers from Implementation**:
+
+5. **Embrace Modern C++ Practices**:
+
+   For example, use `std::vector`, `std::map` and `std::algorithm`
+
+6. **Utilize Guard Clauses (Early Exit Pattern)**
+
+   Check for edge cases early in the function to simplify the main logic and improve readability. This helps to handle
+   special conditions or errors upfront, reducing nested conditions and clarifying the flow of the code.
+
+   You may also use **Goto Cleanup**
+
+7. **Use Raw Pointers**:
+
+   Prefer using `Example*` to `std::shared_pointer<Example>`
+
 ## Initial Setup
 
 ### Project Structure
+
 ```
 PalmyraOS/
 ├── CMakeLists.txt
@@ -26,7 +72,6 @@ PalmyraOS/
     - Returning a value
     - Passing arguments
 
-
 ## Roadmap
 
 1. [x] MultiBooting
@@ -44,9 +89,9 @@ PalmyraOS/
 13. [x] Heap Manager
 14. [x] Multitasking
 15. [x] User Space
-16. [ ] SysCalls + (System API)
-17. [ ] Interprocess Communication (IPC) pipes
-18. [ ] Virtual File System (VFS)
+16. [x] SysCalls + (System API)
+17. [ ] Virtual File System (VFS)
+18. [ ] Interprocess Communication (IPC) pipes
 19. [ ] Elf
 20. [ ] FAT16
 21.

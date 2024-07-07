@@ -3,6 +3,9 @@
 
 
 #include <utility>
+#include <map>
+#include <vector>
+
 #include "core/definitions.h"
 #include "core/kernel.h"
 #include "core/panic.h"
@@ -166,7 +169,26 @@ namespace PalmyraOS::kernel
    * @typedef Kernel String
    * @brief A type definition for a string using the KernelHeapAllocator.
    */
-  typedef PalmyraOS::types::string<char, KernelHeapAllocator<char>> KString;
+  using KString = PalmyraOS::types::string<char, KernelHeapAllocator>;
 
+
+  /**
+   * @typedef Kernel Map
+   * @brief A type definition for a map using the KernelHeapAllocator.
+   *
+   * @tparam KeyT Type of the key in the map.
+   * @tparam ValT Type of the value in the map.
+   */
+  template<typename KeyT, typename ValT>
+  using KMap = std::map<KeyT, ValT, std::less<KeyT>, KernelHeapAllocator<std::pair<const KeyT, ValT>>>;
+
+  /**
+   * @typedef Kernel Vector
+   * @brief A type definition for a vector using the KernelHeapAllocator.
+   *
+   * @tparam Type Type of the elements in the vector.
+   */
+  template<typename Type>
+  using KVector = std::vector<Type, KernelHeapAllocator<Type>>;
 
 }
