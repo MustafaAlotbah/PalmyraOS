@@ -17,7 +17,7 @@ uint64_t PalmyraOS::kernel::RTC::rtc_time_{};
 uint8_t bcd_to_dec(uint8_t bcd)
 {
 	// (((bcd / 16) * 10) + (bcd % 16));
-	return (((bcd >> 4) * 10) + (bcd & 0b111));
+	return (((bcd >> 4) * 10) + (bcd % 16));
 }
 
 void PalmyraOS::kernel::RTC::initialize()

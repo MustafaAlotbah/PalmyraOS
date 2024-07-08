@@ -370,17 +370,20 @@ namespace PalmyraOS::types
 
 	  // Split function
 	  template<typename AllocV>
-	  std::vector<string<_CharT, _Alloc>, AllocV> split(AllocV allocV, _CharT delimiter) const
+	  std::vector<string<_CharT, _Alloc>, AllocV> split(AllocV allocV, _CharT delimiter, bool ignoreEmpty = false) const
 	  {
 		  std::vector<string<_CharT, _Alloc>, AllocV> result(allocV);
-		  split_(result, delimiter);
+		  split_(result, delimiter, ignoreEmpty);
 		  return result;
 	  }
 
-	  std::vector<string<_CharT, _Alloc>, _Alloc<string<_CharT, _Alloc>>> split(_CharT delimiter) const
+	  std::vector<string<_CharT, _Alloc>, _Alloc<string<_CharT, _Alloc>>> split(
+		  _CharT delimiter,
+		  bool ignoreEmpty = false
+	  ) const
 	  {
 		  std::vector<string<_CharT, _Alloc>, _Alloc<string<_CharT, _Alloc>>> result;
-		  split_(result, delimiter);
+		  split_(result, delimiter, ignoreEmpty);
 		  return result;
 	  }
 
@@ -404,7 +407,8 @@ namespace PalmyraOS::types
 	  template<typename AllocV>
 	  std::vector<string<_CharT, _Alloc>, AllocV> split_(
 		  std::vector<string<_CharT, _Alloc>, AllocV>& result,
-		  _CharT delimiter
+		  _CharT delimiter,
+		  bool ignoreEmpty
 	  ) const
 	  {
 		  _Alloc    alloc = data_.get_allocator();
@@ -414,7 +418,7 @@ namespace PalmyraOS::types
 		  while (end != npos)
 		  {
 			  string<_CharT, _Alloc> token(data_.begin() + start, data_.begin() + end, alloc);
-			  result.push_back(token);
+			  if (!token.empty() || !ignoreEmpty) result.push_back(token);
 
 			  start = end + 1;
 			  end   = find(delimiter, start);
@@ -423,7 +427,7 @@ namespace PalmyraOS::types
 		  if (start < size())
 		  {
 			  string<_CharT, _Alloc> token(data_.begin() + start, data_.end() - 1, alloc);
-			  result.push_back(token);
+			  if (!token.empty() || !ignoreEmpty) result.push_back(token);
 		  }
 
 		  return result;

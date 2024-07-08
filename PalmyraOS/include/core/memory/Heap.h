@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <utility>
 #include "core/definitions.h"
 #include "core/memory/paging.h"
 
@@ -87,6 +88,20 @@ namespace PalmyraOS::kernel
 	   * @param p Pointer to the memory block to free.
 	   */
 	  void free(void* p);
+
+	  template<class ClassName, class... Args>
+	  constexpr ClassName* createInstance(Args&& ... args)
+	  {
+		  // Allocate memory for the instance
+		  auto pointer = (ClassName*)alloc(sizeof(ClassName));
+
+		  // Check if allocation was successful
+		  // TODO Handle allocation failure, could be returning nullptr or throwing an exception
+		  if (!pointer) return nullptr;
+
+		  // Construct the instance in the allocated memory using placement new
+		  return new(pointer) ClassName(std::forward<Args>(args)...);
+	  }
 
 	  DEFINE_DEFAULT_MOVE(HeapManager);
 	  REMOVE_COPY(HeapManager);

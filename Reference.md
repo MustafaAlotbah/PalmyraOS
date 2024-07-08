@@ -90,11 +90,15 @@ PalmyraOS/
 14. [x] Multitasking
 15. [x] User Space
 16. [x] SysCalls + (System API)
-17. [ ] Virtual File System (VFS)
+17. [x] Virtual File System (VFS)
 18. [ ] Interprocess Communication (IPC) pipes
-19. [ ] Elf
-20. [ ] FAT16
-21.
+19. [ ] Keyboard driver
+20. [ ] Mouse driver
+21. [ ] Terminal
+22. [ ] FAT16
+23. [ ] Elf
+24. [ ] FAT32
+25. [ ] Terminal Commands
 
 - Keyboard driver
 - Mouse driver
@@ -111,6 +115,14 @@ PalmyraOS/
 - Real time Scheduling
 - GUI: Window Manager
 - Shared Memory
+
+# Security Issues
+
+- [ ] if a process passes pointer to a syscall,
+  the kernel might access an invalid pointer,
+  or access a different process space.
+  Hence, we must always check that the pointer is valid!
+-
 
 # System Calls Roadmap
 
