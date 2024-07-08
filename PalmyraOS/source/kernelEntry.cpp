@@ -17,6 +17,8 @@
 #include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
 
+#include "core/files/VirtualFileSystem.h"
+
 #include "userland/userland.h"
 
 // Pointers to the start and end of the constructors section (see linker.ld)
@@ -85,6 +87,11 @@ namespace Processes
 		  const char* message = "\n";
 		  write(1, message, 1);
 	  }
+
+	  size_t x      = 40;
+	  size_t y      = 40;
+	  size_t width  = 640;
+	  size_t height = 480;
 
 	  // Calculate the total size for 300 pages
 	  size_t total_size = 301 * 4096;
@@ -292,10 +299,15 @@ void callConstructors()
 	kernel::testMemory();
 	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
 
+
+	// ----------------------- Virtual File System -------------------------------
+
+	kernel::vfs::VirtualFileSystem::initialize();
+
+
 	// ----------------------- Initialize Peripherals -------------------------------
 
 	kernel::RTC::initialize();
-
 
 	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();

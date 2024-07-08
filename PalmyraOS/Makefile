@@ -15,6 +15,7 @@ SUBDIRS := \
 	source/core/memory \
 	source/core/std \
 	source/core/tasks \
+	source/core/files \
 	source/palmyraOS \
 	source/userland/systemWidgets
 

@@ -3,7 +3,7 @@
 
 #include "core/definitions.h"
 #include "core/memory/HeapAllocator.h"
-#include <vector>
+#include "core/files/VirtualFileSystem.h"
 
 
 namespace PalmyraOS::kernel
@@ -59,10 +59,11 @@ namespace PalmyraOS::kernel
 	  enum class State : uint32_t
 	  {
 		  New,            // Unused
-		  Ready,        // Ready to run
+		  Ready,          // Ready to run
 		  Running,        // Currently running
-		  Terminated,    // Awaiting to be killed
-		  Killed        // Killed, memory freed
+		  Terminated,     // Awaiting to be killed
+		  Waiting,        // IO Resource Operations
+		  Killed          // Killed, memory freed
 	  };
 
 	  /**
@@ -215,25 +216,24 @@ namespace PalmyraOS::kernel
    public:
 	  friend class TaskManager;
 
-	  uint32_t                                       pid_;             ///< Process ID
-	  uint32_t                                       age_;             ///< Age of the process
-	  State                                          state_;           ///< State of the process
-	  Mode                                           mode_;            ///< Execution mode of the process
-	  Priority                                       priority_;        ///< Priority of the process
-	  interrupts::CPURegisters                       stack_{};         ///< CPU context stack
-	  int                                            exitCode_{ -1 };  ///< Return value of the process
-	  std::vector<void*, KernelHeapAllocator<void*>> physicalPages_;   ///< Holds physical pages to used by the process
-	  std::vector<char, KernelHeapAllocator<char>>   stdin_;           ///< proc/self/fd/0
-	  std::vector<char, KernelHeapAllocator<char>>   stdout_;          ///< proc/self/fd/1
-	  std::vector<char, KernelHeapAllocator<char>>   stderr_;          ///< proc/self/fd/2
+	  uint32_t                 pid_;             ///< Process ID
+	  uint32_t                 age_;             ///< Age of the process
+	  State                    state_;           ///< State of the process
+	  Mode                     mode_;            ///< Execution mode of the process
+	  Priority                 priority_;        ///< Priority of the process
+	  interrupts::CPURegisters stack_{};         ///< CPU context stack
+	  int                      exitCode_{ -1 };  ///< Return value of the process
+	  KVector<void*>           physicalPages_;   ///< Holds physical pages to used by the process
+	  KVector<char>            stdin_;           ///< proc/self/fd/0
+	  KVector<char>            stdout_;          ///< proc/self/fd/1
+	  KVector<char>            stderr_;          ///< proc/self/fd/2
 
 	  PagingDirectory* pagingDirectory_{};    ///< Pointer to the paging directory
 	  void           * userStack_{};          ///< Pointer to the user stack
 	  void           * kernelStack_{};        ///< Pointer to the kernel stack
-  };
 
-  // Type alias for a vector of processes
-  typedef std::vector<Process, KernelHeapAllocator<Process> > ProcessVector;
+	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
+  };
 
   /**
    * @class TaskManager
@@ -287,7 +287,7 @@ namespace PalmyraOS::kernel
 	  static uint32_t* interruptHandler(interrupts::CPURegisters*);
 
    private:
-	  static ProcessVector processes_;           ///< Vector of processes
+	  static KVector<Process> processes_;           ///< Vector of processes
 	  static uint32_t      currentProcessIndex_; ///< Index of the current process
 	  static uint32_t      atomicSectionLevel_;  ///< Level of atomic section nesting
 	  static uint32_t      pid_count;            ///< Counter for assigning PIDs

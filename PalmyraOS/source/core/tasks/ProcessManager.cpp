@@ -1,11 +1,18 @@
 
 
 #include <algorithm>
+
 #include "core/tasks/ProcessManager.h"
 #include "core/SystemClock.h"
+#include "core/files/VirtualFileSystem.h"
+
 #include "libs/string.h"
 #include "libs/memory.h"
+
 #include "palmyraOS/unistd.h" // _exit()
+
+
+
 ///region Process
 
 
@@ -307,7 +314,7 @@ bool PalmyraOS::kernel::Process::checkStackOverflow() const
 ///region Task Manager
 
 // Globals
-PalmyraOS::kernel::ProcessVector PalmyraOS::kernel::TaskManager::processes_;
+PalmyraOS::kernel::KVector<PalmyraOS::kernel::Process> PalmyraOS::kernel::TaskManager::processes_;
 uint32_t PalmyraOS::kernel::TaskManager::currentProcessIndex_ = MAX_PROCESSES;
 uint32_t PalmyraOS::kernel::TaskManager::atomicSectionLevel_  = 0;
 uint32_t PalmyraOS::kernel::TaskManager::pid_count            = 0;

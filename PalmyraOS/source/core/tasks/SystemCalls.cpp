@@ -10,6 +10,7 @@
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/WindowManager.h"
 #include "core/SystemClock.h"
+#include "core/files/VirtualFileSystem.h"
 
 
 void PalmyraOS::kernel::SystemCallsManager::initialize()
@@ -21,6 +22,7 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 {
 	bool handled = false;
 
+	// TODO help functions to get rid of goto
 	// Arguments: eax, ebx, ecx, edx, esi, edi
 
 	/***** POSIX System Calls *****/
@@ -55,45 +57,11 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		// return true anyway TODO
 		regs->eax = 0;
 
+		auto* proc = TaskManager::getCurrentProcess();
+		proc->age_ = 0;
+
 		// find another.
 		return TaskManager::interruptHandler(regs);
-	}
-
-
-	// int write(uint32_t fd, const void *buf, uint32_t count)
-	if (!handled && regs->eax == POSIX_INT_WRITE)
-	{
-		handled = true;
-		size_t fileDescriptor = regs->ebx;
-		const char* bufferPointer = (const char*)regs->ecx;
-		size_t size = regs->edx;
-		auto* proc = TaskManager::getCurrentProcess();
-		regs->eax = 0;
-
-		if (fileDescriptor == 1)
-		{
-			for (size_t i = 0; i < size; ++i)
-			{
-				if (bufferPointer[i] == '\0') break;
-				proc->stdout_.push_back(bufferPointer[i]);
-				regs->eax++;
-			}
-		}
-		else if (fileDescriptor == 2)
-		{
-			for (size_t i = 0; i < size; ++i)
-			{
-				if (bufferPointer[i] == '\0') break;
-				proc->stderr_.push_back(bufferPointer[i]);
-				regs->eax++;
-			}
-		}
-		else
-		{
-			regs->eax = -1;
-		}
-
-
 	}
 
 
@@ -135,6 +103,141 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		regs->eax = 0;
 	}
 
+	// int open(const char *pathname, int flags)
+	if (!handled && regs->eax == POSIX_INT_OPEN)
+	{
+		handled = true;
+
+		const char* pathname = (const char*)regs->ebx;
+		int flags = static_cast<int>(regs->ecx);
+
+		// TODO: Implement the actual file opening logic
+		auto* proc = TaskManager::getCurrentProcess();
+		auto inode = vfs::VirtualFileSystem::getInodeByPath(KString(pathname));
+
+		if (!inode)
+		{
+			// File does not exit/not found
+			regs->eax = -1;
+			goto return_clause;
+		}
+
+		// inode found -> allocate the node
+		fd_t fileDescriptor = proc->fileTableDescriptor_.allocate(inode, flags);
+		regs->eax = fileDescriptor;
+	}
+
+	// int close(int fd)
+	if (!handled && regs->eax == POSIX_INT_CLOSE)
+	{
+		handled = true;
+
+		uint32_t fd = regs->ebx;
+
+		// TODO: Improvement (other status, release -> bool?)
+		auto* proc = TaskManager::getCurrentProcess();
+		proc->fileTableDescriptor_.release(fd);
+		regs->eax = 0; // Success
+	}
+
+	// int write(uint32_t fd, const void *buf, uint32_t count)
+	if (!handled && regs->eax == POSIX_INT_WRITE)
+	{
+		handled = true;
+		size_t fileDescriptor = regs->ebx;
+		const char* bufferPointer = (const char*)regs->ecx;
+		size_t size = regs->edx;
+		auto* proc = TaskManager::getCurrentProcess();
+		regs->eax = 0;
+
+		// TODO move to actual
+		// TODO 0
+		if (fileDescriptor == 1)
+		{
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (bufferPointer[i] == '\0') break;
+				proc->stdout_.push_back(bufferPointer[i]);
+				regs->eax++;
+			}
+		}
+		else if (fileDescriptor == 2)
+		{
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (bufferPointer[i] == '\0') break;
+				proc->stderr_.push_back(bufferPointer[i]);
+				regs->eax++;
+			}
+		}
+		else
+		{
+			auto file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
+
+			// no such open file
+			if (!file)
+			{
+				regs->eax = 0;    // we wrote 0 bytes
+				goto return_clause;
+			}
+
+			// TODO: this must be moved to OpenFile
+			auto bytesRead = file->getInode()->write(bufferPointer, size, file->getOffset());
+			file->advanceOffset(bytesRead);
+			regs->eax = bytesRead;
+		}
+
+
+	}
+
+	// int read(uint32_t fileDescriptor, void* buffer, uint32_t count);
+	if (!handled && regs->eax == POSIX_INT_READ)
+	{
+
+		handled = true;
+		size_t fileDescriptor = regs->ebx;
+		char* bufferPointer = (char*)regs->ecx;
+		size_t size = regs->edx;
+		auto   proc = TaskManager::getCurrentProcess();
+		auto   file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
+
+		// no such open file
+		if (!file)
+		{
+			regs->eax = 0;    // we read 0 bytes
+			goto return_clause;
+		}
+
+		// TODO: this must be moved to OpenFile
+		auto bytesRead = file->getInode()->read(bufferPointer, size, file->getOffset());
+		file->advanceOffset(bytesRead);
+		regs->eax = bytesRead;
+	}
+
+	// int ioctl(int fd, uint32_t request, ...)
+	if (!handled && regs->eax == POSIX_INT_IOCTL)
+	{
+		handled = true;
+
+		uint32_t fileDescriptor = regs->ebx;
+		int      request        = static_cast<int>(regs->ecx);
+		void* argp = (void*)regs->edx;
+
+		// TODO: Implement the actual ioctl logic
+		auto* proc = TaskManager::getCurrentProcess();
+		auto file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
+
+		// no such open file
+		if (!file)
+		{
+			regs->eax = 0;    // we read 0 bytes
+			goto return_clause;
+		}
+
+		auto bytesRead = file->getInode()->ioctl(request, argp);
+		regs->eax = bytesRead; // return status 0, 1
+	}
+
 
 	/***** Custom System Calls *****/
 
@@ -169,6 +272,6 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		WindowManager::closeWindow(windowId);
 	}
 
-
+return_clause:
 	return (uint32_t*)(regs);
 }
