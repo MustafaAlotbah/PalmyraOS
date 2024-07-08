@@ -20,11 +20,15 @@
 
 /* POSIX Interrupts */
 #define POSIX_INT_EXIT 1
+#define POSIX_INT_READ 3
 #define POSIX_INT_WRITE 4
 #define POSIX_INT_GET_PID 20
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
 #define POSIX_INT_GETTIME 228    // time.h (in linux, dependent on version)
+#define POSIX_INT_OPEN 5
+#define POSIX_INT_CLOSE 6
+#define POSIX_INT_IOCTL 54
 
 
 /* mmap protection flags */
@@ -39,6 +43,13 @@
 
 /* Error constant */
 #define MAP_FAILED ((void*)-1)
+
+/* RTC ioctl commands */
+#define RTC_RD_TIME 0x80247009
+
+
+typedef uint32_t fd_t;
+
 
 /**
  * @brief Retrieves the process identifier (PID) of the calling process.
@@ -66,6 +77,16 @@ void _exit(uint32_t exitCode);
  * @return The number of bytes written, or -1 if an error occurred.
  */
 int write(uint32_t fileDescriptor, const void* buffer, uint32_t count);
+
+/**
+ * @brief Reads data from the specified file descriptor.
+ *
+ * @param fileDescriptor The file descriptor from which data will be read.
+ * @param buffer A pointer to the buffer where the read data will be stored.
+ * @param count The number of bytes to read into the buffer.
+ * @return The number of bytes read, or -1 if an error occurred.
+ */
+int read(uint32_t fileDescriptor, void* buffer, uint32_t count);
 
 /**
  * @brief Maps files or devices into memory.
@@ -99,3 +120,30 @@ void closeWindow(uint32_t windowID);
  * @return 0 on success, or -1 if an error occurred.
  */
 int sched_yield();
+
+/**
+ * @brief Opens a file or device.
+ *
+ * @param pathname The pathname of the file or device to open.
+ * @param flags The flags to control how the file or device is opened.
+ * @return The file descriptor on success, or -1 if an error occurred.
+ */
+uint32_t open(const char* pathname, int flags);
+
+/**
+ * @brief Closes a file descriptor.
+ *
+ * @param fd The file descriptor to close.
+ * @return 0 on success, or -1 if an error occurred.
+ */
+int close(uint32_t fd);
+
+/**
+ * @brief Performs device-specific operations.
+ *
+ * @param fd The file descriptor referring to the device.
+ * @param request The device-specific request code.
+ * @param ... Additional arguments depending on the request code.
+ * @return 0 on success, or -1 if an error occurred.
+ */
+int ioctl(uint32_t fd, uint32_t request, ...);

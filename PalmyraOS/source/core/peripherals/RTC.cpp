@@ -3,6 +3,9 @@
 #include "core/peripherals/RTC.h"
 #include "core/SystemClock.h"
 
+#include "core/files/VirtualFileSystem.h"
+#include "palmyraOS/time.h" // rtc_time struct
+
 
 uint8_t  PalmyraOS::kernel::RTC::seconds_{};
 uint8_t  PalmyraOS::kernel::RTC::minutes_{};
@@ -22,8 +25,16 @@ uint8_t bcd_to_dec(uint8_t bcd)
 
 void PalmyraOS::kernel::RTC::initialize()
 {
+	if (!vfs::VirtualFileSystem::isInitialized())
+	{
+		kernel::kernelPanic("Called '%s' before initialized the VFS", __PRETTY_FUNCTION__);
+	}
+
 	// just 24 hours mode, BCD activated
 	kernel::CMOS::write(cmosControlRegister, mode24Hour);
+
+	// initialize /dev/rtc
+	initializeVFSElements();
 }
 
 void PalmyraOS::kernel::RTC::update()
@@ -83,6 +94,7 @@ uint32_t PalmyraOS::kernel::RTC::daysSinceEpoch(uint16_t year, uint8_t month, ui
 	days += day - 1; // Subtract 1 because the day is inclusive
 	return days;
 }
+
 uint64_t PalmyraOS::kernel::RTC::toEpochTime(
 	uint16_t year,
 	uint8_t month,
@@ -99,4 +111,45 @@ uint64_t PalmyraOS::kernel::RTC::toEpochTime(
 					 minute * secondsInMinute +
 					 second;
 	return seconds;
+}
+
+bool PalmyraOS::kernel::RTC::initializeVFSElements()
+{
+	// Create a test inode with a lambda function for reading test string
+	auto rtcNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		nullptr, nullptr,
+		[](int request, void* arg) -> int
+		{
+		  // update
+		  now();
+
+		  auto* destination_ = (rtc_time*)arg;
+		  destination_->tm_sec  = seconds_;
+		  destination_->tm_min  = minutes_;
+		  destination_->tm_hour = hours_;
+		  destination_->tm_mday = day_;
+		  destination_->tm_mon  = month_ - 1;    // tm_mon is 0-based
+		  destination_->tm_year = year_ - 1900; // tm_year is years since 1900
+
+		  // tm_wday is days since Sunday, with Jan 1, 1970 being a Thursday
+		  destination_->tm_wday = static_cast<int>((daysSinceEpoch(year_, month_, day_) + 4) % 7);
+
+		  // tm_yday is days since Jan 1
+		  destination_->tm_yday = static_cast<int>(
+			  daysSinceEpoch(year_, month_, day_) - daysSinceEpoch(year_, 1, 1)
+		  );
+
+		  // No daylight saving time information available
+		  destination_->tm_isdst = -1;
+
+		  return 0;
+		}
+	);
+	if (!rtcNode) return false;
+
+	// Set the test inode at "/dev/test"
+	vfs::VirtualFileSystem::setInodeByPath(KString("/dev/rtc"), rtcNode);
+
+
+	return true;
 }

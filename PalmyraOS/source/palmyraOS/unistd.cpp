@@ -3,6 +3,7 @@
 #include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
 #include <cstddef>
+#include <cstdarg>
 
 
 uint32_t get_pid()
@@ -145,4 +146,64 @@ int clock_gettime(uint32_t clk_id, struct timespec* tp)
 		);
 	return ret;
 }
+
+uint32_t open(const char* pathname, int flags)
+{
+	int fd;
+	asm volatile (
+		"int $0x80"
+		: "=a" (fd)
+		: "a" (POSIX_INT_OPEN), "b" (pathname), "c" (flags)
+		: "memory"
+		);
+	return fd;
+}
+
+int close(uint32_t fd)
+{
+	int ret;
+	asm volatile (
+		"int $0x80"
+		: "=a" (ret)
+		: "a" (POSIX_INT_CLOSE), "b" (fd)
+		: "memory"
+		);
+	return ret;
+}
+
+int ioctl(uint32_t fd, uint32_t request, ...)
+{
+	va_list args;
+	va_start(args, request);
+	void* argp = va_arg(args, void*); // extract just the first argument (for now)
+	va_end(args);
+
+	int ret;
+	asm volatile (
+		"int $0x80"
+		: "=a" (ret)
+		: "a" (POSIX_INT_IOCTL), "b" (fd), "c" (request), "d" (argp)
+		: "memory"
+		);
+	return ret;
+}
+
+int read(uint32_t fileDescriptor, void* buffer, uint32_t count)
+{
+	int result;
+
+	register uint32_t syscall_no asm("eax") = POSIX_INT_READ;
+	register uint32_t fd asm("ebx")         = fileDescriptor;
+	register void* buf asm("ecx") = buffer;
+	register uint32_t n asm("edx") = count;
+
+	asm volatile(
+		"int $0x80"            // Interrupt to trigger system call
+		: "=a" (result)        // Output: store the result (number of bytes read or error code) in result
+		: "r" (syscall_no), "r" (fd), "r" (buf), "r" (n) // Inputs
+		: "memory"             // Clobbered memory
+		);
+	return result;
+}
+
 
