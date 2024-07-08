@@ -230,6 +230,31 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePages(size_t numPages)
 	return frame;
 }
 
+bool PalmyraOS::kernel::PagingDirectory::isAddressValid(void* address)
+{
+
+	if (address == nullptr) return false;
+
+	// Calculate virtual address, table index, and page index
+	auto     virtualAddr = (uint32_t)address;
+	uint32_t tableIndex  = virtualAddr >> 22;
+	uint32_t pageIndex   = (virtualAddr >> 12) & 0x3FF;
+
+	// Check if the table is present
+	if (!pageDirectory_[tableIndex].present) return false;
+
+	// Get the table and entry
+	PageTableEntry* table = pageTables_[tableIndex];
+	PageTableEntry* entry = &table[pageIndex];
+
+	// Check if the page is present
+	if (!entry->present) return false;
+
+	// if present, return true
+	return true;
+}
+
+
 void PalmyraOS::kernel::PagingDirectory::freePage(void* pageAddress)
 {
 	if (pageAddress == nullptr) return;
@@ -281,6 +306,7 @@ void PalmyraOS::kernel::PagingDirectory::mapPages(
 		mapPage((void*)physicalAddr_, (void*)virtualAddr_, flags);
 	}
 }
+
 
 
 ///endregion

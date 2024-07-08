@@ -11,7 +11,7 @@
 
 #include "palmyraOS/unistd.h" // _exit()
 
-
+#include "core/tasks/WindowManager.h"    // for cleaning up windows upon terminating
 
 ///region Process
 
@@ -225,9 +225,16 @@ void PalmyraOS::kernel::Process::kill()
 	age_   = 0;
 	// exitCode_ is set by _exit syscall
 
+	// clean up memory
 	for (auto& physicalPage : physicalPages_)
 	{
 		kernel::kernelPagingDirectory_ptr->freePage(physicalPage);
+	}
+
+	// clean up windows buffers
+	for (auto windowID : windows_)
+	{
+		WindowManager::closeWindow(windowID);
 	}
 
 	// TODO free directory table arrays if user process

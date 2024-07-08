@@ -179,6 +179,17 @@ namespace PalmyraOS::kernel
 	   */
 	  void unmapPage(void* virtualAddr);
 
+	  /**
+	   * @brief Checks if a virtual address is mapped to a present physical page.
+	   *
+	   * This function verifies the validity of a given virtual address by checking
+	   * the page directory and page table entries for presence.
+	   *
+	   * @param address The virtual address to validate.
+	   * @return bool True if the address is valid and mapped; otherwise, false.
+	   */
+	  bool isAddressValid(void* address);
+
 	  DEFINE_DEFAULT_MOVE(PagingDirectory);
 	  REMOVE_COPY(PagingDirectory);
    private:

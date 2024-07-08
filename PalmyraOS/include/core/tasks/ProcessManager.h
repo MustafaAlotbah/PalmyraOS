@@ -232,6 +232,7 @@ namespace PalmyraOS::kernel
 	  void           * userStack_{};          ///< Pointer to the user stack
 	  void           * kernelStack_{};        ///< Pointer to the kernel stack
 
+	  KVector<uint32_t> windows_;                        ///< List of windows allocated
 	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
   };
 

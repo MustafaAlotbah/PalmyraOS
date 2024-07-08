@@ -5,6 +5,7 @@
 // API Headers
 #include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
+#include "palmyraOS/errono.h"
 
 // System Objects
 #include "core/tasks/ProcessManager.h"
@@ -69,7 +70,7 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	if (!handled && regs->eax == POSIX_INT_MMAP)
 	{
 		handled = true;
-		void* addr = (void*)regs->ebx;
+		void* addr = (void*)regs->ebx; // TODO: currently ignored
 		uint32_t length = regs->ecx;
 
 		// TODO, offset
@@ -91,6 +92,14 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		// arguments
 		uint32_t clockId = regs->edi;
 		auto* tp = (timespec*)regs->esi;
+		auto* proc = TaskManager::getCurrentProcess();
+		if (!proc->pagingDirectory_->isAddressValid(tp))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
+
 
 		// get ticks and frequency
 		uint64_t ticks     = SystemClock::getTicks();
@@ -108,11 +117,20 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	{
 		handled = true;
 
-		const char* pathname = (const char*)regs->ebx;
+		char* pathname = (char*)regs->ebx;
 		int flags = static_cast<int>(regs->ecx);
 
 		// TODO: Implement the actual file opening logic
 		auto* proc = TaskManager::getCurrentProcess();
+
+		// check if pathname pointer is valid
+		if (!proc->pagingDirectory_->isAddressValid(pathname))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
+
 		auto inode = vfs::VirtualFileSystem::getInodeByPath(KString(pathname));
 
 		if (!inode)
@@ -145,15 +163,23 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	{
 		handled = true;
 		size_t fileDescriptor = regs->ebx;
-		const char* bufferPointer = (const char*)regs->ecx;
+		char* bufferPointer = (char*)regs->ecx;
 		size_t size = regs->edx;
 		auto* proc = TaskManager::getCurrentProcess();
-		regs->eax = 0;
+
+		// check if bufferPointer pointer is valid
+		if (!proc->pagingDirectory_->isAddressValid(bufferPointer))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
 
 		// TODO move to actual
 		// TODO 0
 		if (fileDescriptor == 1)
 		{
+			regs->eax = 0;
 			for (size_t i = 0; i < size; ++i)
 			{
 				if (bufferPointer[i] == '\0') break;
@@ -163,6 +189,7 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		}
 		else if (fileDescriptor == 2)
 		{
+			regs->eax = 0;
 			for (size_t i = 0; i < size; ++i)
 			{
 				if (bufferPointer[i] == '\0') break;
@@ -199,6 +226,15 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		char* bufferPointer = (char*)regs->ecx;
 		size_t size = regs->edx;
 		auto   proc = TaskManager::getCurrentProcess();
+
+		// check if bufferPointer pointer is valid
+		if (!proc->pagingDirectory_->isAddressValid(bufferPointer))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
+
 		auto   file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
 
 		// no such open file
@@ -222,9 +258,16 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		uint32_t fileDescriptor = regs->ebx;
 		int      request        = static_cast<int>(regs->ecx);
 		void* argp = (void*)regs->edx;
-
-		// TODO: Implement the actual ioctl logic
 		auto* proc = TaskManager::getCurrentProcess();
+
+		// check if argp pointer is valid
+		if (!proc->pagingDirectory_->isAddressValid(argp))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
+
 		auto file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
 
 		// no such open file
@@ -256,10 +299,29 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		uint32_t requiredPages = CEIL_DIV_PAGE_SIZE(requiredSize);    // ceil (requiredSize / 4096)
 
 		auto* proc          = TaskManager::getCurrentProcess();
+
+		// check if argp pointer is valid
+		if (!proc->pagingDirectory_->isAddressValid(userBuffer))
+		{
+			regs->eax = -1;
+			proc->terminate(-EFAULT);
+			goto return_clause;
+		}
+
 		auto* allocatedAddr = (uint32_t*)proc->allocatePages(requiredPages);    // TODO
 
 		*userBuffer = allocatedAddr;
 		auto* window = WindowManager::requestWindow(allocatedAddr, x, y, width, height);
+
+		// Failed to allocate a window
+		if (!window)
+		{
+			regs->eax = -1;
+			goto return_clause;
+		}
+
+		proc->windows_.push_back(window->getID());
+
 		regs->eax = window->getID();
 	}
 
@@ -268,6 +330,16 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	{
 		handled = true;
 		uint32_t windowId = regs->ebx;
+
+		auto* proc = TaskManager::getCurrentProcess();
+		for (auto it = proc->windows_.begin(); it != proc->windows_.end(); ++it)
+		{
+			if (*it == windowId)
+			{
+				proc->windows_.erase(it);
+				break;  // Exit the loop once the window is found and erased
+			}
+		}
 
 		WindowManager::closeWindow(windowId);
 	}
