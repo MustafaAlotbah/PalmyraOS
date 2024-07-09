@@ -3,10 +3,9 @@
 
 #include <utility>
 #include "core/definitions.h"
-#include "core/memory/paging.h"
 
 
-namespace PalmyraOS::kernel
+namespace PalmyraOS::types
 {
 
 
@@ -50,18 +49,18 @@ namespace PalmyraOS::kernel
    * The HeapManager handles the allocation and de-allocation of memory blocks
    * in the heap, as well as expanding and contracting the heap as needed.
    */
-  class HeapManager
+  class HeapManagerBase
   {
    public:
 	  /**
 	   * @brief Initializes the kernel heap.
 	   */
-	  HeapManager() = default;
+	  HeapManagerBase() = default;
 
 	  /**
 	   * @brief Destructor to free all pages and clean up resources.
 	   */
-	  ~HeapManager();
+//	   virtual ~HeapManagerBase() = 0;
 
 	  /**
 	   * @brief Allocates a contiguous block of memory of the requested size.
@@ -103,8 +102,12 @@ namespace PalmyraOS::kernel
 		  return new(pointer) ClassName(std::forward<Args>(args)...);
 	  }
 
-	  DEFINE_DEFAULT_MOVE(HeapManager);
-	  REMOVE_COPY(HeapManager);
+	  virtual void* allocateMemory(size_t numBytes) = 0;
+	  virtual void freePage(void* address) = 0;
+
+
+	  DEFINE_DEFAULT_MOVE(HeapManagerBase);
+	  REMOVE_COPY(HeapManagerBase);
    public:
 
 	  /**
@@ -149,7 +152,7 @@ namespace PalmyraOS::kernel
 	   * @return HeapChunk* Pointer to the found chunk or nullptr if no suitable chunk is found.
 	   */
 	  HeapChunk* findSmallestHole(uint32_t size, bool page_align);
-   private:
+   protected:
 	  uint32_t totalMemory_{};          // Total size of all heap memory including overhead
 	  uint32_t totalAllocatedMemory_{}; // Total size of allocated memory
 	  HeapChunk* heapList_{};           // Pointer to the first block in the heap

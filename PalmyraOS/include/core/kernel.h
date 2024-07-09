@@ -6,7 +6,7 @@
 #include "boot/multiboot.h"
 #include "core/VBE.h"
 #include "core/memory/paging.h"
-#include "core/memory/Heap.h"
+#include "core/memory/KernelHeap.h"
 
 
 extern uint32_t placement_address;

@@ -3,7 +3,6 @@
 #pragma once
 
 #include "core/memory/paging.h"
-#include "core/memory/Heap.h"
 
 
 namespace PalmyraOS::Tests::Paging

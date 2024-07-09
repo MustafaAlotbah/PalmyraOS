@@ -2,6 +2,7 @@
 // Implementations of the PagingTester functions
 
 #include "tests/pagingTests.h"
+#include "core/memory/KernelHeap.h"
 #include "core/panic.h"
 
 ///region PagingTester

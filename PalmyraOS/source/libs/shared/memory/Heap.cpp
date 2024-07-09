@@ -1,9 +1,13 @@
 
 
-#include "core/memory/Heap.h"
+#include "libs/shared/memory/Heap.h"
+//#include "core/memory/paging.h"
+
+#define PAGE_SIZE 0x1000
+#define PAGE_BITS 12
 
 
-void PalmyraOS::kernel::HeapChunk::split(uint32_t size)
+void PalmyraOS::types::HeapChunk::split(uint32_t size)
 {
 	// Ensure there is enough space for a new chunk
 	if (size_ <= size + sizeof(HeapChunk)) return;
@@ -22,7 +26,7 @@ void PalmyraOS::kernel::HeapChunk::split(uint32_t size)
 	size_ = size;
 }
 
-void PalmyraOS::kernel::HeapChunk::tryMerge()
+void PalmyraOS::types::HeapChunk::tryMerge()
 {
 	// Merge with the next chunk if it is free and contiguous
 	if (next_ && !next_->isAllocated_ && isPhysicallyContiguous(next_))
@@ -41,13 +45,13 @@ void PalmyraOS::kernel::HeapChunk::tryMerge()
 	}
 }
 
-bool PalmyraOS::kernel::HeapChunk::isPhysicallyContiguous(PalmyraOS::kernel::HeapChunk* other)
+bool PalmyraOS::types::HeapChunk::isPhysicallyContiguous(PalmyraOS::types::HeapChunk* other)
 {
 	// Checks if the given chunk is physically contiguous with the current chunk
 	return (uintptr_t)this + size_ + sizeof(HeapChunk) == (uintptr_t)other;
 }
 
-void* PalmyraOS::kernel::HeapManager::alloc(uint32_t size, bool page_align)
+void* PalmyraOS::types::HeapManagerBase::alloc(uint32_t size, bool page_align)
 {
 	// Calculate the total size needed, including the chunk header
 	uint32_t actualSize = size;
@@ -80,13 +84,13 @@ void* PalmyraOS::kernel::HeapManager::alloc(uint32_t size, bool page_align)
 	return (void*)((uintptr_t)chunk + sizeof(HeapChunk));
 }
 
-void* PalmyraOS::kernel::HeapManager::requestMoreMemory(size_t size)
+void* PalmyraOS::types::HeapManagerBase::requestMoreMemory(size_t size)
 {
 	// Align the requested size to the next page boundary
-	size = (size + sizeof(HeapChunk) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+	size = (size + sizeof(types::HeapChunk) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
 	// Allocate the required number of pages
-	void* newMemory = PagingManager::allocatePages(size >> PAGE_BITS);
+	void* newMemory = allocateMemory(size);
 	if (newMemory == nullptr) return nullptr; // Not enough Memory
 
 	// Create a new chunk with the newly allocated memory
@@ -118,7 +122,7 @@ void* PalmyraOS::kernel::HeapManager::requestMoreMemory(size_t size)
 	return newChunk;
 }
 
-void PalmyraOS::kernel::HeapManager::free(void* p)
+void PalmyraOS::types::HeapManagerBase::free(void* p)
 {
 	if (!p) return;
 
@@ -134,7 +138,7 @@ void PalmyraOS::kernel::HeapManager::free(void* p)
 	coalesceFreeBlocks();
 }
 
-void PalmyraOS::kernel::HeapManager::coalesceFreeBlocks()
+void PalmyraOS::types::HeapManagerBase::coalesceFreeBlocks()
 {
 	// TODO merge all and not just immediate neighbors
 	// Iterate through all chunks in the heap
@@ -145,7 +149,7 @@ void PalmyraOS::kernel::HeapManager::coalesceFreeBlocks()
 	}
 }
 
-void PalmyraOS::kernel::HeapManager::expand(uint32_t new_size)
+void PalmyraOS::types::HeapManagerBase::expand(uint32_t new_size)
 {
 	// If the new size is less than or equal to the total memory, do nothing
 	if (new_size <= totalMemory_) return;
@@ -155,7 +159,7 @@ void PalmyraOS::kernel::HeapManager::expand(uint32_t new_size)
 	totalMemory_ = new_size;
 }
 
-uint32_t PalmyraOS::kernel::HeapManager::contract(uint32_t new_size)
+uint32_t PalmyraOS::types::HeapManagerBase::contract(uint32_t new_size)
 {
 	// If the new size is greater than or equal to the total memory, return the total memory
 	if (new_size >= totalMemory_) return totalMemory_;
@@ -166,7 +170,7 @@ uint32_t PalmyraOS::kernel::HeapManager::contract(uint32_t new_size)
 }
 
 // Finds the smallest free chunk that can fit the requested size, optionally page-aligned
-PalmyraOS::kernel::HeapChunk* PalmyraOS::kernel::HeapManager::findSmallestHole(uint32_t size, bool page_align)
+PalmyraOS::types::HeapChunk* PalmyraOS::types::HeapManagerBase::findSmallestHole(uint32_t size, bool page_align)
 {
 	// Initialize a pointer to the best fit chunk
 	HeapChunk* bestFit = nullptr;
@@ -184,24 +188,6 @@ PalmyraOS::kernel::HeapChunk* PalmyraOS::kernel::HeapManager::findSmallestHole(u
 	return bestFit;
 }
 
-PalmyraOS::kernel::HeapManager::~HeapManager()
-{
-	HeapChunk* current         = heapList_;
-	HeapChunk* nextPageAligned = nullptr;
-
-	while (current)
-	{
-		// Find the next page-aligned chunk
-		nextPageAligned = current->next_;
-		while (nextPageAligned && ((uintptr_t)nextPageAligned & 0xFFF) != 0)
-		{
-			nextPageAligned = nextPageAligned->next_;
-		}
-
-		// Free the current page-aligned chunk
-		PagingManager::freePage((void*)current);
-
-		// Move to the next page-aligned chunk
-		current = nextPageAligned;
-	}
-}
+//PalmyraOS::types::HeapManagerBase::~HeapManagerBase() {
+//
+//};

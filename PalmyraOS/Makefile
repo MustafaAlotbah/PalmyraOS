@@ -8,6 +8,7 @@ LD_PARAMS = -melf_i386
 SUBDIRS := \
 	source/ \
 	source/libs/ \
+	source/libs/shared/memory \
 	source/tests \
 	source/core/ \
 	source/core/boot/ \
@@ -17,7 +18,8 @@ SUBDIRS := \
 	source/core/tasks \
 	source/core/files \
 	source/palmyraOS \
-	source/userland/systemWidgets
+	source/userland/systemWidgets \
+	source/userland/tests
 
 # Find all .cpp and .asm source files in the specified subdirectories
 SRC_CPP_FILES := $(wildcard $(addsuffix /*.cpp, $(SUBDIRS)))
