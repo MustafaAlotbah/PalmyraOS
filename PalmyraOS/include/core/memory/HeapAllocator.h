@@ -5,6 +5,7 @@
 #include <utility>
 #include <map>
 #include <vector>
+#include <queue>
 
 #include "core/definitions.h"
 #include "core/kernel.h"
@@ -157,6 +158,10 @@ namespace PalmyraOS::kernel
 	  {}
 
 	  template<typename U>
+	  explicit KernelHeapAllocator(const KernelHeapAllocator<U>& other) noexcept : HeapAllocator<T>(other.heapManager_)
+	  {}
+
+	  template<typename U>
 	  struct rebind
 	  {
 		  using other = KernelHeapAllocator<U>;
@@ -182,6 +187,7 @@ namespace PalmyraOS::kernel
   template<typename KeyT, typename ValT>
   using KMap = std::map<KeyT, ValT, std::less<KeyT>, KernelHeapAllocator<std::pair<const KeyT, ValT>>>;
 
+
   /**
    * @typedef Kernel Vector
    * @brief A type definition for a vector using the KernelHeapAllocator.
@@ -190,5 +196,31 @@ namespace PalmyraOS::kernel
    */
   template<typename Type>
   using KVector = std::vector<Type, KernelHeapAllocator<Type>>;
+
+
+  /**
+   * @typedef Kernel Deque
+   * @brief A type definition for a deque using the KernelHeapAllocator.
+   *
+   * @warning Paging must be activated before declaring this type, as its constructor uses the heap,
+   * which might not be initialized yet. No global variables should be used.
+   *
+   * @tparam Type Type of the elements in the deque.
+   */
+  template<typename Type>
+  using KDeque = std::deque<Type, KernelHeapAllocator<Type>>;
+
+
+  /**
+   * @typedef Kernel Queue
+   * @brief A type definition for a queue using the KernelHeapAllocator.
+   *
+   * @warning Paging must be activated before declaring this type, as its constructor uses the heap,
+   * which might not be initialized yet. No global variables should be used.
+   *
+   * @tparam Type Type of the elements in the queue.
+   */
+  template<typename Type>
+  using KQueue = std::queue<Type, KDeque<Type>>;
 
 }

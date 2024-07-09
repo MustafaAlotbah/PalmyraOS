@@ -134,6 +134,18 @@ void* PalmyraOS::kernel::PhysicalMemory::allocateFrames(uint32_t num)
 	return (void*)(firstFrame << PAGE_BITS);
 }
 
+void PalmyraOS::kernel::PhysicalMemory::freeFrames(void* frame, uint32_t num)
+{
+	// Calculate the starting frame index from the frame address
+	uint32_t firstFrame = (uint32_t)frame >> PAGE_BITS;
+
+	for (int i = 0; i < num; ++i)
+	{
+		unmarkFrame(firstFrame + i);
+	}
+}
+
+
 uint32_t PalmyraOS::kernel::PhysicalMemory::findFirstFreeFrames(uint32_t num)
 {
 	// Find the first consecutive set of free frames

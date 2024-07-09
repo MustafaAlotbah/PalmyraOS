@@ -184,31 +184,6 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePage(PageFlags flags)
 		return allocatePage();
 	}
 
-
-	// TODO: Find a free virtual address
-	//	for (uint32_t tableIndex = 0; tableIndex < NUM_ENTRIES; ++tableIndex)
-	//	{
-	//		if (!pageDirectory_[tableIndex].present)
-	//		{
-	//			// Allocate a new page table if not present
-	//			getTable(tableIndex);
-	//		}
-	//
-	//		uint32_t* table = (uint32_t*)pageTables_[tableIndex];
-	//		for (uint32_t pageIndex = 0; pageIndex < NUM_ENTRIES; ++pageIndex)
-	//		{
-	//			PageTableEntry* entry = (PageTableEntry*)&table[pageIndex];
-	//			if (!entry->present)
-	//			{
-	//				// Map the physical address to the virtual address
-	//				uint32_t virtualAddr = (tableIndex << 22) | (pageIndex << 12);
-	//				mapPage(physicalAddr, (void*)virtualAddr, 0x3); // Present and writable
-	//				return (void*)virtualAddr;
-	//			}
-	//		}
-	//	}
-	//
-
 	// Map the frame to itself
 	mapPage(frame, frame, flags);
 
@@ -217,17 +192,54 @@ void* PalmyraOS::kernel::PagingDirectory::allocatePage(PageFlags flags)
 
 void* PalmyraOS::kernel::PagingDirectory::allocatePages(size_t numPages)
 {
-	// Allocate a frame
-	void* frame = PhysicalMemory::allocateFrames(numPages);
-	if (frame == nullptr) return nullptr;
+	// Allocate the first frame to determine the starting point
+	void* startFrame = PhysicalMemory::allocateFrames(numPages);
+	if (startFrame == nullptr) return nullptr;
 
+	auto     startAddress = reinterpret_cast<uint32_t>(startFrame);
+	uint32_t endAddress   = startAddress + (numPages * 0x1000);
+
+	// Calculate table indices for start and end addresses
+	uint32_t startTableIndex = startAddress >> 22;         // Table index of the start address
+	uint32_t endTableIndex   = (endAddress - 1) >> 22;     // Table index of the last byte
+
+	// Check if page allocation crosses an unallocated page table boundary
+	bool          isReallocationRequired = false;
+	for (uint32_t tableIndex             = startTableIndex; tableIndex <= endTableIndex; ++tableIndex)
+	{
+		// if any table is not present, mark to try again
+		isReallocationRequired |= !pageDirectory_[tableIndex].present;
+	}
+
+	/* If reallocation is required, free the frames and allocate the necessary tables
+	 * We require new page allocation, to map the next table in previous tables
+	 * Check: Recursive page table mapping problem
+	 */
+	if (isReallocationRequired)
+	{
+
+		// Deallocate the originally allocated frames
+		PhysicalMemory::freeFrames(startFrame, numPages);
+
+		// Ensure all required page tables are allocated
+		for (uint32_t tableIndex = startTableIndex; tableIndex <= endTableIndex; ++tableIndex)
+		{
+			// Allocate page table if not already present
+			getTable(tableIndex, PageFlags::Present | PageFlags::ReadWrite);
+		}
+
+		// Retry allocation after ensuring tables are present
+		return allocatePages(numPages);
+	}
+
+	// Map each page to itself in the page table
 	for (size_t i = 0; i < numPages; ++i)
 	{
-		auto address = (uint32_t)frame + (0x1000 * i);
+		auto address = (uint32_t)startFrame + (0x1000 * i);
 		mapPage((void*)address, (void*)address, PageFlags::Present | PageFlags::ReadWrite);
 	}
 
-	return frame;
+	return startFrame;
 }
 
 bool PalmyraOS::kernel::PagingDirectory::isAddressValid(void* address)

@@ -54,6 +54,8 @@ namespace PalmyraOS::kernel
 	   */
 	  static void freeFrame(void* frame);
 
+	  static void freeFrames(void* frame, uint32_t num);
+
 	  /**
 	   * @brief Reserves a frame, marking it as used.
 	   * @param frame Pointer to the frame to reserve.
