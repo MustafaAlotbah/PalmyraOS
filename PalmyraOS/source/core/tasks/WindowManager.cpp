@@ -81,8 +81,12 @@ void PalmyraOS::kernel::WindowManager::composite()
 }
 void PalmyraOS::kernel::WindowManager::initialize()
 {
-	windows.reserve(20);
 	windows_.reserve(20);
+
+	/* Delayed initialization, because KQueue uses KDeque,
+	 * KDeque constructor uses the heap, and the heap is not set directly.
+	 */
+	keyboardsEvents_ = heapManager.createInstance<KQueue<KeyboardEvent>>();
 }
 
 void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id)

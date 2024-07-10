@@ -118,7 +118,28 @@ void closeWindow(uint32_t windowID)
 		: "r"(syscall_no), "r"(windowId)  // Input operands
 		: "memory"   // Clobbered registers
 		);
+}
 
+KeyboardEvent nextKeyboardEvent(uint32_t windowID)
+{
+	register uint32_t syscall_no asm("eax") = INT_NEXT_KEY_EVENT;
+	register uint32_t windowId asm("ebx")   = windowID;
+
+	KeyboardEvent     event;
+	register uint32_t eventPtr asm("ecx") = reinterpret_cast<uint32_t>(&event);
+
+	// TODO
+	asm volatile(
+		"int $0x80"  // Software interrupt to trigger the syscall
+		:            // No output operands
+		:
+		"a"(syscall_no),
+		"b"(windowId),
+		"c"(eventPtr)
+		: "memory"   // Clobbered registers
+		);
+
+	return event;
 }
 
 int sched_yield()
@@ -147,7 +168,7 @@ int clock_gettime(uint32_t clk_id, struct timespec* tp)
 	return ret;
 }
 
-uint32_t open(const char* pathname, int flags)
+int open(const char* pathname, int flags)
 {
 	int fd;
 	asm volatile (

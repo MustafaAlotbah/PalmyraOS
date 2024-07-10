@@ -3,10 +3,9 @@
 #pragma once
 
 #include "core/definitions.h"
-#include "core/memory/HeapAllocator.h"
-//#include "libs/string.h"
 #include "core/memory/KernelHeapAllocator.h"
 
+#include "palmyraOS/input.h"
 
 
 namespace PalmyraOS::kernel
@@ -90,8 +89,9 @@ namespace PalmyraOS::kernel
 	  static void composite();
 
    private:
-	  static WindowVector windows; ///< Vector of all windows managed by the WindowManager.
 	  static KVector<Window> windows_; ///< Vector of all windows managed by the WindowManager. // TODO  KMap
+
+	  static KQueue<KeyboardEvent>* keyboardsEvents_;
   };
 
 

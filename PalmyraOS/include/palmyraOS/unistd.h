@@ -1,11 +1,13 @@
 /*
  * The API of PalmyraOS
  * Partially POSIX compliant (under construction)
+ * Check out https://github.com/spotify/linux/blob/master/arch/x86/include/asm/unistd_32.h
  * */
 
 #pragma once
 
 #include <cstdint>
+#include "palmyraOS/input.h"
 
 /* File Descriptors */
 #define STDIN 0
@@ -16,6 +18,7 @@
 /* Specific Interrupts */
 #define INT_INIT_WINDOW 9595
 #define INT_CLOSE_WINDOW 9596
+#define INT_NEXT_KEY_EVENT 9597
 
 
 /* POSIX Interrupts */
@@ -128,7 +131,7 @@ int sched_yield();
  * @param flags The flags to control how the file or device is opened.
  * @return The file descriptor on success, or -1 if an error occurred.
  */
-uint32_t open(const char* pathname, int flags);
+int open(const char* pathname, int flags);
 
 /**
  * @brief Closes a file descriptor.

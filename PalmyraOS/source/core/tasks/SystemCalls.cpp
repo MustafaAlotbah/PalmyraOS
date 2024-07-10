@@ -1,6 +1,7 @@
 
 
 #include "core/tasks/SystemCalls.h"
+#include "libs/memory.h"
 
 // API Headers
 #include "palmyraOS/unistd.h"
@@ -24,6 +25,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 	interrupts::InterruptController::setInterruptHandler(0x80, &handleInterrupt);
 
 	// Map system call numbers to their respective handler functions
+	// POSIX
 	systemCallHandlers_[POSIX_INT_EXIT]    = &SystemCallsManager::handleExit;
 	systemCallHandlers_[POSIX_INT_GET_PID] = &SystemCallsManager::handleGetPid;
 	systemCallHandlers_[POSIX_INT_YIELD]   = &SystemCallsManager::handleYield;
@@ -34,8 +36,14 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 	systemCallHandlers_[POSIX_INT_WRITE]   = &SystemCallsManager::handleWrite;
 	systemCallHandlers_[POSIX_INT_READ]    = &SystemCallsManager::handleRead;
 	systemCallHandlers_[POSIX_INT_IOCTL]   = &SystemCallsManager::handleIoctl;
+
+	// Custom
 	systemCallHandlers_[INT_INIT_WINDOW]   = &SystemCallsManager::handleInitWindow;
 	systemCallHandlers_[INT_CLOSE_WINDOW]  = &SystemCallsManager::handleCloseWindow;
+	systemCallHandlers_[INT_NEXT_KEY_EVENT] = &SystemCallsManager::handleNextKeyboardEvent;
+
+	// Adopted from Linux
+	systemCallHandlers_[LINUX_INT_GETDENTS] = &SystemCallsManager::handleGetdents;
 
 }
 
@@ -358,5 +366,85 @@ void PalmyraOS::kernel::SystemCallsManager::handleCloseWindow(PalmyraOS::kernel:
 
 	// Close the window with the given ID
 	WindowManager::closeWindow(windowId);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleNextKeyboardEvent(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// Extract arguments from registers
+	uint32_t windowId = regs->ebx;
+	auto     event    = (KeyboardEvent*)regs->ecx;
+
+	// Check if userBuffer is a valid pointer
+	if (!isValidAddress(event)) return;
+
+	*event = WindowManager::popKeyboardEvent(windowId);
+
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// int write(uint32_t fd, const void *buf, uint32_t count)
+
+	// Extract arguments from registers
+	size_t fileDescriptor = regs->ebx;
+	auto   bufferPointer  = (linux_dirent*)regs->ecx;
+	size_t count          = regs->edx;
+
+	// Check if bufferPointer is a valid pointer
+	if (!isValidAddress(bufferPointer)) return;
+	if (!isValidAddress(bufferPointer + count)) return;
+
+	// TODO: uncap and allow for iterative
+	count = count > 100 ? 100 : count;
+
+
+	// Get the file associated with the file descriptor
+	auto file = TaskManager::getCurrentProcess()->fileTableDescriptor_.getOpenFile(fileDescriptor);
+	if (!file || file->getInode()->getType() != vfs::InodeBase::Type::Directory)
+	{
+		// If the file is not open, set the number of bytes read to 0
+		regs->eax = -1; // invalid operation
+		return;
+	}
+
+	// Read directory entries by offset
+	auto dentries = file->getInode()->getDentries(file->getOffset());
+	file->advanceOffset(dentries.size());
+
+	char   * buffer  = (char*)bufferPointer;
+	size_t bytesRead = 0;
+
+	for (size_t index = 0; index < dentries.size() && bytesRead < count; ++index)
+	{
+		auto dentry = dentries[index];
+		auto name   = dentry.first;
+		auto type   = (uint8_t)dentry.second->getType();
+		auto d_ino  = (uint32_t)dentry.second->getInodeNumber();
+
+		size_t nameLen = name.size();
+
+		// +1 for null-terminator, +1 for d_type
+		size_t reclen = sizeof(linux_dirent) + nameLen + 1 + 1;
+
+		if (bytesRead + reclen > count)
+		{
+			break; // Not enough space in the buffer
+		}
+
+
+		auto* dirent = (linux_dirent*)(buffer + bytesRead);
+		dirent->d_ino    = d_ino;
+		dirent->d_off    = bytesRead + reclen;
+		dirent->d_reclen = reclen;
+
+		memcpy((void*)dirent->d_name, (void*)name.c_str(), nameLen);
+		dirent->d_name[nameLen] = '\0'; // Null-terminate the name
+
+		*(char*)(buffer + bytesRead + reclen - 1) = (char)type; // Append the file type
+
+		bytesRead += reclen;
+	}
+
+	regs->eax = bytesRead;
 }
 

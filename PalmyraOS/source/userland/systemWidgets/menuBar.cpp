@@ -4,6 +4,8 @@
 
 #include "palmyraOS/unistd.h"       // PalmyraOS API
 #include "palmyraOS/time.h"
+#include "palmyraOS/stdlib.h"    // malloc
+#include "palmyraOS/stdio.h"    // printf, perror
 
 #include <cstddef>                    // size_t
 #include "libs/string.h"            // strlen
@@ -18,20 +20,13 @@
 // Helper function to allocate memory for back buffer
 uint32_t* allocateBackBuffer(size_t requiredMemory)
 {
-	auto* backBuffer = (uint32_t*)mmap(
-		nullptr, requiredMemory, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0
-	);
+	volatile auto backBuffer = (uint32_t*)malloc(requiredMemory);
 	if (backBuffer == MAP_FAILED)
 	{
-		const char* message = "Failed to allocate memory\n";
-		write(STDERR, message, strlen(message));
+		perror("Failed to map memory\n");
 		_exit(-1);
 	}
-	else
-	{
-		const char* message = "Success to allocate memory\n";
-		write(STDOUT, message, strlen(message));
-	}
+	else printf("Success to map memory\n");
 	return backBuffer;
 }
 
@@ -41,16 +36,19 @@ size_t initializeWindowWrapper(uint32_t** frontBuffer, size_t width, size_t heig
 	size_t bufferId = initializeWindow(frontBuffer, 0, 0, width, height);
 	if (bufferId == 0)
 	{
-		const char* message = "Failed to initialize window\n";
-		write(STDERR, message, strlen(message));
+		perror("Failed to initialize window\n");
 		_exit(-1);
 	}
-	else
-	{
-		const char* message = "Success to initialize window\n";
-		write(STDOUT, message, strlen(message));
-	}
+	else printf("Success to initialize window\n");
 	return bufferId;
+}
+
+// Helper function to calculate elapsed time in seconds
+int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current)
+{
+	int startSeconds   = start.tm_hour * 3600 + start.tm_min * 60 + start.tm_sec;
+	int currentSeconds = current.tm_hour * 3600 + current.tm_min * 60 + current.tm_sec;
+	return currentSeconds - startSeconds;
 }
 
 [[noreturn]] int PalmyraOS::MenuBar::main(uint32_t argc, char** argv)
@@ -88,7 +86,8 @@ size_t initializeWindowWrapper(uint32_t** frontBuffer, size_t width, size_t heig
 
 	// Initialize time structure
 	rtc_time epochTime{};
-	ioctl(epochTime_fd, RTC_RD_TIME, &epochTime);
+	rtc_time startTime{};
+	ioctl(epochTime_fd, RTC_RD_TIME, &startTime);
 
 	// Main loop for rendering and updates
 	while (true)
@@ -123,6 +122,14 @@ size_t initializeWindowWrapper(uint32_t** frontBuffer, size_t width, size_t heig
 			);
 			textRenderer.setCursor(width / 2 - 50, 0);    // Center the clock text
 			textRenderer << clock_buffer;
+
+
+			// Calculate elapsed time in seconds using helper function
+			int elapsedTime = calculateElapsedTimeInSeconds(startTime, epochTime);
+
+			// Calculate FPS
+			double fps = count / (elapsedTime > 0 ? elapsedTime : 1);
+			textRenderer << "\tFPS: " << (int)fps;
 		}
 
 		// Reset text renderer and swap frame buffers for next frame

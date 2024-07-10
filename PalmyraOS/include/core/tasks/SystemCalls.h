@@ -2,7 +2,7 @@
 #pragma once
 
 #include "core/Interrupts.h"
-#include "core/memory/HeapAllocator.h"
+#include "core/memory/KernelHeapAllocator.h"
 
 
 namespace PalmyraOS::kernel
@@ -35,6 +35,7 @@ namespace PalmyraOS::kernel
 	  static void handleIoctl(interrupts::CPURegisters* regs);
 	  static void handleInitWindow(interrupts::CPURegisters* regs);
 	  static void handleCloseWindow(interrupts::CPURegisters* regs);
+	  static void handleNextKeyboardEvent(interrupts::CPURegisters* regs);
 
 	  static KMap<uint32_t, SystemCallHandler> systemCallHandlers_;
   };

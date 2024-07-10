@@ -7,12 +7,12 @@
 #include "core/cpu.h"
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
-#include "core/memory/PhysicalMemory.h"
 #include "core/peripherals/Logger.h"
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/SystemCalls.h"
 #include "core/tasks/WindowManager.h"
 #include "core/peripherals/RTC.h"
+#include "core/peripherals/Keyboard.h"
 
 #include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
@@ -156,7 +156,7 @@ namespace Processes
 
 		  fb.swapBuffers();
 
-		  if (proc_2_counter >= 1'000) break;
+		  if (proc_2_counter >= 1'00) break;
 	  }
 
 //	  brush.fill(PalmyraOS::Color::DarkBlue);
@@ -217,6 +217,7 @@ void callConstructors()
 [[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info)
 {
 	using namespace PalmyraOS;
+	constexpr uint64_t SHORT_DELAY = 2500'000'0;
 
 	// ----------------------- Call Kernel Constructors -----------------------
 	// first construct globals
@@ -277,6 +278,7 @@ void callConstructors()
 	PalmyraOS::kernel::SystemClock::initialize(kernel::SystemClockFrequency);
 	textRenderer << "Initialized System Clock at " << kernel::SystemClockFrequency << " Hz.\n" << SWAP_BUFF();
 	LOG_INFO("Initialized System Clock at %d Hz.", kernel::SystemClockFrequency);
+	kernel::CPU::delay(SHORT_DELAY);
 
 	// Measurements that depend on system clock
 	{
@@ -284,20 +286,24 @@ void callConstructors()
 		PalmyraOS::kernel::CPU::initialize();
 		textRenderer << "CPU Frequency: " << PalmyraOS::kernel::CPU::detectCpuFrequency() << " MHz.\n" << SWAP_BUFF();
 		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+		kernel::CPU::delay(SHORT_DELAY);
 	}
 
 	// ----------------------- Initialize Physical Memory -------------------------------
 	textRenderer << "Initializing Physical Memory\n" << SWAP_BUFF();
 	kernel::initializePhysicalMemory(x86_multiboot_info);
-
+	kernel::CPU::delay(SHORT_DELAY);
 
 	// ----------------------- Initialize Virtual Memory -------------------------------
 	textRenderer << "Initializing Virtual Memory\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
+
 	kernel::initializeVirtualMemory(x86_multiboot_info);
 	textRenderer << "Virtual Memory is initialized\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
 
-	kernel::testMemory();
-	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
+//	kernel::testMemory();
+//	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
 
 
 	// ----------------------- Virtual File System -------------------------------
@@ -305,19 +311,27 @@ void callConstructors()
 	kernel::vfs::VirtualFileSystem::initialize();
 
 
+	// ----------------------- Initialize Tasks -------------------------------
+	kernel::TaskManager::initialize();
+	textRenderer << "TaskManager is initialized.\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
+
+	kernel::SystemCallsManager::initialize();
+	textRenderer << "SystemCallsManager is initialized.\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
+
+	kernel::WindowManager::initialize();
+	textRenderer << "WindowManager is initialized.\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
+
+
 	// ----------------------- Initialize Peripherals -------------------------------
 
 	kernel::RTC::initialize();
 
-	// ----------------------- Initialize Tasks -------------------------------
-	kernel::TaskManager::initialize();
-	textRenderer << "TaskManager is initialized.\n" << SWAP_BUFF();
+	kernel::Keyboard::initialize();
 
-	kernel::SystemCallsManager::initialize();
-	textRenderer << "SystemCallsManager is initialized.\n" << SWAP_BUFF();
-
-	kernel::WindowManager::initialize();
-	textRenderer << "WindowManager is initialized.\n" << SWAP_BUFF();
+	// ---------------------------- Add Processes -----------------------------------
 
 	// Add Important Processes
 	{
