@@ -33,6 +33,9 @@ namespace PalmyraOS::kernel
 	  static void handleWrite(interrupts::CPURegisters* regs);
 	  static void handleRead(interrupts::CPURegisters* regs);
 	  static void handleIoctl(interrupts::CPURegisters* regs);
+
+	  static void handleGetdents(interrupts::CPURegisters* regs);
+
 	  static void handleInitWindow(interrupts::CPURegisters* regs);
 	  static void handleCloseWindow(interrupts::CPURegisters* regs);
 	  static void handleNextKeyboardEvent(interrupts::CPURegisters* regs);

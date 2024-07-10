@@ -227,4 +227,22 @@ int read(uint32_t fileDescriptor, void* buffer, uint32_t count)
 	return result;
 }
 
+int getdents(unsigned int fileDescriptor, linux_dirent* dirp, unsigned int count)
+{
+	int result;
+
+	register uint32_t syscall_no asm("eax") = LINUX_INT_GETDENTS;
+	register uint32_t fd asm("ebx")         = fileDescriptor;
+	register void* buf asm("ecx") = dirp;
+	register uint32_t n asm("edx") = count;
+
+	asm volatile(
+		"int $0x80"
+		: "=a" (result)
+		: "r" (syscall_no), "r" (fd), "r" (buf), "r" (n)
+		: "memory"
+		);
+	return result;
+}
+
 

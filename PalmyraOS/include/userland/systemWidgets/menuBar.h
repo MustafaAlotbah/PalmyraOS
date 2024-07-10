@@ -4,7 +4,7 @@
 #include <cstdint>
 
 
-namespace PalmyraOS::MenuBar
+namespace PalmyraOS::Userland::builtin::MenuBar
 {
 
   /**

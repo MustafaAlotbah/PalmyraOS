@@ -18,7 +18,23 @@ PalmyraOS::kernel::Window::Window(uint32_t* buffer, uint32_t x, uint32_t y, uint
 
 }
 
-PalmyraOS::kernel::WindowVector PalmyraOS::kernel::WindowManager::windows;
+void PalmyraOS::kernel::Window::queueKeyboardEvent(KeyboardEvent event)
+{
+	if (keyboardsEvents_.size() > 20) keyboardsEvents_.pop();
+	keyboardsEvents_.push(event);
+}
+
+KeyboardEvent PalmyraOS::kernel::Window::popKeyboardEvent()
+{
+	if (keyboardsEvents_.empty()) return {};
+
+	KeyboardEvent front = keyboardsEvents_.front();
+	keyboardsEvents_.pop();
+	return front;
+}
+
+PalmyraOS::kernel::KVector<PalmyraOS::kernel::Window> PalmyraOS::kernel::WindowManager::windows_;
+PalmyraOS::kernel::KQueue<KeyboardEvent>* PalmyraOS::kernel::WindowManager::keyboardsEvents_ = nullptr;
 
 PalmyraOS::kernel::Window* PalmyraOS::kernel::WindowManager::requestWindow(
 	uint32_t* buffer_,
@@ -78,7 +94,22 @@ void PalmyraOS::kernel::WindowManager::composite()
 		screenBuffer.swapBuffers();
 	}
 	TaskManager::endAtomicOperation();
+
+	// Manage the buffer size
+	if (windows_.size() >= 2)
+	{
+		size_t   size = keyboardsEvents_->size();
+		for (int i    = 0; i < size; ++i)
+		{
+			for (auto& window : windows_)
+			{
+				window.queueKeyboardEvent(keyboardsEvents_->front());
+			}
+			keyboardsEvents_->pop();
+		}
+	}
 }
+
 void PalmyraOS::kernel::WindowManager::initialize()
 {
 	windows_.reserve(20);
@@ -100,4 +131,25 @@ void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id)
 			break;  // Exit the loop once the window is found and erased
 		}
 	}
+}
+
+void PalmyraOS::kernel::WindowManager::queueKeyboardEvent(KeyboardEvent event)
+{
+	if (keyboardsEvents_)
+	{
+		keyboardsEvents_->push(event);
+	}
+}
+
+KeyboardEvent PalmyraOS::kernel::WindowManager::popKeyboardEvent(uint32_t id)
+{
+	// TODO: Capture Alt+Tab, switch active window
+	for (auto& window : windows_)
+	{
+		if (window.id_ == id)
+		{
+			return window.popKeyboardEvent();
+		}
+	}
+	return {};
 }

@@ -74,6 +74,14 @@ void PalmyraOS::kernel::Brush::drawHLine(uint32_t x1, uint32_t x2, uint32_t y, P
 	}
 }
 
+void PalmyraOS::kernel::Brush::drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, PalmyraOS::Color color)
+{
+	drawHLine(x1, x2 - 1, y1, color);
+	drawHLine(x1, x2 - 1, y2 - 1, color);
+	drawVLine(x1, y1, y2 - 1, color);
+	drawVLine(x2 - 1, y1, y2 - 1, color);
+}
+
 ///endregion
 
 

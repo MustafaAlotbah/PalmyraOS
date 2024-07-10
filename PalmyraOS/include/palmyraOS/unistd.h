@@ -33,6 +33,9 @@
 #define POSIX_INT_CLOSE 6
 #define POSIX_INT_IOCTL 54
 
+/* From Linux */
+#define LINUX_INT_GETDENTS 141
+
 
 /* mmap protection flags */
 #define PROT_READ  0x1
@@ -114,6 +117,8 @@ uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t wi
  */
 void closeWindow(uint32_t windowID);
 
+KeyboardEvent nextKeyboardEvent(uint32_t windowID);
+
 /**
  * @brief Yields the processor, allowing other threads to run.
  *
@@ -150,3 +155,22 @@ int close(uint32_t fd);
  * @return 0 on success, or -1 if an error occurred.
  */
 int ioctl(uint32_t fd, uint32_t request, ...);
+
+struct linux_dirent
+{
+	long           d_ino;
+	size_t         d_off;
+	unsigned short d_reclen;
+	char           d_name[];
+};
+
+// dirent.h
+# define DT_UNKNOWN    0
+# define DT_FIFO    1
+# define DT_CHR        2
+# define DT_DIR        4
+# define DT_BLK        6
+# define DT_REG        8
+
+
+int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count);

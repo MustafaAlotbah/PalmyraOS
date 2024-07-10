@@ -15,4 +15,4 @@ Currently:
 
 Currently, it looks as follows:
 
-![PalmyraOS](media/PalmyraOS__08_07_2024_17_47_47.png)
+![PalmyraOS](media/PalmyraOS__10_07_2024_05_06_39.png)

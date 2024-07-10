@@ -300,4 +300,6 @@ void PalmyraOS::kernel::testMemory()
 	if (!Tests::Allocator::testUnorderedMap())
 		kernel::kernelPanic("Testing Allocator Unordered Map failed!");
 
+//	if (!Tests::Allocator::testQueue())
+//		kernel::kernelPanic("Testing Allocator Queue failed!");
 }

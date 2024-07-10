@@ -92,7 +92,7 @@ PalmyraOS/
 16. [x] SysCalls + (System API)
 17. [x] Virtual File System (VFS)
 18. [ ] Interprocess Communication (IPC) pipes
-19. [ ] Keyboard driver
+19. [x] Keyboard driver
 20. [ ] Mouse driver
 21. [ ] Terminal
 22. [ ] FAT16

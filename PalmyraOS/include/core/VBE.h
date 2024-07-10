@@ -102,6 +102,17 @@ namespace PalmyraOS::kernel
 	  void fillRectangle(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
 
 	  /**
+	   * Draw a rectangle in the frame buffer with a specific color.
+	   * @param x1 The x-coordinate of the top-left corner.
+	   * @param y1 The y-coordinate of the top-left corner.
+	   * @param x2 The x-coordinate of the bottom-right corner.
+	   * @param y2 The y-coordinate of the bottom-right corner.
+	   * @param color The color to fill the rectangle with.
+	   */
+	  void drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
+
+
+	  /**
 	   * Draw a point (pixel) in the frame buffer.
 	   * @param x The x-coordinate of the point.
 	   * @param y The y-coordinate of the point.

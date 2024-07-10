@@ -352,10 +352,26 @@ void callConstructors()
 				const_cast<char*>("menuBar.exe"), nullptr
 			};
 			kernel::TaskManager::newProcess(
-				PalmyraOS::MenuBar::main,
+				PalmyraOS::Userland::builtin::MenuBar::main,
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				1,
+				argv
+			);
+		}
+
+		// Run the kernel terminal
+		{
+			char* argv[] = {
+				const_cast<char*>("keylogger.exe"),
+				const_cast<char*>("-count"),
+				const_cast<char*>("arg3"), nullptr
+			};
+			kernel::TaskManager::newProcess(
+				PalmyraOS::Userland::builtin::KernelTerminal::main,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				3,
 				argv
 			);
 		}
@@ -387,6 +403,8 @@ void callConstructors()
 				argv
 			);
 		}
+
+
 	}
 
 

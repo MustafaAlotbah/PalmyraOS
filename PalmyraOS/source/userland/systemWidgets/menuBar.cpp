@@ -51,7 +51,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 	return currentSeconds - startSeconds;
 }
 
-[[noreturn]] int PalmyraOS::MenuBar::main(uint32_t argc, char** argv)
+[[noreturn]] int PalmyraOS::Userland::builtin::MenuBar::main(uint32_t argc, char** argv)
 {
 
 	// Define dimensions and required memory for the window

@@ -31,6 +31,10 @@ namespace PalmyraOS::kernel
 
 	  inline uint32_t getID()
 	  { return id_; }
+
+	  void queueKeyboardEvent(KeyboardEvent event);
+
+	  KeyboardEvent popKeyboardEvent();
    private:
 	  static uint32_t count; ///< Static counter for window IDs.
 
@@ -45,14 +49,9 @@ namespace PalmyraOS::kernel
 	  uint32_t* buffer_;        ///< Pointer to the buffer for the window's content.
 	  bool visible_{ true };    ///< Visibility status of the window.
 
+	  KQueue<KeyboardEvent> keyboardsEvents_;
 	  friend class WindowManager;
   };
-
-  /**
-   * @typedef WindowVector
-   * @brief A type definition for a vector of Window objects using the KernelHeapAllocator.
-   */
-  typedef std::vector<Window, KernelHeapAllocator<Window>> WindowVector;
 
   /**
    * @class WindowManager
@@ -87,6 +86,10 @@ namespace PalmyraOS::kernel
 	   * @brief Composites all the windows.
 	   */
 	  static void composite();
+
+	  static void queueKeyboardEvent(KeyboardEvent event);
+
+	  static KeyboardEvent popKeyboardEvent(uint32_t id);
 
    private:
 	  static KVector<Window> windows_; ///< Vector of all windows managed by the WindowManager. // TODO  KMap
