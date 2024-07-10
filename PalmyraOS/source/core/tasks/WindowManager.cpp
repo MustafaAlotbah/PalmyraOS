@@ -35,6 +35,7 @@ KeyboardEvent PalmyraOS::kernel::Window::popKeyboardEvent()
 
 PalmyraOS::kernel::KVector<PalmyraOS::kernel::Window> PalmyraOS::kernel::WindowManager::windows_;
 PalmyraOS::kernel::KQueue<KeyboardEvent>* PalmyraOS::kernel::WindowManager::keyboardsEvents_ = nullptr;
+uint32_t PalmyraOS::kernel::WindowManager::activeWindowId_ = 0;
 
 PalmyraOS::kernel::Window* PalmyraOS::kernel::WindowManager::requestWindow(
 	uint32_t* buffer_,
@@ -46,6 +47,8 @@ PalmyraOS::kernel::Window* PalmyraOS::kernel::WindowManager::requestWindow(
 {
 	// Add the new window to the vector
 	windows_.emplace_back(buffer_, x, y, width, height);
+
+	setActiveWindow(windows_.back().getID());  // Set the newly created window as active
 
 	// Return a pointer to the new window
 	return &windows_.back();
@@ -96,16 +99,21 @@ void PalmyraOS::kernel::WindowManager::composite()
 	TaskManager::endAtomicOperation();
 
 	// Manage the buffer size
-	if (windows_.size() >= 2)
+	if (!windows_.empty())
 	{
 		size_t   size = keyboardsEvents_->size();
 		for (int i    = 0; i < size; ++i)
 		{
 			for (auto& window : windows_)
 			{
-				window.queueKeyboardEvent(keyboardsEvents_->front());
+				if (window.getID() == activeWindowId_)
+				{
+					window.queueKeyboardEvent(keyboardsEvents_->front());
+					keyboardsEvents_->pop();
+					break;
+
+				}
 			}
-			keyboardsEvents_->pop();
 		}
 	}
 }
@@ -135,15 +143,22 @@ void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id)
 
 void PalmyraOS::kernel::WindowManager::queueKeyboardEvent(KeyboardEvent event)
 {
-	if (keyboardsEvents_)
+	if (event.key == '\t' && event.isAltDown)
 	{
-		keyboardsEvents_->push(event);
+
+		// Switch to the next window
+		setActiveWindow((activeWindowId_ % windows_.size()) + 1);
+
+		// Do not pass event to windows
+		return;
 	}
+
+	// Pass event
+	if (keyboardsEvents_) keyboardsEvents_->push(event);
 }
 
 KeyboardEvent PalmyraOS::kernel::WindowManager::popKeyboardEvent(uint32_t id)
 {
-	// TODO: Capture Alt+Tab, switch active window
 	for (auto& window : windows_)
 	{
 		if (window.id_ == id)
@@ -152,4 +167,25 @@ KeyboardEvent PalmyraOS::kernel::WindowManager::popKeyboardEvent(uint32_t id)
 		}
 	}
 	return {};
+}
+
+void PalmyraOS::kernel::WindowManager::setActiveWindow(uint32_t id)
+{
+	for (auto& window : windows_)
+	{
+		if (window.id_ == id)
+		{
+			// Set the highest z-order for the active window
+			window.z_ = windows_.size();
+			activeWindowId_ = id;
+		}
+		else
+		{
+			// Decrement the z-order of other windows
+			if (window.z_ > 0)
+			{
+				window.z_ -= 1;
+			}
+		}
+	}
 }

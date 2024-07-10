@@ -176,10 +176,6 @@ namespace PalmyraOS::kernel
 	  static bool isSHAAvailable();
 
    private:
-	  CPUID_Features_A features_a_;
-	  CPUID_Features_B features_b_;
-	  CPUID_Features_C features_c_;
-	  CPUID_Features_D features_d_;
 	  static uint32_t  CPU_frequency_;
 
 

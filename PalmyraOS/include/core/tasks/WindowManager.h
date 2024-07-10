@@ -91,8 +91,11 @@ namespace PalmyraOS::kernel
 
 	  static KeyboardEvent popKeyboardEvent(uint32_t id);
 
+	  static void setActiveWindow(uint32_t id);
+
    private:
 	  static KVector<Window> windows_; ///< Vector of all windows managed by the WindowManager. // TODO  KMap
+	  static uint32_t activeWindowId_;
 
 	  static KQueue<KeyboardEvent>* keyboardsEvents_;
   };

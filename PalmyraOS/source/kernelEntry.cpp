@@ -156,7 +156,7 @@ namespace Processes
 
 		  fb.swapBuffers();
 
-		  if (proc_2_counter >= 1'00) break;
+		  if (proc_2_counter >= 1000'000) break;
 	  }
 
 //	  brush.fill(PalmyraOS::Color::DarkBlue);

@@ -116,9 +116,81 @@ PalmyraOS/
 - GUI: Window Manager
 - Shared Memory
 
+## SysCalls Roadmap
+
+**Processes**
+
+- [x] `uint32_t get_pid()`
+- [x] `_exit(uint32_t exitCode)`
+- [x] `int sched_yield()`
+- [x] `void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t offset)`
+
+**Windows (palmyraOS-specific)**
+
+- [x] `uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height)`
+- [x] `void closeWindow(uint32_t windowID)`
+- [x] `KeyboardEvent nextKeyboardEvent(uint32_t windowID)`
+- [ ] `MouseEvent nextMouseEvent(uint32_t windowID)`
+
+**VFS API**
+
+- [x] `int open(const char* pathname, int flags)`
+- [x] `int close(uint32_t fd);`
+- [x] `int write(uint32_t fileDescriptor, const void* buffer, uint32_t count)`
+- [x] `int read(uint32_t fileDescriptor, void* buffer, uint32_t count)`
+- [x] `int ioctl(uint32_t fd, uint32_t request, ...)`
+- [x] `int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count)`
+
+**Required For Execution**
+
+- [ ] `int pipe(int pipefd[2])`
+- [ ] `int fork()`
+- [ ] `int dup(int oldfd)`
+- [ ] `int dup2(int oldfd, int newfd)`
+- [ ] `int execve(const char *filename, char *const argv[], char *const envp[])`
+- [ ] `int waitpid (__pid_t __pid, int *__stat_loc, int __options)`
+- [ ] ``
+
+## VFS Roadmap
+
+### Device
+
+- [x] `/dev/`
+- [x] `/dev/rtc`
+- [ ] `/dev/stdin`
+- [ ] `/dev/stdout`
+- [ ] `/dev/stderr`
+- [ ] ``
+
+## Terminal Roadmap
+
+- [x] echo
+- [x] clear
+- [x] cat
+- [x] ls
+- [ ] pwd
+- [ ] cd
+- [ ] head
+- [ ] tail
+- [ ] uname
+- [ ] ps aux
+- [ ] free
+- [ ] lsblk
+- [ ] lscpu
+- [ ] uptime
+- [ ] exit
+- [ ] chmod
+
+**FAT32/...**
+
+- [ ] mkdir
+- [ ] rmdir
+- [ ] touch
+- [ ] cp
+
 # Security Issues
 
-- [ ] if a process passes pointer to a syscall,
+- [x] if a process passes pointer to a syscall,
   the kernel might access an invalid pointer,
   or access a different process space.
   Hence, we must always check that the pointer is valid!
@@ -139,12 +211,12 @@ PalmyraOS/
 1. [ ] `int execve(const char *filename, char *const argv[], char *const envp[])`:
 
 2. [ ] `pid_t wait(int *status)`
-3. [ ] `pid_t getppid(void)`
+3. [x] `pid_t getppid(void)`
 4. [ ] `int kill(pid_t pid, int sig)`
 
-5. [ ] `int open(const char *pathname, int flags, mode_t mode)`
-6. [ ] `int close(int fd)`
-7. [ ] `ssize_t read(int fd, void *buf, size_t count)`
+5. [x] `int open(const char *pathname, int flags, mode_t mode)`
+6. [x] `int close(int fd)`
+7. [x] `ssize_t read(int fd, void *buf, size_t count)`
 8. [ ] `off_t lseek(int fd, off_t offset, int whence)`
 9. [ ] `int fstat(int fd, struct stat *statbuf)`
 
