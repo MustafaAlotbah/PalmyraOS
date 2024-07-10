@@ -2,7 +2,7 @@
 #pragma once
 
 #include "core/definitions.h"
-#include "core/memory/HeapAllocator.h"
+#include "core/memory/KernelHeapAllocator.h"
 #include "core/files/VirtualFileSystem.h"
 
 

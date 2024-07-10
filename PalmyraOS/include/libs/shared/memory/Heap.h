@@ -58,11 +58,6 @@ namespace PalmyraOS::types
 	  HeapManagerBase() = default;
 
 	  /**
-	   * @brief Destructor to free all pages and clean up resources.
-	   */
-//	   virtual ~HeapManagerBase() = 0;
-
-	  /**
 	   * @brief Allocates a contiguous block of memory of the requested size.
 	   * @param size The size of the memory block to allocate.
 	   * @param page_align Whether to align the block to a page boundary.
@@ -71,22 +66,16 @@ namespace PalmyraOS::types
 	  void* alloc(uint32_t size, bool page_align = false);
 
 	  /**
-	   * @brief Requests more memory from the system.
-	   * @param size The size of the additional memory to request.
-	   * @return void* Pointer to the newly allocated memory.
+	   * @brief Frees a block of memory.
+	   * @param p Pointer to the memory block to free.
 	   */
-	  void* requestMoreMemory(size_t size);
+	  void free(void* p);
 
 	  /**
 	   * @brief Coalesces adjacent free blocks in the heap. TODO
 	   */
 	  void coalesceFreeBlocks();
 
-	  /**
-	   * @brief Frees a block of memory.
-	   * @param p Pointer to the memory block to free.
-	   */
-	  void free(void* p);
 
 	  template<class ClassName, class... Args>
 	  constexpr ClassName* createInstance(Args&& ... args)
@@ -102,7 +91,16 @@ namespace PalmyraOS::types
 		  return new(pointer) ClassName(std::forward<Args>(args)...);
 	  }
 
+   private:
+	  /**
+	   * @brief Requests more memory from the system.
+	   * @param size The size of the additional memory to request.
+	   * @return void* Pointer to the newly allocated memory.
+	   */
+	  void* requestMoreMemory(size_t size);
+
 	  virtual void* allocateMemory(size_t numBytes) = 0;
+
 	  virtual void freePage(void* address) = 0;
 
 

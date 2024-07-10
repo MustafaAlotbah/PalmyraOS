@@ -3,7 +3,7 @@
 #pragma once
 
 #include "core/definitions.h"
-#include "core/memory/HeapAllocator.h"
+#include "core/memory/KernelHeapAllocator.h"
 #include "libs/string.h"
 
 /*
@@ -107,13 +107,15 @@ namespace PalmyraOS::kernel::vfs
 	   * @enum Type
 	   * @brief Enum for inode types.
 	   */
-	  enum class Type : uint32_t
+	  enum class Type : uint8_t
 	  {
-		  Invalid         = 0,            ///< Invalid inode type.
-		  File            = 0x8000,     ///< Regular file.
-		  Directory       = 0x4000,     ///< Directory.
-		  CharacterDevice = 0x2000,     ///< 'char' Device file.
-		  BlockDevice     = 0x6000,     ///< 'block' Device file.
+		  Invalid         = 0,       ///< Invalid inode type.
+		  FIFO            = 0x1,     ///< FIFO
+		  CharacterDevice = 0x2,     ///< 'char' Device file.
+		  Directory       = 0x4,     ///< Directory.
+		  BlockDevice     = 0x6,     ///< 'block' Device file.
+		  File            = 0x8,     ///< Regular file.
+		  Link            = 0x10,     ///< Regular file.
 	  };
 
 	  /**
@@ -200,10 +202,17 @@ namespace PalmyraOS::kernel::vfs
 	  bool removeDentry(const KString& name);
 
 	  /**
-	   * @brief Retrieve all directory entries.
-	   * @return A vector of pairs containing the name and inode of each directory entry.
+	   * @brief Retrieve a subset of directory entries starting from a specified offset.
+	   *
+	   * This function retrieves a specified number of directory entries, starting from a given offset.
+	   * The directory entries are returned as a vector of pairs, where each pair consists of the
+	   * name of the entry and a pointer to its associated inode.
+	   *
+	   * @param offset The starting position from which to retrieve directory entries. Defaults to 0.
+	   * @param count The number of directory entries to retrieve. Defaults to 10.
+	   * @return A vector of pairs, each containing the name (KString) and inode pointer (InodeBase*) of a directory entry.
 	   */
-	  [[nodiscard]] KVector<std::pair<KString, InodeBase*>> getDentries() const;
+	  [[nodiscard]] KVector<std::pair<KString, InodeBase*>> getDentries(size_t offset = 0, size_t count = 10) const;
 
 	  /**
 	   * @brief Virtual method for reading from the inode.

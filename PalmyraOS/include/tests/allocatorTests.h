@@ -26,6 +26,7 @@ namespace PalmyraOS::Tests::Allocator
   bool testUnorderedMap();
   bool testSet();
   bool testString();
+  bool testQueue();
 
 }
 

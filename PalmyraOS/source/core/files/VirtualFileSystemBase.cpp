@@ -213,15 +213,19 @@ namespace PalmyraOS::kernel::vfs
 	  return 0;
   }
 
-  KVector<std::pair<KString, InodeBase*>> InodeBase::getDentries() const
+  KVector<std::pair<KString, InodeBase*>> InodeBase::getDentries(size_t offset, size_t count) const
   {
 	  // Create a vector to hold the directory entries.
 	  KVector<std::pair<KString, InodeBase*>> dentryVector;
 
-	  // Add each entry in the map to the vector.
-	  for (const auto& pair : dentries_)
+	  // Skip the entries up to the offset.
+	  auto it = dentries_.begin();
+	  std::advance(it, offset);
+
+	  // Add each entry in the map to the vector, considering the limit. // TODO hard coded 512
+	  for (size_t index = 0; it != dentries_.end() && index < offset + count; ++it, ++index)
 	  {
-		  dentryVector.emplace_back(pair);
+		  dentryVector.emplace_back(*it);
 	  }
 
 	  // Return the vector of directory entries.

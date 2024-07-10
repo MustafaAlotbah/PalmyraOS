@@ -1,13 +1,13 @@
 
 #include "tests/allocatorTests.h"
-#include "core/memory/HeapAllocator.h"
+#include "core/memory/KernelHeapAllocator.h"
 #include <vector>
 #include <map>
 #include <unordered_map>
 #include <set>
 //#include <string>
 #include "libs/string.h" // always on heap, has no problems
-
+#include "queue"
 
 bool PalmyraOS::Tests::Allocator::ExceptionTester::exceptionOccurred_ = false;
 
@@ -246,6 +246,39 @@ bool PalmyraOS::Tests::Allocator::testString()
 	auto subs = str.split(stringAllocator, ' ');
 
 	auto subs2 = str.split(stringAllocator, '/');
+
+	ExceptionTester::reset();
+	return result;
+}
+
+bool PalmyraOS::Tests::Allocator::testQueue()
+{
+	bool result = true;
+
+	// declare heap and allocator
+	kernel::HeapManager        heapManager;
+	kernel::HeapAllocator<int> allocator(heapManager);
+	ExceptionTester::setup();
+
+	std::queue<int, std::deque<int, kernel::HeapAllocator<int>>> q(allocator);
+
+
+	q.push(5);
+
+	q.push((7));
+
+	volatile int v = q.front();
+	q.pop();
+	volatile int u = q.front();
+	q.pop();
+
+//	volatile int z = q.front();	// undefined behavior when empty
+//	q.pop();					// same
+
+	std::deque<int, kernel::HeapAllocator<int>> d(allocator);
+
+	d.push_back(5);
+
 
 	ExceptionTester::reset();
 	return result;

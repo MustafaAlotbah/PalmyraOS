@@ -29,10 +29,10 @@ PalmyraOS::kernel::Window* PalmyraOS::kernel::WindowManager::requestWindow(
 )
 {
 	// Add the new window to the vector
-	windows.emplace_back(buffer_, x, y, width, height);
+	windows_.emplace_back(buffer_, x, y, width, height);
 
 	// Return a pointer to the new window
-	return &windows.back();
+	return &windows_.back();
 }
 
 void PalmyraOS::kernel::WindowManager::composite()
@@ -47,7 +47,7 @@ void PalmyraOS::kernel::WindowManager::composite()
 	{
 		// TODO: Composite Windows
 		std::sort(
-			windows.begin(), windows.end(), [](const Window& a, const Window& b)
+			windows_.begin(), windows_.end(), [](const Window& a, const Window& b)
 			{
 			  return a.z_ < b.z_;
 			}
@@ -55,7 +55,7 @@ void PalmyraOS::kernel::WindowManager::composite()
 
 
 		// Composite each window
-		for (const auto& window : windows)
+		for (const auto& window : windows_)
 		{
 			if (!window.visible_) continue;
 			for (uint32_t y = 0; y < window.height_; ++y)
@@ -82,16 +82,17 @@ void PalmyraOS::kernel::WindowManager::composite()
 void PalmyraOS::kernel::WindowManager::initialize()
 {
 	windows.reserve(20);
+	windows_.reserve(20);
 }
 
 void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id)
 {
-	for (auto it = windows.begin(); it != windows.end(); ++it)
+	for (auto it = windows_.begin(); it != windows_.end(); ++it)
 	{
 		if (it->id_ == id)
 		{
 			it->visible_ = false;
-			windows.erase(it);
+			windows_.erase(it);
 			break;  // Exit the loop once the window is found and erased
 		}
 	}

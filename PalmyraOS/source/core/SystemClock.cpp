@@ -19,7 +19,7 @@ void PalmyraOS::kernel::SystemClock::initialize(uint32_t frequency)
 	}
 
 	// Set interrupt handler for timer
-	interrupts::InterruptController::setInterruptHandler(0x20, &handle_interrupt);
+	interrupts::InterruptController::setInterruptHandler(0x20, &handleInterrupt);
 }
 
 bool PalmyraOS::kernel::SystemClock::setFrequency(uint32_t frequency)
@@ -59,7 +59,7 @@ uint64_t PalmyraOS::kernel::SystemClock::getSeconds()
 	return getTicks() / frequency_;
 }
 
-uint32_t* PalmyraOS::kernel::SystemClock::handle_interrupt(interrupts::CPURegisters* regs)
+uint32_t* PalmyraOS::kernel::SystemClock::handleInterrupt(interrupts::CPURegisters* regs)
 {
 	ticks_++;
 	if (handler_)

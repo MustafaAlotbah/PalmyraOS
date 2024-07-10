@@ -63,6 +63,9 @@ namespace PalmyraOS::kernel
 		  uint8_t second
 	  );
    private:
+	  static int ioctl(int request, void* arg);
+	  static size_t read(char* buffer, size_t size, size_t offset);
+   private:
 	  static uint8_t  seconds_;
 	  static uint8_t  minutes_;
 	  static uint8_t  hours_;

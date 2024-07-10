@@ -312,6 +312,11 @@ namespace PalmyraOS::kernel::vfs
 	  setInodeByPath(KString("/dev/sub/test"), testInode);
 
 
+	  // Processes
+	  createDirectory(KString("/proc/"), InodeBase::Mode::USER_READ);
+	  createDirectory(KString("/proc/driver"), InodeBase::Mode::USER_READ);
+
+
 	  return true;
   }
 

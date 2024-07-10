@@ -74,6 +74,15 @@ size_t vsprintf(char* str, const char* format, va_list args)
 			case 'u':  // uint32_t
 				d = va_arg(args, uint32_t);
 				itoa((uint32_t)d, num_str, 10);
+
+				// Handle width formatting with padding
+				len = strlen(num_str);
+				if (width > len)
+				{
+					memset(out, '0', width - len);
+					out += width - len;
+				}
+
 				strcpy(out, num_str);
 				out += strlen(num_str);
 				break;

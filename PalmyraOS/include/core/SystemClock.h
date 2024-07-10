@@ -27,7 +27,7 @@ namespace PalmyraOS::kernel
 	  static inline uint32_t getFrequency()
 	  { return frequency_; };
    private:
-	  static uint32_t* handle_interrupt(interrupts::CPURegisters*);
+	  static uint32_t* handleInterrupt(interrupts::CPURegisters* regs);
    private:
 	  static ports::BytePort PITCommandPort;
 	  static ports::BytePort PITDataPort;

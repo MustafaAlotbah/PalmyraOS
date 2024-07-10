@@ -8,6 +8,7 @@
 #include <queue>
 
 #include "core/definitions.h"
+#include "libs/shared/memory/Heap.h"
 #include "core/kernel.h"
 #include "core/panic.h"
 
@@ -42,7 +43,7 @@ namespace PalmyraOS::kernel
 	   *
 	   * @param heap The heap manager to use for allocation.
 	   */
-	  explicit HeapAllocator(HeapManager& heap) : heapManager_(heap)
+	  explicit HeapAllocator(types::HeapManagerBase& heap) : heapManager_(heap)
 	  {}
 
 	  /**
@@ -140,7 +141,7 @@ namespace PalmyraOS::kernel
 	  }
 
    public:
-	  HeapManager& heapManager_;     ///< Reference to the heap manager.
+	  types::HeapManagerBase& heapManager_;     ///< Reference to the heap manager.
   };
 
   /**
