@@ -198,6 +198,13 @@ void PalmyraOS::kernel::interrupts::PICManager::enableInterrupts()
 	slavePicData.write(UNMASK_ALL_INTERRUPTS);
 }
 
+void PalmyraOS::kernel::interrupts::PICManager::disableInterrupts()
+{
+	// Unmask all IRQs on both PICs
+	masterPicData.write(MASK_ALL_INTERRUPTS);
+	slavePicData.write(MASK_ALL_INTERRUPTS);
+}
+
 ///endregion
 
 
@@ -284,6 +291,7 @@ const char* interruptName(uint32_t intNo)
 	if (intNo == 0x06) return "Invalid Opcode Fault";
 	if (intNo == 0x07) return "Device Not Available Fault";
 	if (intNo == 0x08) return "Double Fault";
+	if (intNo == 0x09) return "Coprocessor Segment Overrun (Fault)";
 	if (intNo == 0x0A) return "Invalid TSS Fault";
 	if (intNo == 0x0B) return "Segment Not Present Fault";
 	if (intNo == 0x0C) return "Stack-Segment Fault";

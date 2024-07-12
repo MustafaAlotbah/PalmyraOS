@@ -91,29 +91,20 @@ PalmyraOS/
 15. [x] User Space
 16. [x] SysCalls + (System API)
 17. [x] Virtual File System (VFS)
-18. [ ] Interprocess Communication (IPC) pipes
-19. [x] Keyboard driver
-20. [ ] Mouse driver
-21. [ ] Terminal
-22. [ ] FAT16
-23. [ ] Elf
-24. [ ] FAT32
-25. [ ] Terminal Commands
+18. [x] Keyboard driver
+19. [ ] Terminal
+20. [ ] Interprocess Communication (IPC) pipes
+21. [ ] FAT16
+22. [ ] Elf
+23. [ ] FAT32
+24. [ ] Terminal Commands
+25. [ ] Mouse driver
 
-- Keyboard driver
-- Mouse driver
-- FAT32
-- NTFS
+**Nice to haves**
 - User Authentication
-- Userland
-- System Calls
-- Elf
-- stdlib
-- shell
 - Networking (TCP, HTTP, HTTPs)
-- Priority Scheduling
 - Real time Scheduling
-- GUI: Window Manager
+- Multi-level Feedback Queue Scheduling (MLFQ)
 - Shared Memory
 
 ## SysCalls Roadmap
@@ -157,9 +148,16 @@ PalmyraOS/
 
 - [x] `/dev/`
 - [x] `/dev/rtc`
-- [ ] `/dev/stdin`
-- [ ] `/dev/stdout`
-- [ ] `/dev/stderr`
+- [ ] `/dev/null`
+- [ ] `/dev/zero`
+- [ ] `/dev/random`
+- [ ] `/dev/full`
+- [ ] `/dev/tty`
+- [ ] `/dev/nullb0`
+- [ ] `/dev/shm/` *Shared Memory*
+- [ ] `/dev/stdin`, `/dev/fb/0`
+- [ ] `/dev/stdout`, `/dev/fb/1`
+- [ ] `/dev/stderr`, `/dev/fb/2`
 - [ ] ``
 
 ## Terminal Roadmap

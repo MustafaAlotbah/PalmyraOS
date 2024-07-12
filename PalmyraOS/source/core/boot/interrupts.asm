@@ -56,7 +56,7 @@ flush_idt_table:
 %macro InterruptServiceRoutine_PushesErrorCode 1
 global InterruptServiceRoutine_%1       ; expose the function
 InterruptServiceRoutine_%1:
-  ;  cli                                 ; clear the interrupts
+    cli                                 ; clear the interrupts
                                         ; error code was pushed automatically
     push dword %1                       ; push interrupt number
     jmp _primary_isr_handler
@@ -66,7 +66,7 @@ InterruptServiceRoutine_%1:
 %macro InterruptServiceRoutine_NoErrorCode 1
 global InterruptServiceRoutine_%1
 InterruptServiceRoutine_%1:
-   ; cli                                  ; Clear interrupts to prevent nesting
+    cli                                  ; Clear interrupts to prevent nesting
     push dword 0                         ; Push dummy error code to standardize stack frame
     push dword %1                        ; Push the interrupt number onto the stack
     jmp _primary_isr_handler
@@ -134,7 +134,7 @@ InterruptServiceRoutine_NoErrorCode 0x04 ; Overflow (Trap)
 InterruptServiceRoutine_NoErrorCode 0x05 ; Bound Range Exceeded (Fault)
 InterruptServiceRoutine_NoErrorCode 0x06 ; Invalid Opcode (Fault)
 InterruptServiceRoutine_NoErrorCode 0x07 ; Device Not Available	(Fault)
-; Coprocessor Segment Overrun
+InterruptServiceRoutine_NoErrorCode 0x09 ; Coprocessor Segment Overrun (Fault)
 InterruptServiceRoutine_PushesErrorCode 0x08 ; Double Fault (Abort)
 InterruptServiceRoutine_PushesErrorCode 0x0A ; Invalid TSS (Fault)
 InterruptServiceRoutine_PushesErrorCode 0x0B ; Segment Not Present (Fault)
@@ -144,19 +144,19 @@ InterruptServiceRoutine_PushesErrorCode 0x0E ; Page Fault (Fault)
 ; reserved ...
 InterruptServiceRoutine_NoErrorCode 0x20        ; IRQ0 timer
 InterruptServiceRoutine_NoErrorCode 0x21        ; IRQ1 keyboard
-InterruptServiceRoutine_NoErrorCode 0x22
-InterruptServiceRoutine_NoErrorCode 0x23
-InterruptServiceRoutine_NoErrorCode 0x24
-InterruptServiceRoutine_NoErrorCode 0x25
-InterruptServiceRoutine_NoErrorCode 0x26
-InterruptServiceRoutine_NoErrorCode 0x27
-InterruptServiceRoutine_NoErrorCode 0x28
-InterruptServiceRoutine_NoErrorCode 0x29
-InterruptServiceRoutine_NoErrorCode 0x2A
-InterruptServiceRoutine_NoErrorCode 0x2B
+InterruptServiceRoutine_NoErrorCode 0x22        ; IRQ2 cascade for IRQs 8-15
+InterruptServiceRoutine_NoErrorCode 0x23        ; IRQ3 serial port 2
+InterruptServiceRoutine_NoErrorCode 0x24        ; IRQ4 serial port 1
+InterruptServiceRoutine_NoErrorCode 0x25        ; IRQ5 parallel port 2 / sound card
+InterruptServiceRoutine_NoErrorCode 0x26        ; IRQ6 floppy disk
+InterruptServiceRoutine_NoErrorCode 0x27        ; IRQ7 parallel port 1 / sound card
+InterruptServiceRoutine_NoErrorCode 0x28        ; IRQ8 real-time clock
+InterruptServiceRoutine_NoErrorCode 0x29        ; IRQ9 free for peripherals / re-purposed
+InterruptServiceRoutine_NoErrorCode 0x2A        ; IRQ10 free for peripherals / re-purposed
+InterruptServiceRoutine_NoErrorCode 0x2B        ; IRQ11 free for peripherals / re-purposed
 InterruptServiceRoutine_NoErrorCode 0x2C        ; IRQ12 Mouse
-InterruptServiceRoutine_NoErrorCode 0x2D
-InterruptServiceRoutine_NoErrorCode 0x2E
-InterruptServiceRoutine_NoErrorCode 0x2F
+InterruptServiceRoutine_NoErrorCode 0x2D        ; IRQ13 FPU / coprocessor / inter-processor
+InterruptServiceRoutine_NoErrorCode 0x2E        ; IRQ14 primary ATA channel
+InterruptServiceRoutine_NoErrorCode 0x2F        ; IRQ15 secondary ATA channel
 
-InterruptServiceRoutine_NoErrorCode 0x80
+InterruptServiceRoutine_NoErrorCode 0x80        ; System call (trap)

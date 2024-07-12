@@ -31,6 +31,10 @@ dd 0                         ; VbeInterfaceOff
 ; Screen width, height, depth (if you want GRUB to set a specific video mode)
 dd 0                         ; 0: Graphics, 1: Text Mode
 
+; If an unsupported resolution provided, GRUB falls back to 640x480
+; dd 1600                      ; Screen width requested
+; dd 1200                       ; Screen height requested
+
 ; dd 1280                      ; Screen width requested
 ; dd 1024                       ; Screen height requested
 

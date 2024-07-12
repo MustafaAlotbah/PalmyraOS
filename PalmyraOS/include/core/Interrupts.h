@@ -118,6 +118,7 @@ namespace PalmyraOS::kernel::interrupts
    public:
 	  PICManager();
 	  void enableInterrupts();       // Enables hardware interrupts.
+	  void disableInterrupts();       // Enables hardware interrupts.
 	  inline ports::BytePort& getMasterPicCommand()
 	  { return masterPicCommand; };
 	  inline ports::BytePort& getSlavePicCommand()
