@@ -155,6 +155,7 @@ namespace Processes
 		  textRenderer << "my pid: " << get_pid() << "\n";
 
 		  fb.swapBuffers();
+		  sched_yield();
 
 		  if (proc_2_counter >= 1000'000) break;
 	  }

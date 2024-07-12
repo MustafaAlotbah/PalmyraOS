@@ -235,6 +235,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 		);
 	}
 
+	// Initialize all kernel's directory tables, to avoid Recursive Page Table Mapping Problem
 	size_t   max_pages = (x86_multiboot_info->mem_upper >> 12) + 1; // Kilobytes to 4 Megabytes
 	for (int i         = 0; i < max_pages; ++i)
 	{

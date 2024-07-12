@@ -17,7 +17,7 @@ uint16_t PalmyraOS::kernel::RTC::year_{};
 uint64_t PalmyraOS::kernel::RTC::lastUpdated_{};
 uint64_t PalmyraOS::kernel::RTC::rtc_time_{};
 
-// Convert BCD to decimal
+// Convert BCD to decimal Binary Coded Decimal
 uint8_t bcd_to_dec(uint8_t bcd)
 {
 	// (((bcd / 16) * 10) + (bcd % 16));
