@@ -2,6 +2,8 @@
 
 #include "core/tasks/SystemCalls.h"
 #include "libs/memory.h"
+#include "core/cpu.h"
+#include "core/Interrupts.h"
 
 // API Headers
 #include "palmyraOS/unistd.h"
@@ -26,20 +28,21 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 
 	// Map system call numbers to their respective handler functions
 	// POSIX
-	systemCallHandlers_[POSIX_INT_EXIT]    = &SystemCallsManager::handleExit;
-	systemCallHandlers_[POSIX_INT_GET_PID] = &SystemCallsManager::handleGetPid;
-	systemCallHandlers_[POSIX_INT_YIELD]   = &SystemCallsManager::handleYield;
-	systemCallHandlers_[POSIX_INT_MMAP]    = &SystemCallsManager::handleMmap;
-	systemCallHandlers_[POSIX_INT_GETTIME] = &SystemCallsManager::handleGetTime;
-	systemCallHandlers_[POSIX_INT_OPEN]    = &SystemCallsManager::handleOpen;
-	systemCallHandlers_[POSIX_INT_CLOSE]   = &SystemCallsManager::handleClose;
-	systemCallHandlers_[POSIX_INT_WRITE]   = &SystemCallsManager::handleWrite;
-	systemCallHandlers_[POSIX_INT_READ]    = &SystemCallsManager::handleRead;
-	systemCallHandlers_[POSIX_INT_IOCTL]   = &SystemCallsManager::handleIoctl;
+	systemCallHandlers_[POSIX_INT_EXIT]               = &SystemCallsManager::handleExit;
+	systemCallHandlers_[POSIX_INT_GET_PID]            = &SystemCallsManager::handleGetPid;
+	systemCallHandlers_[POSIX_INT_YIELD]              = &SystemCallsManager::handleYield;
+	systemCallHandlers_[POSIX_INT_MMAP]               = &SystemCallsManager::handleMmap;
+	systemCallHandlers_[POSIX_INT_GETTIME]            = &SystemCallsManager::handleGetTime;
+	systemCallHandlers_[POSIX_INT_OPEN]               = &SystemCallsManager::handleOpen;
+	systemCallHandlers_[POSIX_INT_CLOSE]              = &SystemCallsManager::handleClose;
+	systemCallHandlers_[POSIX_INT_WRITE]              = &SystemCallsManager::handleWrite;
+	systemCallHandlers_[POSIX_INT_READ]               = &SystemCallsManager::handleRead;
+	systemCallHandlers_[POSIX_INT_IOCTL]              = &SystemCallsManager::handleIoctl;
+	systemCallHandlers_[POSIX_INT_CLOCK_NANOSLEEP_64] = &SystemCallsManager::handleClockNanoSleep64;
 
 	// Custom
-	systemCallHandlers_[INT_INIT_WINDOW]   = &SystemCallsManager::handleInitWindow;
-	systemCallHandlers_[INT_CLOSE_WINDOW]  = &SystemCallsManager::handleCloseWindow;
+	systemCallHandlers_[INT_INIT_WINDOW]  = &SystemCallsManager::handleInitWindow;
+	systemCallHandlers_[INT_CLOSE_WINDOW] = &SystemCallsManager::handleCloseWindow;
 	systemCallHandlers_[INT_NEXT_KEY_EVENT] = &SystemCallsManager::handleNextKeyboardEvent;
 
 	// Adopted from Linux
@@ -83,7 +86,7 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	if (condition_01 || condition_02)
 		return TaskManager::interruptHandler(regs);
 	else
-		return (uint32_t*)(regs);
+		return (uint32_t * )(regs);
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleExit(PalmyraOS::kernel::interrupts::CPURegisters* regs)
@@ -411,7 +414,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 	auto dentries = file->getInode()->getDentries(file->getOffset());
 	file->advanceOffset(dentries.size());
 
-	char   * buffer  = (char*)bufferPointer;
+	char* buffer = (char*)bufferPointer;
 	size_t bytesRead = 0;
 
 	for (size_t index = 0; index < dentries.size() && bytesRead < count; ++index)
@@ -446,5 +449,41 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 	}
 
 	regs->eax = bytesRead;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleClockNanoSleep64(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// Extract arguments from registers
+	uint32_t clock_id = regs->ebx;    // TODO
+	uint32_t flags    = regs->ecx;    // TODO
+	const auto* req = reinterpret_cast<const timespec*>(regs->edx);
+	auto      * rem = reinterpret_cast<timespec*>(regs->esi);
+
+	// Validate the pointers
+	if (!isValidAddress(const_cast<timespec*>(req)) || (rem && !isValidAddress(rem)))
+	{
+		regs->eax = -EFAULT;
+		return;
+	}
+
+	// Calculate the target time in ticks
+	uint64_t targetTicks = SystemClock::getTicks() + (
+		req->tv_sec * SystemClockFrequency
+	) + (
+		req->tv_nsec * SystemClockFrequency / 1'000'000'000
+	);
+
+	// Enable interrupts to allow the system to handle other tasks while sleeping
+	interrupts::InterruptController::enableInterrupts();
+
+	// Busy-wait loop to simulate sleep
+	while (SystemClock::getTicks() < targetTicks) sched_yield();
+
+	// Disable interrupts
+	interrupts::InterruptController::disableInterrupts();
+
+	// Set the result to 0 to indicate success
+	regs->eax = 0;
+
 }
 

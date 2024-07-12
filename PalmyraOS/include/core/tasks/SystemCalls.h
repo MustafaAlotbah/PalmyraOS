@@ -28,6 +28,7 @@ namespace PalmyraOS::kernel
 	  static void handleYield(interrupts::CPURegisters* regs);
 	  static void handleMmap(interrupts::CPURegisters* regs);
 	  static void handleGetTime(interrupts::CPURegisters* regs);
+	  static void handleClockNanoSleep64(interrupts::CPURegisters* regs);
 	  static void handleOpen(interrupts::CPURegisters* regs);
 	  static void handleClose(interrupts::CPURegisters* regs);
 	  static void handleWrite(interrupts::CPURegisters* regs);

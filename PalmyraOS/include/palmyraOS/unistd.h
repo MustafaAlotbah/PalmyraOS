@@ -2,6 +2,8 @@
  * The API of PalmyraOS
  * Partially POSIX compliant (under construction)
  * Check out https://github.com/spotify/linux/blob/master/arch/x86/include/asm/unistd_32.h
+ * https://man7.org/linux/man-pages/man2/syscalls.2.html
+ * https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_32.tbl
  * */
 
 #pragma once
@@ -26,12 +28,14 @@
 #define POSIX_INT_READ 3
 #define POSIX_INT_WRITE 4
 #define POSIX_INT_GET_PID 20
-#define POSIX_INT_MMAP 90
-#define POSIX_INT_YIELD 158
-#define POSIX_INT_GETTIME 228    // time.h (in linux, dependent on version)
 #define POSIX_INT_OPEN 5
 #define POSIX_INT_CLOSE 6
 #define POSIX_INT_IOCTL 54
+#define POSIX_INT_MMAP 90
+#define POSIX_INT_YIELD 158
+#define POSIX_INT_GETTIME 228    // time.h (in linux, dependent on version)
+#define POSIX_INT_CLOCK_NANOSLEEP_32 267    // NOT SUPPORTED
+#define POSIX_INT_CLOCK_NANOSLEEP_64 407
 
 /* From Linux */
 #define LINUX_INT_GETDENTS 141

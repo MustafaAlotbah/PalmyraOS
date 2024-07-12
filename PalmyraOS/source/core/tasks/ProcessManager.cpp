@@ -4,7 +4,6 @@
 
 #include "core/tasks/ProcessManager.h"
 #include "core/SystemClock.h"
-#include "core/files/VirtualFileSystem.h"
 
 #include "libs/string.h"
 #include "libs/memory.h"
@@ -295,18 +294,33 @@ void* PalmyraOS::kernel::Process::allocatePages(size_t count)
 
 bool PalmyraOS::kernel::Process::checkStackOverflow() const
 {
+	/*
+	 * Check for kernel stack overflow.
+	 * The kernel stack pointer (esp) should never be below the base of the kernel stack (kernelStack_).
+	 */
 	if (stack_.esp < (reinterpret_cast<uint32_t>(kernelStack_)))
 	{
-		// Trigger a kernel panic or handle stack overflow appropriately
-		kernel::kernelPanic("Kernel Stack overflow detected for PID: %d", pid_);
-		return false;
+		kernel::kernelPanic(
+			"Kernel Stack Overflow detected for PID: %d.\nESP: 0x%x is below Kernel Stack Base: 0x%x",
+			pid_, stack_.esp, reinterpret_cast<uint32_t>(kernelStack_));
 	}
-	else if (mode_ == Mode::User && stack_.userEsp < (reinterpret_cast<uint32_t>(userStack_)))
+
+	/*
+	 * When in user mode and executing in user space, we need to ensure that the user stack pointer (userEsp)
+	 * is above the base of the user stack (userStack_). This prevents user stack overflow.
+	 */
+	if (mode_ == Mode::User && (stack_.cs & 0x11) != 0)
 	{
-		// Trigger a kernel panic or handle stack overflow appropriately
-		kernel::kernelPanic("User Stack overflow detected for PID: %d", pid_);
-		return false;
+		if (stack_.userEsp < (reinterpret_cast<uint32_t>(userStack_)))
+		{
+
+			kernel::kernelPanic(
+				"User Stack Overflow detected for PID: %d. User ESP: 0x%x is below User Stack Base: 0x%x",
+				pid_, stack_.userEsp, reinterpret_cast<uint32_t>(userStack_));
+			return false;
+		}
 	}
+
 	return true;
 }
 ///endregion
@@ -354,6 +368,10 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(
 
 uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+
+	size_t nextProcessIndex;
+	uint32_t* result;
+
 	// kill terminated processes
 	for (int i = 0; i < processes_.size(); ++i)
 	{
@@ -398,7 +416,7 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 
 	// Find the next process in the "Ready" state.
 	{
-		size_t nextProcessIndex = currentProcessIndex_;
+		nextProcessIndex = currentProcessIndex_;
 
 		for (size_t i        = 0; i < processes_.size(); ++i)
 		{
@@ -413,13 +431,15 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 
 	// If the new process is in user mode, set the kernel stack.
 	if (processes_[currentProcessIndex_].mode_ == Process::Mode::User)
+	{
 		// set the kernel stack at the top of the kernel stack
 		kernel::gdt_ptr->setKernelStack(
 			reinterpret_cast<uint32_t>(processes_[currentProcessIndex_].kernelStack_) + STACK_SIZE - 1
 		);
+	}
 
 	// Return the new process's stack pointer.
-	auto* result = reinterpret_cast<uint32_t*>(
+	result = reinterpret_cast<uint32_t*>(
 		processes_[currentProcessIndex_].stack_.esp - offsetof(interrupts::CPURegisters, intNo)
 	);
 

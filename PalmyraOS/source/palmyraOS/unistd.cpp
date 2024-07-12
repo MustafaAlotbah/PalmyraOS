@@ -245,4 +245,21 @@ int getdents(unsigned int fileDescriptor, linux_dirent* dirp, unsigned int count
 	return result;
 }
 
+int clock_nanosleep(uint32_t clock_id, int flags, const struct timespec* req, struct timespec* rem)
+{
+	int               result;
+	register uint32_t syscall_no asm("eax") = POSIX_INT_CLOCK_NANOSLEEP_64;
+	register uint32_t clk_id asm("ebx")     = clock_id;
+	register int      flg asm("ecx")        = flags;
+	register const struct timespec* req_ptr asm("edx") = req;
+	register struct timespec      * rem_ptr asm("esi") = rem;
 
+	asm volatile(
+		"int $0x80"  // Software interrupt to trigger the syscall
+		: "=a" (result)  // Output: store the result in result
+		: "r" (syscall_no), "r" (clk_id), "r" (flg), "r" (req_ptr), "r" (rem_ptr) // Inputs
+		: "memory"  // Clobbered memory
+		);
+
+	return result;
+}

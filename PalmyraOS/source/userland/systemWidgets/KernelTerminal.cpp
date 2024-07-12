@@ -2,6 +2,7 @@
 #include "userland/systemWidgets/KernelTermina.h"
 
 #include "palmyraOS/unistd.h"       // Include PalmyraOS system calls
+#include "palmyraOS/time.h"            // For sleeping
 #include "palmyraOS/stdlib.h"       // For dynamic memory management
 #include "palmyraOS/stdio.h"        // For standard input/output functions: printf, perror
 #include "palmyraOS/HeapAllocator.h"// C++ heap allocator for efficient memory management
@@ -284,6 +285,36 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  // Close the directory and free the buffer
 		  close(fileDescriptor);
 		  heap.free(buffer);
+		  return;
+	  }
+
+
+	  // SLEEP
+	  if (tokens[0] == "sleep")
+	  {
+		  if (tokens.size() <= 1)
+		  {
+			  // Require an interval
+			  output.append("No time interval was provided!\n", 32);
+			  return;
+		  }
+
+		  // Parse the interval (assume it is an integer for now) TODO: float
+		  char* end;
+		  long int seconds;
+		  seconds = strtol(tokens[1].c_str(), &end, 10);
+		  if (*end != '\0')
+		  {
+			  output.append("Please provide an integer!\n", 28);
+			  return;
+		  }
+
+		  // Sleep
+		  timespec req{};
+		  req.tv_sec  = seconds;
+		  req.tv_nsec = 0;
+		  clock_nanosleep(CLOCK_REALTIME, 0, &req, nullptr);
+		  return;
 	  }
 
 		  // Unknown command
