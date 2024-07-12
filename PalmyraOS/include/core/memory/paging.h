@@ -65,6 +65,7 @@ namespace PalmyraOS::kernel
    * @brief Structure representing a Page Directory Entry
    *
    * A Page Directory Entry (PDE) points to a Page Table.
+   * Each entry in the page directory corresponds to a page table and contains flags and the address of the page table.
    */
   struct PageDirectoryEntry
   {
@@ -85,6 +86,7 @@ namespace PalmyraOS::kernel
    * @brief Structure representing a Page Directory Entry
    *
    * A Page Directory Entry (PDE) points to a Page Table.
+   * Each entry in the page table corresponds to a page and contains flags and the physical address of the page frame.
    */
   struct PageTableEntry
   {
@@ -131,7 +133,7 @@ namespace PalmyraOS::kernel
 	  void* allocatePage(PageFlags flags = PageFlags::Present | PageFlags::ReadWrite);   // returns virtual address
 
 	  /**
-	   * @brief Allocates multiple pages and returns the starting virtual address
+	   * @brief Allocates multiple contiguous pages and returns the starting virtual address
 	   * @param numPages Number of pages to allocate
 	   * @return void* Pointer to the starting virtual address of the allocated pages
 	   */
@@ -190,6 +192,17 @@ namespace PalmyraOS::kernel
 	   */
 	  bool isAddressValid(void* address);
 
+	  /**
+	  * @brief Gets or creates a page table by index
+	  *
+	  * Retrieves the page table at the specified index, allocating and initializing a new one if it does not exist.
+	  *
+	  * @param tableIndex Index of the table to retrieve or create
+	  * @param flags Flags to set for the page table entry if a new table is created
+	  * @return uint32_t* Pointer to the page table
+	  */
+	  uint32_t* getTable(uint32_t tableIndex, PageFlags flags);
+
 	  DEFINE_DEFAULT_MOVE(PagingDirectory);
 	  REMOVE_COPY(PagingDirectory);
    private:
@@ -209,14 +222,6 @@ namespace PalmyraOS::kernel
 	   * @param flags Flags for the page entry
 	   */
 	  void setPage(uint32_t* table, uint32_t pageIndex, uint32_t physicalAddr, PageFlags flags);
-
-	  /**
-	   * @brief Gets a page table by index
-	   * @param tableIndex Index of the table
-	   * @return uint32_t* Pointer to the page table
-	   */
-	  uint32_t* getTable(uint32_t tableIndex, PageFlags flags);
-
 
    private:
 	  PageTableEntry* pageTables_[NUM_ENTRIES]{};          ///< Array of pointers to page tables

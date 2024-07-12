@@ -1,5 +1,6 @@
 BITS 32
 
+; Once an interrupt fires, all other interrupts stop, unless iret or sti
 
 ; Define global functions for handling interrupts
 global enable_interrupts:function
@@ -55,7 +56,7 @@ flush_idt_table:
 %macro InterruptServiceRoutine_PushesErrorCode 1
 global InterruptServiceRoutine_%1       ; expose the function
 InterruptServiceRoutine_%1:
-    cli                                 ; clear the interrupts
+  ;  cli                                 ; clear the interrupts
                                         ; error code was pushed automatically
     push dword %1                       ; push interrupt number
     jmp _primary_isr_handler
@@ -65,7 +66,7 @@ InterruptServiceRoutine_%1:
 %macro InterruptServiceRoutine_NoErrorCode 1
 global InterruptServiceRoutine_%1
 InterruptServiceRoutine_%1:
-    cli                                  ; Clear interrupts to prevent nesting
+   ; cli                                  ; Clear interrupts to prevent nesting
     push dword 0                         ; Push dummy error code to standardize stack frame
     push dword %1                        ; Push the interrupt number onto the stack
     jmp _primary_isr_handler

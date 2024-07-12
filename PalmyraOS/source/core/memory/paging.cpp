@@ -105,7 +105,7 @@ void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtu
 
 	// Get or create the corresponding table
 	uint32_t* table = getTable(tableIndex, flags);
-
+	// if table == physical address --> problem
 	// Set the page in the table
 	setPage(table, pageIndex, (uint32_t)physicalAddr, flags);
 
