@@ -311,6 +311,7 @@ void callConstructors()
 
 	kernel::vfs::VirtualFileSystem::initialize();
 
+	kernel::initializeDrivers(); // ATAs after interrupts run
 
 	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();

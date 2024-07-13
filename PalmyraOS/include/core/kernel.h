@@ -7,6 +7,7 @@
 #include "core/VBE.h"
 #include "core/memory/paging.h"
 #include "core/memory/KernelHeap.h"
+#include "core/peripherals/ATA.h"
 
 
 extern uint32_t placement_address;
@@ -52,6 +53,8 @@ namespace PalmyraOS::kernel
   extern PalmyraOS::kernel::interrupts::InterruptController* idt_ptr;
   extern PalmyraOS::kernel::HeapManager heapManager;
   extern uint32_t                       kernelLastPage;
+  extern PalmyraOS::kernel::ATA* ata_primary_master;
+  extern PalmyraOS::kernel::ATA* ata_primary_slave;
 
   /**
    * @brief Initializes the graphics system.
@@ -100,6 +103,8 @@ namespace PalmyraOS::kernel
    * to ensure its correct operation.
    */
   void testMemory();
+
+  void initializeDrivers();
 
 }
 

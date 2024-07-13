@@ -41,7 +41,19 @@
 
    You may also use **Goto Cleanup**
 
-7. **Use Raw Pointers**:
+7. Documentation should follow this style
+
+    ```cpp
+    /**
+     * @brief Good and descriptive explanation of the function based on its implementation
+     * @param param1 what is this and its role
+     * @param param2 what is this and its role
+     * @return Pointer to the sth if found, nullptr otherwise.
+     */
+    void* function(type1 param1, type2, param2)    
+    ```
+
+8. **Use Raw Pointers**:
 
    Prefer using `Example*` to `std::shared_pointer<Example>`
 
@@ -166,11 +178,12 @@ PalmyraOS/
 - [x] clear
 - [x] cat
 - [x] ls
+- [x] sleep
 - [ ] pwd
 - [ ] cd
 - [ ] head
 - [ ] tail
-- [ ] uname
+- [x] uname
 - [ ] ps aux
 - [ ] free
 - [ ] lsblk

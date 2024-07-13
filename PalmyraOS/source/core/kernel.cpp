@@ -4,6 +4,7 @@
 #include "core/panic.h"
 #include "tests/pagingTests.h"
 #include "tests/allocatorTests.h"
+#include "core/peripherals/Logger.h"
 
 #include <new>
 
@@ -26,6 +27,11 @@ namespace PalmyraOS::kernel
   PalmyraOS::kernel::PagingDirectory* kernelPagingDirectory_ptr = nullptr;
   PalmyraOS::kernel::HeapManager heapManager;
   uint32_t                       kernelLastPage = 0;
+
+  // Drivers
+  PalmyraOS::kernel::ATA* ata_primary_master = nullptr;
+  PalmyraOS::kernel::ATA* ata_primary_slave  = nullptr;
+
 
 }
 
@@ -225,7 +231,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 
 	// Map kernel space by identity
 	{
-		auto     kernelSpace = (uint32_t)PhysicalMemory::allocateFrame();
+		auto kernelSpace = (uint32_t)PhysicalMemory::allocateFrame();
 		kernel::kernelLastPage = kernelSpace >> PAGE_BITS;
 		kernel::kernelPagingDirectory_ptr->mapPages(
 			nullptr,
@@ -311,4 +317,48 @@ void PalmyraOS::kernel::testMemory()
 
 //	if (!Tests::Allocator::testQueue())
 //		kernel::kernelPanic("Testing Allocator Queue failed!");
+}
+
+void PalmyraOS::kernel::initializeDrivers()
+{
+	LOG_INFO("Start");
+
+	ata_primary_master = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Master);
+	ata_primary_slave  = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Slave);
+
+	if (!ata_primary_master)
+	{
+		LOG_ERROR("Failed to allocate memory for ATA Primary Master Device!");
+		return;
+	}
+
+	if (!ata_primary_slave)
+	{
+		LOG_ERROR("Failed to allocate memory for ATA Primary Slave Device!");
+		return;
+	}
+
+	if (ata_primary_master->identify(1000))
+	{
+		char buffer[512];
+		ata_primary_master->readSector(0, (uint8_t*)buffer, 1000);
+		LOG_INFO("Sector 0: '%s'", buffer);
+	}
+
+	if (ata_primary_slave->identify(1000))
+	{
+		LOG_INFO("ATA Device Identified: "
+				 "Model [%s], Serial [%s], Firmware [%s], Sectors [%zu], Space [%zu MiB]",
+				 ata_primary_slave->getModelNumber(),
+				 ata_primary_slave->getSerialNumber(),
+				 ata_primary_slave->getFirmwareVersion(),
+				 ata_primary_slave->getSectors28Bit(),
+				 ata_primary_slave->getStorageSize() / 1048576
+		);
+
+		char buffer[512];
+		ata_primary_slave->readSector(0, (uint8_t*)buffer, 1000);
+		LOG_INFO("Sector 0: '%s'", buffer);
+	}
+
 }
