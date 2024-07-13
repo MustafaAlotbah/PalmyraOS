@@ -18,6 +18,7 @@
 #include "palmyraOS/time.h"
 
 #include "core/files/VirtualFileSystem.h"
+#include "core/files/partitions/MasterBootRecord.h"
 
 #include "userland/userland.h"
 
@@ -312,6 +313,26 @@ void callConstructors()
 	kernel::vfs::VirtualFileSystem::initialize();
 
 	kernel::initializeDrivers(); // ATAs after interrupts run
+
+	if (kernel::ata_primary_master)
+	{
+		uint8_t masterSector[512];
+		kernel::ata_primary_master->readSector(0, masterSector, 100);
+		auto mbr = kernel::vfs::MasterBootRecord(masterSector);
+
+		for (int i = 0; i < 4; ++i)
+		{
+			auto entry = mbr.getEntry(i);
+			LOG_INFO("ATA Primary Master: Partition %d:", i);
+			LOG_INFO(
+				"bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
+				entry.isBootable,
+				kernel::vfs::MasterBootRecord::toString(entry.type),
+				entry.lbaStart,
+				entry.lbaCount * 512 / 1048576
+			);
+		}
+	}
 
 	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();

@@ -275,7 +275,7 @@ namespace PalmyraOS::kernel
 	  return supports48Bit_;
   }
 
-  constexpr const char* ATA::toString(ATA::Type type)
+  const char* ATA::toString(ATA::Type type)
   {
 	  switch (type)
 	  {

@@ -40,7 +40,7 @@ namespace PalmyraOS::kernel
 	   * @param type The DeviceType enum value
 	   * @return Corresponding const char* string representation
 	   */
-	  static constexpr const char* toString(Type type);
+	  static const char* toString(Type type);
 
 	  /**
 	   * @brief Enum class for ATA commands

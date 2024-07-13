@@ -17,6 +17,7 @@ SUBDIRS := \
 	source/core/std \
 	source/core/tasks \
 	source/core/files \
+	source/core/files/partitions \
 	source/palmyraOS \
 	source/userland/systemWidgets \
 	source/userland/tests
