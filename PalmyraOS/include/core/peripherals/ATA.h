@@ -70,7 +70,7 @@ namespace PalmyraOS::kernel
 	   * @param buffer Pointer to the buffer where the read data will be stored
 	   * @return true if the read operation was successful, false otherwise
 	   */
-	  bool readSector(uint32_t logicalBlockAddress, uint8_t* buffer, uint32_t timeout);
+	  bool readSector(uint32_t logicalBlockAddress, uint8_t* buffer, uint32_t timeout); // TODO return KVector<uint8_t>
 
 	  /**
 	   * @brief Write a sector to the ATA device
@@ -78,7 +78,11 @@ namespace PalmyraOS::kernel
 	   * @param buffer Pointer to the buffer containing the data to write
 	   * @return true if the write operation was successful, false otherwise
 	   */
-	  bool writeSector(uint32_t logicalBlockAddress, const uint8_t* buffer, uint32_t timeout);
+	  bool writeSector(
+		  uint32_t logicalBlockAddress,
+		  const uint8_t* buffer,
+		  uint32_t timeout
+	  ); // TODO take KVector<uint8_t>
 
 	  /**
 	   * @brief Check if the ATA device is present

@@ -125,7 +125,7 @@ namespace PalmyraOS::types
 	  }
 
 	  // Constructors
-	  explicit string(const char* _cstr) : data_()
+	  explicit string(const _CharT* _cstr) : data_()
 	  {
 		  this->operator=(_cstr);
 		  ensure_null_terminator();
@@ -147,6 +147,14 @@ namespace PalmyraOS::types
 		  cstr = &data_[0];
 	  }
 
+	  // Range Constructor
+	  template<typename InputIt>
+	  string(InputIt first, InputIt last) : data_(first, last)
+	  {
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
+
 	  // Copy constructor
 	  string(const string& other) : data_(other.data_, other.data_.get_allocator())
 	  {
@@ -161,6 +169,12 @@ namespace PalmyraOS::types
 		  cstr = &data_[0];
 	  }
 
+	  explicit string(const _CharT* _cstr, size_t length) : data_()
+	  {
+		  data_.assign(_cstr, _cstr + length);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+	  }
 
 	  // Assignment operators
 
@@ -232,6 +246,16 @@ namespace PalmyraOS::types
 		  ensure_null_terminator();
 		  cstr = &data_[0];
 	  }
+
+	  // Iterators
+	  auto begin()
+	  { return data_.begin(); }
+	  auto begin() const
+	  { return data_.begin(); }
+	  auto end()
+	  { return data_.end() - 1; } // Exclude the null terminator
+	  auto end() const
+	  { return data_.end() - 1; }
 
 	  // Element access
 	  reference operator[](size_type pos)
@@ -368,6 +392,49 @@ namespace PalmyraOS::types
 		  return npos;
 	  }
 
+	  // Method to erase a single character at position `pos`
+	  string& erase(size_type pos = 0, size_type len = npos)
+	  {
+		  if (pos >= size())
+		  {
+			  // If pos is out of range, do nothing
+			  return *this;
+		  }
+
+		  if (len == npos || pos + len > size())
+		  {
+			  // If len is npos or goes beyond the string size, adjust len
+			  len = size() - pos;
+		  }
+
+		  data_.erase(data_.begin() + pos, data_.begin() + pos + len);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+
+		  return *this;
+	  }
+
+	  // Method to erase a character at iterator position `pos`
+	  auto erase(typename std::vector<_CharT, _Alloc<_CharT>>::iterator pos)
+	  {
+		  auto it = data_.erase(pos);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+		  return it;
+	  }
+
+	  // Method to erase a range of characters between iterator positions `first` and `last`
+	  auto erase(
+		  typename std::vector<_CharT, _Alloc<_CharT>>::iterator first,
+		  typename std::vector<_CharT, _Alloc<_CharT>>::iterator last
+	  )
+	  {
+		  auto it = data_.erase(first, last);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+		  return it;
+	  }
+
 	  // Split function
 	  template<typename AllocV>
 	  std::vector<string<_CharT, _Alloc>, AllocV> split(AllocV allocV, _CharT delimiter, bool ignoreEmpty = false) const
@@ -393,7 +460,43 @@ namespace PalmyraOS::types
 		  return &data_[0];
 	  }
 
+	  /**
+	   * Strips leading and trailing whitespace characters from the string.
+	   * @return A reference to the modified string.
+	   */
+	  string& strip()
+	  {
+		  // Lambda function to check if a character is a whitespace
+		  auto is_whitespace = [](const _CharT& ch)
+		  {
+			return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\v' || ch == '\f' || ch == '\r';
+		  };
 
+		  // Find the position of the first non-whitespace character
+		  size_type start = 0;
+		  while (start < data_.size() && is_whitespace(data_[start]))
+		  {
+			  ++start;
+		  }
+
+		  // Find the position of the last non-whitespace character
+		  size_type end = data_.size() - 1;
+		  while (end > start && is_whitespace(data_[end - 1]))
+		  {
+			  --end;
+		  }
+
+		  // Erase leading and trailing whitespace
+		  if (start > 0 || end <= data_.size())
+		  {
+			  data_.erase(data_.begin() + end, data_.end());
+			  data_.erase(data_.begin(), data_.begin() + start);
+		  }
+
+		  ensure_null_terminator();
+		  cstr = &data_[0];
+		  return *this;
+	  }
    private:
 
 	  void ensure_null_terminator()
@@ -411,7 +514,7 @@ namespace PalmyraOS::types
 		  bool ignoreEmpty
 	  ) const
 	  {
-		  _Alloc    alloc = data_.get_allocator();
+		  _Alloc alloc = data_.get_allocator();
 		  size_type start = 0;
 		  size_type end   = find(delimiter);
 
@@ -440,7 +543,7 @@ namespace PalmyraOS::types
 
    private:
 	  std::vector<_CharT, _Alloc<_CharT>> data_;
-	  const char* cstr;
+	  const _CharT* cstr;
   };
 
 // Non-member functions

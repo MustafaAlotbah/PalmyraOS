@@ -177,6 +177,11 @@ namespace PalmyraOS::kernel
    */
   using KString = PalmyraOS::types::string<char, KernelHeapAllocator>;
 
+  /**
+   * @typedef Kernel Wide String
+   * @brief A type definition for a wstring using the KernelHeapAllocator.
+   */
+  using KWString = PalmyraOS::types::string<wchar_t, KernelHeapAllocator>;
 
   /**
    * @typedef Kernel Map

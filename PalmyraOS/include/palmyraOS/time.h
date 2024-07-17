@@ -7,14 +7,14 @@
 #pragma once
 
 #include <cstdint>
-
+//#include <sys/types.h>
 
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 #define CLOCK_PROCESS_CPUTIME_ID 2
 #define CLOCK_THREAD_CPUTIME_ID 3
 
-struct timespec
+struct timespec // TODO adjust time_t, long (i.e. uint32_t x2)
 {
 	uint64_t tv_sec;  // Seconds
 	uint64_t tv_nsec; // Nanoseconds
