@@ -43,6 +43,8 @@ char* strsep(char** stringp, const char* delim);
  */
 int strcmp(const char* s1, const char* s2);
 
+int strcmp(const wchar_t* s1, const wchar_t* s2);
+
 /**
  * Compares up to `n` characters of the string `s1` to those of the string `s2`.
  * @param s1 Pointer to the first null-terminated byte string.
@@ -321,18 +323,22 @@ namespace PalmyraOS::types
 	  string& operator+=(const _CharT& c)
 	  {
 		  data_.insert(data_.end() - 1, c);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
 		  return *this;
 	  }
 
 	  string& operator+=(const string& other)
 	  {
 		  data_.insert(data_.end() - 1, other.data_.begin(), other.data_.end() - 1);
+		  ensure_null_terminator();
+		  cstr = &data_[0];
 		  return *this;
 	  }
 
 	  string& operator+=(const _CharT* s)
 	  {
-		  data_.insert(data_.end() - 1, s, s + std::char_traits<_CharT>::length(s));
+		  data_.insert(data_.end() - 1, s, s + strlen(s));
 		  return *this;
 	  }
 
@@ -348,12 +354,12 @@ namespace PalmyraOS::types
 	  bool operator==(const string& other) const
 	  { return strcmp(c_str(), other.c_str()) == 0; }
 
-	  bool operator==(const char* other) const
+	  bool operator==(const _CharT* other) const
 	  {
-		  return strcmp(c_str(), other) == 0;
+		  return strcmp(static_cast<const _CharT*>(c_str()), other) == 0;
 	  }
 
-	  bool operator!=(const char* other) const
+	  bool operator!=(const _CharT* other) const
 	  {
 		  return !(this->operator==(other));
 	  }
@@ -381,12 +387,12 @@ namespace PalmyraOS::types
 
 	  size_type find(const _CharT* str) const
 	  {
-		  size_type len = std::char_traits<_CharT>::length(str);
+		  size_type len = strlen(str);
 		  if (len == 0) return 0;
 
 		  for (size_type i = 0; i <= size() - len; ++i)
 		  {
-			  if (std::char_traits<_CharT>::compare(&data_[i], str, len) == 0)
+			  if (strcmp(&data_[i], str, len) == 0)
 				  return i;
 		  }
 		  return npos;
@@ -547,29 +553,31 @@ namespace PalmyraOS::types
   };
 
 // Non-member functions
+  // Concatenate two strings
   template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const string<_CharT, _Alloc>& lhs, const string<_CharT, _Alloc>& rhs)
   {
-	  string<_CharT, _Alloc> temp(lhs);
-	  temp += rhs;
-	  return temp;
+	  string<_CharT, _Alloc> result(lhs);
+	  result += rhs;
+	  return result;
   }
 
+// Concatenate string with C-string
   template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const string<_CharT, _Alloc>& lhs, const _CharT* rhs)
   {
-	  string<_CharT, _Alloc> temp(lhs);
-	  temp += rhs;
-	  return temp;
+	  string<_CharT, _Alloc> result(lhs);
+	  result += rhs;
+	  return result;
   }
 
+// Concatenate C-string with string
   template<typename _CharT, template<typename> class _Alloc>
   string<_CharT, _Alloc> operator+(const _CharT* lhs, const string<_CharT, _Alloc>& rhs)
   {
-	  string<_CharT, _Alloc> temp(lhs);
-	  temp += rhs;
-	  return temp;
+	  string<_CharT, _Alloc> result(lhs);
+	  result += rhs;
+	  return result;
   }
-
 } // namespace mustyOS::types
 
