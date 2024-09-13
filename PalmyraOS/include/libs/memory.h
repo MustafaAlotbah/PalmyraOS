@@ -2,6 +2,9 @@
 
 #include "core/definitions.h"    // stdint + size_t
 
+
+extern "C" void* memcpy_sse(void* destination, const void* source, size_t num);
+
 /**
  * Searches for the first occurrence of the character `value` within the first `num` bytes of the block of memory pointed by `ptr`.
  * @param ptr Pointer to the block of memory where the search is performed.

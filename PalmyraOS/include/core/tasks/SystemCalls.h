@@ -29,10 +29,12 @@ namespace PalmyraOS::kernel
 	  static void handleMmap(interrupts::CPURegisters* regs);
 	  static void handleGetTime(interrupts::CPURegisters* regs);
 	  static void handleClockNanoSleep64(interrupts::CPURegisters* regs);
+
 	  static void handleOpen(interrupts::CPURegisters* regs);
 	  static void handleClose(interrupts::CPURegisters* regs);
 	  static void handleWrite(interrupts::CPURegisters* regs);
 	  static void handleRead(interrupts::CPURegisters* regs);
+	  static void handleLongSeek(interrupts::CPURegisters* regs);
 	  static void handleIoctl(interrupts::CPURegisters* regs);
 
 	  static void handleGetdents(interrupts::CPURegisters* regs);
@@ -40,6 +42,9 @@ namespace PalmyraOS::kernel
 	  static void handleInitWindow(interrupts::CPURegisters* regs);
 	  static void handleCloseWindow(interrupts::CPURegisters* regs);
 	  static void handleNextKeyboardEvent(interrupts::CPURegisters* regs);
+
+	  static void handleWaitPID(interrupts::CPURegisters* regs);
+	  static void handleSpawn(interrupts::CPURegisters* regs);
 
 	  static KMap<uint32_t, SystemCallHandler> systemCallHandlers_;
   };

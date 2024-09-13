@@ -11,7 +11,8 @@ namespace PalmyraOS::kernel
 
   // Maximum number of processes supported
   constexpr uint32_t MAX_PROCESSES = 512;
-  constexpr uint32_t STACK_SIZE    = 0x1000; // 4KB guard
+  constexpr uint32_t PROCESS_KERNEL_STACK_SIZE = 10;
+  constexpr uint32_t PROCESS_USER_STACK_SIZE   = 10;
 
   /**
    * @enum EFlags
@@ -67,6 +68,32 @@ namespace PalmyraOS::kernel
 	  };
 
 	  /**
+	   * @brief Returns a C-string representation of the process state.
+	   * @return C-string corresponding to the process state.
+	   */
+	  [[nodiscard]] const char* stateToString() const
+	  {
+		  switch (state_)
+		  {
+			  case State::New:
+				  return "New";
+			  case State::Ready:
+				  return "Ready";
+			  case State::Running:
+				  return "Running";
+			  case State::Terminated:
+				  return "Terminated";
+			  case State::Waiting:
+				  return "Waiting";
+			  case State::Killed:
+				  return "Killed";
+			  default:
+				  return "Unknown";
+		  }
+	  }
+
+
+	  /**
 	   * @enum Priority
 	   * @brief Enum class representing the execution priority of a process.
 	   */
@@ -100,7 +127,15 @@ namespace PalmyraOS::kernel
 	   * @param argc Argument count
 	   * @param argv Argument values
 	   */
-	  Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char** argv);
+	  Process(
+		  ProcessEntry entryPoint,
+		  uint32_t pid,
+		  Mode mode,
+		  Priority priority,
+		  uint32_t argc,
+		  char* const* argv,
+		  bool isInternal
+	  );
 
 	  /**
 	   * @brief Destructor for Process.
@@ -142,6 +177,13 @@ namespace PalmyraOS::kernel
 	  void* allocatePages(size_t count);
 
 	  /**
+	   * @brief Allocates pages for the process.
+	   * @param count Number of pages to allocate.
+	   * @return Pointer to the allocated pages.
+	   */
+	  void* allocatePagesAt(void* virtual_address, size_t count);
+
+	  /**
 	   * @brief Gets the execution mode of the process.
 	   * @return Execution mode
 	   */
@@ -168,6 +210,20 @@ namespace PalmyraOS::kernel
 	   */
 	  [[nodiscard]] uint32_t getPid() const
 	  { return pid_; }
+
+	  /**
+	   * @brief Gets the Process ID.
+	   * @return Process ID
+	   */
+	  [[nodiscard]] uint32_t getUserStack() const
+	  { return (uint32_t)userStack_; }
+
+	  /**
+	   * @brief Gets the Process Exit Code.
+	   * @return Process Exit Code
+	   */
+	  [[nodiscard]] int getExitCode() const
+	  { return exitCode_; }
 
 	  /**
 	   * @brief Gets the CPU context of the process.
@@ -197,7 +253,7 @@ namespace PalmyraOS::kernel
 	   * @brief Initializes the paging directory for the process.
 	   * @param mode Execution mode of the process
 	   */
-	  void initializePagingDirectory(Process::Mode mode);
+	  void initializePagingDirectory(Process::Mode mode, bool isInternal);
 
 	  /**
 	   * @brief Initializes the CPU state for the process.
@@ -210,8 +266,9 @@ namespace PalmyraOS::kernel
 	   * @param argc Argument count.
 	   * @param argv Argument values.
 	   */
-	  void initializeArguments(ProcessEntry entry, uint32_t argc, char** argv);
+	  void initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv);
 
+	  void initializeArgumentsForELF(uint32_t argc, char* const* argv);
 
    public:
 	  friend class TaskManager;
@@ -234,6 +291,8 @@ namespace PalmyraOS::kernel
 
 	  KVector<uint32_t> windows_;                        ///< List of windows allocated
 	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
+
+	  uint64_t upTime_{ 0 };
   };
 
   /**
@@ -259,7 +318,16 @@ namespace PalmyraOS::kernel
 		  Process::Mode mode,
 		  Process::Priority priority,
 		  uint32_t argc,
-		  char** argv
+		  char* const* argv,
+		  bool isInternal
+	  );
+
+	  static Process* execv_elf(
+		  KVector<uint8_t>& elfFileContent,
+		  Process::Mode mode,
+		  Process::Priority priority,
+		  uint32_t argc,
+		  char* const* argv
 	  );
 
 	  /**

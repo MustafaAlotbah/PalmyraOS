@@ -1,5 +1,6 @@
 
 
+#include <elf.h>
 #include <algorithm>
 
 #include "core/tasks/ProcessManager.h"
@@ -7,10 +8,13 @@
 
 #include "libs/string.h"
 #include "libs/memory.h"
+#include "libs/stdio.h"
 
 #include "palmyraOS/unistd.h" // _exit()
 
 #include "core/tasks/WindowManager.h"    // for cleaning up windows upon terminating
+
+#include "core/files/VirtualFileSystem.h"
 
 ///region Process
 
@@ -21,7 +25,8 @@ PalmyraOS::kernel::Process::Process(
 	Mode mode,
 	Priority priority,
 	uint32_t argc,
-	char** argv
+	char* const* argv,
+	bool isInternal
 )
 	: pid_(pid), age_(2), state_(State::Ready), mode_(mode), priority_(priority)
 {
@@ -44,13 +49,20 @@ PalmyraOS::kernel::Process::Process(
 	}
 
 	// 1.  Create and initialize the paging directory for the process.
-	initializePagingDirectory(mode_);
+	initializePagingDirectory(mode_, isInternal);
 
 	// 2.  Initialize the CPU state for the new process.
 	initializeCPUState();
 
 	// 3. Initialize the stack with the process arguments
-	initializeArguments(entryPoint, argc, argv);
+	if (isInternal)
+	{
+		initializeArguments(entryPoint, argc, argv);
+	}
+	else
+	{
+		initializeArgumentsForELF(argc, argv);
+	}
 
 	// 4.  Initialize the process stack with CPU state
 	{
@@ -64,11 +76,102 @@ PalmyraOS::kernel::Process::Process(
 		// Adjust the stack pointer to point to the interrupt number location.
 		stack_.esp += offsetof(interrupts::CPURegisters, intNo); // 52
 	}
+
+
+	// 5. Initialize Virtual File System Hooks
+	char buffer[50];
+	snprintf(buffer, sizeof(buffer), "/proc/%d", pid);
+
+	KString directory = KString(buffer);
+
+	vfs::VirtualFileSystem::createDirectory(directory, vfs::InodeBase::Mode::USER_READ);
+
+	auto statusNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+		  // Create a string with the desired format
+		  char   output[512];
+		  size_t written = snprintf(
+			  output, sizeof(output),
+			  ""
+			  "Pid: %d\n"
+			  "State: %s\n"
+			  "Up Time: %d\n"
+			  "Pages: %d\n"
+			  "Windows: %d\n"
+			  "exitCode: %d\n",
+			  pid_,
+			  stateToString(),
+			  upTime_,
+			  physicalPages_.size(),
+			  windows_.size(),
+			  exitCode_
+		  );
+
+		  // Ensure the output fits in the buffer, considering the offset
+		  if (offset >= written) return 0;
+
+		  size_t available = written - offset;
+		  size_t to_copy   = available < size ? available : size;
+		  memcpy(buffer, output + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/status"), statusNode);
+
+	auto stdoutNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+
+		  // Calculate the size of stdout_ vector
+		  size_t stdout_size = stdout_.size();
+
+		  // Ensure the offset is within the bounds of the stdout_ data
+		  if (offset >= stdout_size) return 0;
+
+		  // Calculate the number of bytes to copy to the buffer
+		  size_t available = stdout_size - offset;
+		  size_t to_copy   = available < size ? available : size;
+
+		  // Copy the data from stdout_ to the provided buffer
+		  memcpy(buffer, stdout_.data() + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stdout"), stdoutNode);
+
+	auto stderrNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+
+		  // Calculate the size of stdout_ vector
+		  size_t stderrsize = stderr_.size();
+
+		  // Ensure the offset is within the bounds of the stdout_ data
+		  if (offset >= stderrsize) return 0;
+
+		  // Calculate the number of bytes to copy to the buffer
+		  size_t available = stderrsize - offset;
+		  size_t to_copy   = available < size ? available : size;
+
+		  // Copy the data from stdout_ to the provided buffer
+		  memcpy(buffer, stderr_.data() + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stderr"), stderrNode);
+
+
 }
 
-void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
+void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, bool isInternal)
 {
-	PagingDirectory* pagingDirectory = nullptr;
 
 	// 1. Create and map the paging directory to itself based on the process mode.
 	if (mode == Process::Mode::Kernel)
@@ -85,8 +188,8 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
 		);
 		registerPages(pagingDirectory_, PagingDirectoryFrames);
 		pagingDirectory_->mapPages(
-			pagingDirectory,
-			pagingDirectory,
+			pagingDirectory_,
+			pagingDirectory_,
 			PagingDirectoryFrames,
 			PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
 		);
@@ -94,11 +197,12 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
 	// Page directory is initialized
 
 	// 2. Map the kernel stack for both kernel and user mode processes.
-	kernelStack_ = kernelPagingDirectory_ptr->allocatePage();
-	registerPages(kernelStack_, 1);
-	pagingDirectory_->mapPage(
+	kernelStack_ = kernelPagingDirectory_ptr->allocatePages(PROCESS_KERNEL_STACK_SIZE);
+	registerPages(kernelStack_, PROCESS_KERNEL_STACK_SIZE);
+	pagingDirectory_->mapPages(
 		kernelStack_,
 		kernelStack_,
+		PROCESS_KERNEL_STACK_SIZE,
 		PageFlags::Present | PageFlags::ReadWrite
 	);
 
@@ -106,14 +210,18 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode)
 	if (mode == Process::Mode::User)
 	{
 		// Allocate and map the user stack.
-		userStack_ = allocatePages(1);
+		userStack_ = allocatePages(PROCESS_USER_STACK_SIZE);
+		// registers pages automatically
 
-		// TODO Temporarily map the kernel code space for debugging purposes.
+		PageFlags kernelSpaceFlags = PageFlags::Present | PageFlags::ReadWrite;
+		if (isInternal) kernelSpaceFlags = kernelSpaceFlags | PageFlags::UserSupervisor;
+
+		// The kernel is still mapped, but only accessed in user mode for internal applications.
 		pagingDirectory_->mapPages(
 			nullptr,
 			nullptr,
 			kernel::kernelLastPage,
-			PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
+			kernelSpaceFlags
 		);
 	}
 }
@@ -143,27 +251,29 @@ void PalmyraOS::kernel::Process::initializeCPUState()
 	// The general-purpose registers are initialized to 0 by default.
 
 	// Initialize the stack pointer (ESP) and instruction pointer (EIP).
-	stack_.esp = reinterpret_cast<uint32_t>(kernelStack_) + PAGE_SIZE;
+	stack_.esp = reinterpret_cast<uint32_t>(kernelStack_) + PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE;
 	stack_.eip = reinterpret_cast<uint32_t>(dispatcher);
 
 	// Set the EFLAGS register, enabling interrupts and setting reserved bits.
 	stack_.eflags = (1 << 1) | (1 << static_cast<uint32_t>(EFlags::IF_Interrupt));
 
 	// For user mode, initialize the user stack pointer (userEsp).
-	if (mode_ == Mode::User) stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE;
+	if (mode_ == Mode::User)
+		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE;
 
 	// Set the CR3 register to point to the process's paging directory.
 	stack_.cr3 = reinterpret_cast<uint32_t>(pagingDirectory_->getDirectory());
 }
 
-void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_t argc, char** argv)
+void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv)
 {
 	// Calculate the total size required for argv and the strings
-	size_t        totalSize = (argc + 1) * sizeof(char*);
-	for (uint32_t i         = 0; i < argc; ++i)
-	{
-		totalSize += strlen(argv[i]) + 1;
-	}
+
+	// Size of argc and argv pointers (inc. nullptr termination)
+	size_t totalSize = (argc + 1) * sizeof(char*);
+
+	// Sizes of the arguments
+	for (uint32_t i = 0; i < argc; ++i) totalSize += strlen(argv[i]) + 1;
 
 	// Allocate a single block of memory for argv and the strings
 	size_t numPages = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
@@ -323,6 +433,98 @@ bool PalmyraOS::kernel::Process::checkStackOverflow() const
 
 	return true;
 }
+
+void* PalmyraOS::kernel::Process::allocatePagesAt(void* virtual_address, size_t count)
+{
+	// allocate the pages in kernel directory (so that they are accessible in syscalls)
+	void* physicalAddress = kernelPagingDirectory_ptr->allocatePages(count);
+
+	// register them to keep track of them when we terminate
+	registerPages(physicalAddress, count);
+
+	// Make them accessible to the process
+	pagingDirectory_->mapPages(
+		physicalAddress,
+		virtual_address,
+		count,
+		PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor
+	);
+
+	return physicalAddress;
+}
+void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* const* argv)
+{
+	// Calculate the total size required for argv pointers and the strings themselves
+	size_t        totalSize = (argc + 1) * sizeof(char*); // Space for argv pointers + null termination
+	for (uint32_t i         = 0; i < argc; ++i)
+	{
+		totalSize += strlen(argv[i]) + 1; // Space for each string (null-terminated)
+	}
+
+	// Allocate memory for argv pointers and the strings
+	size_t numPages = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
+	void* argv_block = allocatePages(numPages);
+	char** argv_copy = static_cast<char**>(argv_block);
+	char* str_copy   = reinterpret_cast<char*>(argv_block) + (argc + 1) * sizeof(char*);
+
+	// Copy each argument string into the allocated memory block
+	for (uint32_t i = 0; i < argc; ++i)
+	{
+		argv_copy[i] = str_copy;
+		size_t len = strlen(argv[i]) + 1;
+		memcpy(str_copy, argv[i], len);
+		str_copy += len;
+	}
+	argv_copy[argc] = nullptr; // Null-terminate the argv array
+
+	// Set up the stack layout according to the expected Linux x86 ABI
+	if (mode_ == Mode::User)
+	{
+		// 1. Copy the argv pointers to the stack
+		stack_.userEsp -= (argc + 1) * sizeof(char*);
+		memcpy(reinterpret_cast<void*>(stack_.userEsp), argv_copy, (argc + 1) * sizeof(char*));
+		uint32_t argv_pointer = stack_.userEsp; // Save the location of argv
+
+
+		// 2. Place argc 4 bytes before the current stack pointer
+		stack_.userEsp -= sizeof(uint32_t);
+		*reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
+
+//		// 3. Reserve 28 bytes for stack alignment and other potential purposes
+//		stack_.userEsp -= 20;
+//
+//		// 4. Place the argv pointer on the stack
+//		stack_.userEsp -= sizeof(char**);
+//		*reinterpret_cast<char***>(stack_.userEsp) = reinterpret_cast<char**>(argv_pointer);
+//
+//		// 5. copy argc again
+//		stack_.userEsp -= sizeof(uint32_t);
+//		*reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
+
+		// 5. Adjust the stack pointer as required (so _start function's assumption is correct)
+		//	stack_.userEsp = stack_.userEsp; // No further adjustment needed as stack_.userEsp is already correct
+	}
+	else
+	{
+		// Normally, this setup is done for user mode; kernel mode doesn't follow this convention.
+		// But for the sake of completeness, a similar setup could be done for kernel mode.
+		stack_.esp -= (argc + 1) * sizeof(char*);
+		memcpy(reinterpret_cast<void*>(stack_.esp), argv_copy, (argc + 1) * sizeof(char*));
+		uint32_t argv_pointer = stack_.esp; // Save the location of argv
+
+		stack_.esp -= sizeof(uint32_t);
+		*reinterpret_cast<uint32_t*>(stack_.esp) = argc;
+
+		stack_.esp -= sizeof(char**);
+		*reinterpret_cast<char***>(stack_.esp) = reinterpret_cast<char**>(argv_pointer);
+
+		stack_.esp -= 28;
+		stack_.esp =
+			stack_.esp; // No further adjustment needed as stack_.esp is already correct
+	}
+}
+
+
 ///endregion
 
 
@@ -353,14 +555,15 @@ void PalmyraOS::kernel::TaskManager::initialize()
 PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(
 	Process::ProcessEntry entryPoint,
 	Process::Mode mode,
-	Process::Priority priority, uint32_t argc, char** argv
+	Process::Priority priority, uint32_t argc, char* const* argv,
+	bool isInternal
 )
 {
 	// Check if the maximum number of processes has been reached.
 	if (processes_.size() == MAX_PROCESSES - 1) return nullptr;
 
 	// Create a new process and add it to the processes vector.
-	processes_.emplace_back(entryPoint, pid_count++, mode, priority, argc, argv);
+	processes_.emplace_back(entryPoint, pid_count++, mode, priority, argc, argv, isInternal);
 
 	// Return a pointer to the newly created process.
 	return &processes_.back();
@@ -428,13 +631,15 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 
 	// Set the new process state to running.
 	processes_[currentProcessIndex_].state_ = Process::State::Running;
+	processes_[currentProcessIndex_].upTime_++;
 
 	// If the new process is in user mode, set the kernel stack.
 	if (processes_[currentProcessIndex_].mode_ == Process::Mode::User)
 	{
 		// set the kernel stack at the top of the kernel stack
 		kernel::gdt_ptr->setKernelStack(
-			reinterpret_cast<uint32_t>(processes_[currentProcessIndex_].kernelStack_) + STACK_SIZE - 1
+			reinterpret_cast<uint32_t>(processes_[currentProcessIndex_].kernelStack_)
+				+ PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE - 1
 		);
 	}
 
@@ -454,6 +659,7 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::getCurrentProcess()
 
 PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::getProcess(uint32_t pid)
 {
+	if (pid >= processes_.size()) return nullptr;
 	return &processes_[pid];
 }
 
@@ -466,6 +672,90 @@ void PalmyraOS::kernel::TaskManager::startAtomicOperation()
 void PalmyraOS::kernel::TaskManager::endAtomicOperation()
 {
 	if (atomicSectionLevel_ > 0) atomicSectionLevel_--;
+}
+
+PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
+	KVector<uint8_t>& elfFileContent,
+	PalmyraOS::kernel::Process::Mode mode,
+	PalmyraOS::kernel::Process::Priority priority,
+	uint32_t argc,
+	char* const* argv
+)
+{
+	// Ensure the ELF file is large enough to contain the header
+	if (elfFileContent.size() < EI_NIDENT) return nullptr;
+
+	// Read the ELF identification bytes
+	unsigned char e_ident[EI_NIDENT];
+	memcpy(e_ident, elfFileContent.data(), EI_NIDENT);
+
+	// Verify the ELF magic number
+	if (e_ident[EI_MAG0] != ELFMAG0 || e_ident[EI_MAG1] != ELFMAG1) return nullptr;
+	if (e_ident[EI_MAG2] != ELFMAG2 || e_ident[EI_MAG3] != ELFMAG3) return nullptr;
+
+	// Check the ELF class (32-bit)
+	if (e_ident[EI_CLASS] != ELFCLASS32) return nullptr;
+
+	// Check the data encoding (little-endian or big-endian)
+	if (e_ident[EI_DATA] != ELFDATA2LSB) return nullptr;
+
+	// Check the ELF version (1)
+	if (e_ident[EI_VERSION] != EV_CURRENT) return nullptr;
+
+	// Now cast the elfFileContent data to an Elf32_Ehdr structure for easier access to the fields
+	const auto* elfHeader = reinterpret_cast<const Elf32_Ehdr*>(elfFileContent.data());
+
+	// Check if the ELF file is an executable
+	if (elfHeader->e_type != ET_EXEC) return nullptr;
+
+	// Check if the ELF file is for the Intel 80386 architecture
+	if (elfHeader->e_machine != EM_386) return nullptr;
+
+	// Validations are successful.
+
+	// Create a new process
+	Process* process = newProcess(nullptr, mode, priority, argc, argv, false);
+	if (!process) return nullptr;
+
+	// Temporarily set process as killed, in case of invalid initialization
+	process->setState(Process::State::Killed);
+
+	// Load program headers
+	const auto* programHeaders = reinterpret_cast<const Elf32_Phdr*>(elfFileContent.data() + elfHeader->e_phoff);
+	for (int i = 0; i < elfHeader->e_phnum; ++i)
+	{
+		const Elf32_Phdr& ph = programHeaders[i];
+
+		// Only load PT_LOAD segments
+		if (ph.p_type == PT_LOAD)
+		{
+			void* segmentAddress = process->allocatePagesAt(
+				reinterpret_cast<void*>(ph.p_vaddr),
+				(ph.p_memsz + PAGE_SIZE - 1) >> PAGE_BITS
+			);
+			if (!segmentAddress) return nullptr;
+
+			// Copy the segment into memory
+			memcpy(segmentAddress, elfFileContent.data() + ph.p_offset, ph.p_filesz);
+
+			// Zero the remaining memory if p_memsz > p_filesz
+			if (ph.p_memsz > ph.p_filesz)
+			{
+				memset(reinterpret_cast<uint8_t*>(segmentAddress) + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
+			}
+		}
+	}
+
+	// Set up the initial CPU state (already initialized in newProcess)
+	uint32_t pointer = process->stack_.esp + 8; // TODO make stuff here more logical PLEASE
+	*(uint32_t*)(pointer) = elfHeader->e_entry;
+	process->stack_.eip = elfHeader->e_entry;
+
+	// Set process state to Ready
+	process->setState(Process::State::Ready);
+
+	return process;
+
 }
 
 

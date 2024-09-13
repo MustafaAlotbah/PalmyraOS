@@ -82,6 +82,54 @@ void PalmyraOS::kernel::Brush::drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, 
 	drawVLine(x2 - 1, y1, y2 - 1, color);
 }
 
+void PalmyraOS::kernel::Brush::drawLine(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, PalmyraOS::Color color)
+{
+
+	int dx = static_cast<int>(x1 - x0);
+	if (dx < 0) dx = -dx;
+	int dy = static_cast<int>(y1 - y0);
+	if (dy < 0) dy = -dy;
+
+	int sx = (x0 < x1) ? 1 : -1;
+	int sy = (y0 < y1) ? 1 : -1;
+
+	int err = dx - dy;
+
+	uint32_t width  = frameBuffer_.getWidth();
+	uint32_t height = frameBuffer_.getHeight();
+
+	int x = static_cast<int>(x0);
+	int y = static_cast<int>(y0);
+
+	int maxSteps = dx + dy; // Maximum steps cannot exceed dx + dy
+
+	for (int i = 0; i <= maxSteps; ++i)
+	{
+		// Check bounds before drawing
+		if (x >= 0 && x < static_cast<int>(width) && y >= 0 && y < static_cast<int>(height))
+		{
+			frameBuffer_.drawPixel(static_cast<uint32_t>(x), static_cast<uint32_t>(y), color);
+		}
+
+		// Check if we've reached the end point
+		if (x == x1 && y == y1) break;
+
+		int e2 = 2 * err;
+
+		if (e2 > -dy)
+		{
+			err -= dy;
+			x += sx;
+		}
+
+		if (e2 < dx)
+		{
+			err += dx;
+			y += sy;
+		}
+	}
+}
+
 ///endregion
 
 

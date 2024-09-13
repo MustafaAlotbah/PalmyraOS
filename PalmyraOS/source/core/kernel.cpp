@@ -5,7 +5,13 @@
 #include "tests/pagingTests.h"
 #include "tests/allocatorTests.h"
 #include "core/peripherals/Logger.h"
-
+#include "core/files/partitions/MasterBootRecord.h"
+#include "core/files/partitions/VirtualDisk.h"
+#include "core/files/partitions/Fat32.h"
+#include "core/files/Fat32FileSystem.h"
+#include "core/files/VirtualFileSystem.h"
+#include "core/tasks/elf.h"
+#include "core/tasks/ProcessManager.h"
 #include <new>
 
 // Globals
@@ -362,3 +368,190 @@ void PalmyraOS::kernel::initializeDrivers()
 	}
 
 }
+
+void PalmyraOS::kernel::initializePartitions()
+{
+	LOG_INFO("Start");
+
+	if (!kernel::ata_primary_master)
+	{
+		LOG_WARN("ATA Primary Master is not available. Cannot initialize Partitions.");
+		return;
+	}
+
+	// dereference graphics tools
+	auto& textRenderer = *kernel::textRenderer_ptr;
+
+
+	// Read the Master Boot Record (MBR)
+	uint8_t masterSector[512];
+	kernel::ata_primary_master->readSector(0, masterSector, 100);
+	auto mbr = kernel::vfs::MasterBootRecord(masterSector);
+
+	// Loop through partition entries
+	for (int i = 0; i < 4; ++i)
+	{
+		// get MBR entry
+		auto mbr_entry = mbr.getEntry(i);
+		LOG_INFO("ATA Primary Master: Partition %d:", i);
+		LOG_INFO(
+			"bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
+			mbr_entry.isBootable,
+			kernel::vfs::MasterBootRecord::toString(mbr_entry.type),
+			mbr_entry.lbaStart,
+			mbr_entry.lbaCount * 512 / 1048576
+		);
+
+		// If we have a valid FAT32 entry
+		if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::FAT32_LBA)
+		{
+
+
+			// TODO factor out to another function for FAT32 Partitions
+
+			// Initialize a Virtual Disk (Guard against writing outside boundaries)
+			auto virtualDisk = heapManager.createInstance<kernel::VirtualDisk<kernel::ATA>>(
+				*kernel::ata_primary_master,
+				mbr_entry.lbaStart,
+				mbr_entry.lbaCount
+			);
+			// kernel::VirtualDisk<kernel::ATA> virtualDisk(*kernel::ata_primary_master, mbr_entry.lbaStart, mbr_entry.lbaCount);
+
+			// Pass the virtual disk to Fat32 Partition TODO add to partitions vector somewhere
+			auto fat32_p = heapManager
+				.createInstance<vfs::FAT32Partition>(*virtualDisk, mbr_entry.lbaStart, mbr_entry.lbaCount);
+			auto& fat32 = *fat32_p;
+			// TODO: Mounting System
+
+			auto rootNode = heapManager.createInstance<vfs::FAT32Directory>(
+				fat32,
+				2,
+				vfs::InodeBase::Mode::USER_READ,
+				vfs::InodeBase::UserID::ROOT,
+				vfs::InodeBase::GroupID::ROOT
+			);
+			vfs::VirtualFileSystem::setInodeByPath(KString("/dev/sda"), rootNode);
+
+			vfs::VirtualFileSystem::createDirectory(KString("/dev/sdb"), vfs::InodeBase::Mode::USER_READ);
+
+
+
+			// TODO: Tests
+			{
+				// Read some well known files
+//				auto data1 = fat32.readFile(15, 8);
+//				auto data2 = fat32.readFile(11, 8);
+//				auto data3 = fat32.readFile(8, 129);
+
+				// Log root entries
+				auto entries = fat32.getDirectoryEntries(2);
+				for (auto& _entry : entries)
+				{
+					LOG_INFO("%s", _entry.getNameLong().c_str());
+				}
+
+				// TODO: Try to get some folders/files by path
+				if (false)
+				{
+					auto a = fat32.resolvePathToEntry(kernel::KString("/"));
+					auto b = fat32.resolvePathToEntry(kernel::KString("/folder"));
+					auto c = fat32.resolvePathToEntry(kernel::KString("/folderx"));
+					auto d = fat32.resolvePathToEntry(kernel::KString("/folder/subfolder"));
+				}
+
+				// TODO: Test Reading a File
+				if (true)
+				{
+//					auto e            = fat32.resolvePathToEntry(kernel::KString("/folder2/fprint2.elf"));
+					auto e            = fat32.resolvePathToEntry(kernel::KString("/folder2/fprint_args.elf"));
+					auto file_content = fat32.readFile(e.getFirstCluster(), e.getFileSize());
+
+					char* argv[] = {
+						const_cast<char*>("/folder2/fprint_args.elf"),
+						const_cast<char*>("arg1"),
+						const_cast<char*>("arg2"),
+						nullptr
+					};
+					kernel::TaskManager::execv_elf(
+						file_content,
+						kernel::Process::Mode::User,
+						kernel::Process::Priority::Low,
+						3,
+						argv
+					);
+//					loadElf(file_content);
+//					file_content.push_back('\0');
+//					textRenderer << "\"" << (char*)file_content.data() << "\"\n" << SWAP_BUFF();
+//					while (true);
+				}
+
+				// TODO: Test Changing File size
+				if (false)
+				{
+					auto e     = fat32.resolvePathToEntry(kernel::KString("/exp1.txt"));
+					auto data4 = fat32.readFile(e.getFirstCluster(), e.getFileSize());
+					e.setFileSize(8);
+					// fat32.flushEntry(e);
+				}
+
+				// TODO: Test Creating a file
+				if (false)
+				{
+					auto b = fat32.resolvePathToEntry(kernel::KString("/folder"));
+					if (fat32.createFile(b, kernel::KString("milx.bs")))
+					{
+						textRenderer << "created file!\n" << SWAP_BUFF();
+					}
+				}
+
+				// TODO: Test Appending to a file
+				if (false)
+				{
+					auto     f     = fat32.resolvePathToEntry(kernel::KString("/exp1.txt"));
+					auto     data5 = fat32.read(f, 0, 50);
+					for (int j     = 0; j < 50; ++j)
+					{
+						for (int k = 0; k < 1; ++k)
+						{
+							fat32.append(f, { 'w', 'h', 'a', 't', ' ', '\n' });
+						}
+						textRenderer << j << ", " << SWAP_BUFF();
+					}
+					auto     data6 = fat32.read(f, 0, 50);
+				}
+
+				// TODO: Test Overriding a file
+				if (false)
+					for (int j = 0; j < 100; ++j)
+					{
+						auto f     = fat32.resolvePathToEntry(kernel::KString("/exp2.txt"));
+						auto data5 = fat32.read(f, 0, 50);
+
+						kernel::KVector<uint8_t> data;
+						for (int                 u = 0; u < 500; ++u)
+						{
+							data.push_back('w');
+							data.push_back('h');
+							data.push_back('a');
+							data.push_back('t');
+							data.push_back('\n');
+						}
+
+						fat32.write(f, data);
+						textRenderer << j << ", " << SWAP_BUFF();
+
+						auto data6 = fat32.read(f, 0, 50);
+					}
+
+
+			}
+
+
+		}
+
+	}
+
+
+}
+
+

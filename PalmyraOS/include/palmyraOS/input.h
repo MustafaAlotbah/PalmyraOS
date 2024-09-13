@@ -13,3 +13,12 @@ struct KeyboardEvent
 	bool isShiftDown = false;
 	bool isAltDown   = false;
 };
+
+struct MouseEvent
+{
+	int  deltaX       = 0;
+	int  deltaY       = 0;
+	bool isLeftDown   = false;
+	bool isRightDown  = false;
+	bool isMiddleDown = false;
+};

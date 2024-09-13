@@ -1,4 +1,5 @@
 
+#include <elf.h>
 #include "userland/systemWidgets/KernelTermina.h"
 
 #include "palmyraOS/unistd.h"       // Include PalmyraOS system calls
@@ -6,9 +7,12 @@
 #include "palmyraOS/stdlib.h"       // For dynamic memory management
 #include "palmyraOS/stdio.h"        // For standard input/output functions: printf, perror
 #include "palmyraOS/HeapAllocator.h"// C++ heap allocator for efficient memory management
+#include "palmyraOS/errono.h"
 #include "libs/circularBuffer.h"    // For efficient FIFO buffer implementation
 
 #include "libs/string.h"            // strlen
+
+//#include "palmyraOS/elf.h"
 
 // TODO: move these to libs (or put them in palmyraOS)
 #include "core/FrameBuffer.h"        // FrameBuffer
@@ -25,7 +29,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 
   // Typedefs for buffer types simplify declarations
   using StdoutType = CircularBuffer<char, 512>;
-  using StdinType = CircularBuffer<char>;
+  using StdinType = CircularBuffer<char, 512>;
 
   // Function declarations for command parsing and execution
   void parseCommand(UserHeapManager& heap, CircularBuffer<char>& input, types::UVector<types::UString<char>>& tokens);
@@ -94,7 +98,20 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  event = nextKeyboardEvent(window_id);        // Fetch the next event
 			  if (event.key == '\0') break;                         // If no key is pressed, break the loop
 			  else if (event.key == 8) stdinBuffer.backspace();     // Handle backspace for corrections
-			  else stdinBuffer.append(event.key);                // Append any other key to our input buffer
+				  // Append any other key to our input buffer
+			  else
+			  {
+				  // TODO improve keyboard events
+				  if (event.isShiftDown && event.key == '/')
+				  {
+					  stdinBuffer.append('_');
+				  }
+				  else
+				  {
+					  stdinBuffer.append(event.key);
+				  }
+			  }
+
 
 			  // When Enter is pressed, process the command
 			  if (event.key == '\n')
@@ -133,7 +150,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  return 0;
   }
 
-  void parseCommand(UserHeapManager& heap, CircularBuffer<char>& input, types::UVector<types::UString<char>>& tokens)
+  void parseCommand(UserHeapManager& heap, StdinType& input, types::UVector<types::UString<char>>& tokens)
   {
 	  // Fetch the command string from input buffer
 	  char* command = (char*)input.get();
@@ -183,6 +200,13 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  return;
 	  }
 
+	  // ECHO
+	  if (tokens[0] == "exit")
+	  {
+		  _exit(0);
+		  return;
+	  }
+
 	  // CLEAR
 	  if (tokens[0] == "clear")
 	  {
@@ -193,30 +217,69 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  // CAT
 	  if (tokens[0] == "cat")
 	  {
-
-		  if (tokens.size() <= 1)
+		  // cat file.txt <offset> <length>
+		  if (tokens.size() < 2)
 		  {
 			  // Remind the user to specify a file path
 			  output.append("No path was provided\n", 22);
 			  return;
 		  }
 
+		  const char* filePath = tokens[1].c_str();
+		  int32_t offset = 0;  // Default offset
+		  size_t  length = 512;  // Default length
+
+		  // Check if offset is provided
+		  if (tokens.size() >= 3)
+		  {
+			  offset = strtol(tokens[2].c_str(), nullptr, 10);
+			  if (offset < 0)
+			  {
+				  output.append("Invalid offset provided\n", 24);
+				  return;
+			  }
+		  }
+
+		  // Check if length is provided
+		  if (tokens.size() >= 4)
+		  {
+			  length = strtol(tokens[3].c_str(), nullptr, 10);
+			  if (length <= 0)
+			  {
+				  output.append("Invalid length provided\n", 24);
+				  return;
+			  }
+		  }
+
 		  // Attempt to open the file specified by the user
-		  int fileDescriptor = open(tokens[1].c_str(), 0);
+		  int fileDescriptor = open(filePath, 0);
 		  if (fileDescriptor < 0)
 		  {
 			  // Inform if the file couldn't be opened, perhaps it doesn't exist
-			  output.append("cat: ", 6);
-			  output.append(tokens[1].c_str(), tokens[1].size());
+			  output.append("cat: ", 5);
+			  output.append(filePath, strlen(filePath));
 			  output.append(": No such file or directory\n", 29);
 			  return;
 		  }
 
-		  // Allocate a buffer to read the file content
-		  auto buffer = (char*)heap.alloc(512 * sizeof(char));
+		  // Seek to the specified offset if one is provided
+		  if (offset > 0)
+		  {
+			  if (lseek(fileDescriptor, offset, SEEK_SET) < 0)
+			  {
+				  output.append("cat: ", 5);
+				  output.append(filePath, strlen(filePath));
+				  output.append(": Failed to seek to the given offset\n", 37);
+				  close(fileDescriptor);
+				  return;
+			  }
+		  }
 
-		  // Read up to 512 characters from the file
-		  int bytesRead = read(fileDescriptor, buffer, 512);
+		  // Allocate a buffer to read the file content
+		  auto buffer = (char*)heap.alloc(length * sizeof(char));
+
+		  // Read the specified number of bytes from the file
+		  int bytesRead = read(fileDescriptor, buffer, length);
 
 		  // Close the file to tidy up and prevent resource leaks
 		  close(fileDescriptor);
@@ -224,7 +287,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  // Output the content read from the file and a newline to separate commands
 		  output.append(buffer, bytesRead);
 		  output.append('\n');
-		  heap.free(buffer);            // Free up memory used by the buffer
+		  heap.free(buffer);  // Free up memory used by the buffer
 		  return;
 	  }
 
@@ -251,15 +314,20 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  }
 
 		  // Prepare a buffer to hold directory entries
-		  auto buffer = (char*)heap.alloc(512 * sizeof(char));
-
+		  auto buffer = (char*)heap.alloc(1024 * sizeof(char));
+		  if (!buffer)
 		  {
-
+			  // If directory cannot be opened, inform the user
+			  output.append("ls: ", 6);
+			  output.append(": Could not allocate memory.\n", 30);
+			  return;
+		  }
+		  {
 			  // Read directory entries
 			  linux_dirent* DirectoryEntry;
 			  int  currentByteIndex;
 			  char DentryType;            // File, Directory, ...
-			  int  bytesRead = getdents(fileDescriptor, (linux_dirent*)buffer, 512);
+			  int bytesRead = getdents(fileDescriptor, (linux_dirent*)buffer, 1024);
 
 			  // Process each entry in the directory
 			  for (currentByteIndex = 0; currentByteIndex < bytesRead;)
@@ -288,7 +356,6 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  return;
 	  }
 
-
 	  // SLEEP
 	  if (tokens[0] == "sleep")
 	  {
@@ -315,6 +382,272 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  req.tv_nsec = 0;
 		  clock_nanosleep(CLOCK_REALTIME, 0, &req, nullptr);
 		  return;
+	  }
+
+	  // check if elf
+	  if (tokens[0] == "iself")
+	  {
+		  if (tokens.size() <= 1)
+		  {
+			  // Remind the user to specify a file path
+			  output.append("No path was provided\n", 22);
+			  return;
+		  }
+
+		  // Attempt to open the file specified by the user
+		  int fileDescriptor = open(tokens[1].c_str(), 0);
+		  if (fileDescriptor < 0)
+		  {
+			  // Inform if the file couldn't be opened, perhaps it doesn't exist
+			  output.append("iself: ", 6);
+			  output.append(tokens[1].c_str(), tokens[1].size());
+			  output.append(": No such file or directory\n", 29);
+			  return;
+		  }
+
+		  // Allocate a buffer to read the file content
+		  auto e_ident = (char*)heap.alloc(EI_NIDENT);
+
+		  // Read up to 512 characters from the file
+		  int bytesRead = read(fileDescriptor, e_ident, EI_NIDENT);
+
+		  // Check if the file is large enough to contain the ELF identifier
+		  if (bytesRead < EI_NIDENT)
+		  {
+			  output.append("iself: ", 6);
+			  output.append(tokens[1].c_str(), tokens[1].size());
+			  output.append(": File is too small to be an ELF file.\n", 40);
+			  close(fileDescriptor);
+			  return;
+		  }
+
+		  // Check ELF magic number
+		  if (e_ident[0] != ELFMAG0 ||
+			  e_ident[1] != ELFMAG1 ||
+			  e_ident[2] != ELFMAG2 ||
+			  e_ident[3] != ELFMAG3)
+		  {
+			  output.append("iself: ", 6);
+			  output.append(tokens[1].c_str(), tokens[1].size());
+			  output.append(": Not an ELF file.\n", 20);
+			  close(fileDescriptor);
+			  return;
+		  }
+
+		  output.append("iself: ", 6);
+		  output.append(tokens[1].c_str(), tokens[1].size());
+		  output.append(": is a valid ELF file.\n", 24);
+
+
+		  if (e_ident[EI_CLASS] == ELFCLASS64)
+		  {
+			  output.append("ELF: x86_64\n", 13);
+		  }
+
+		  if (e_ident[EI_CLASS] == ELFCLASS32)
+		  {
+			  output.append("ELF: x86 (i386)\n", 17);
+
+			  // Move the file offset back to the start
+			  if (lseek(fileDescriptor, 0, SEEK_SET) == -1)
+			  {
+				  output.append("iself: ", 6);
+				  output.append(": Could not seek.\n", 19);
+				  close(fileDescriptor);
+				  return;
+			  }
+
+			  Elf32_Ehdr header32;
+			  bytesRead = read(fileDescriptor, &header32, sizeof(header32));
+			  if (bytesRead == -1)
+			  {
+				  output.append("iself: ", 6);
+				  output.append(": Could not read.\n", 19);
+				  close(fileDescriptor);
+				  return;
+			  }
+
+			  if (bytesRead < sizeof(header32))
+			  {
+				  output.append("iself: ", 6);
+				  output.append(": Failed to read the full ELF header.\n", 39);
+				  close(fileDescriptor);
+				  return;
+			  }
+
+
+			  // Append formatted ELF header information to output
+			  output.append("ELF Header:\n", 13);
+
+			  // Type
+			  char typeBuffer[32];
+			  snprintf(typeBuffer, sizeof(typeBuffer), "  Type: %u\n", header32.e_type);
+			  output.append(typeBuffer, strlen(typeBuffer));
+
+			  // Machine
+			  char machineBuffer[32];
+			  snprintf(machineBuffer, sizeof(machineBuffer), "  Machine: %u\n", header32.e_machine);
+			  output.append(machineBuffer, strlen(machineBuffer));
+
+			  // Version
+			  char versionBuffer[32];
+			  snprintf(versionBuffer, sizeof(versionBuffer), "  Version: %u\n", header32.e_version);
+			  output.append(versionBuffer, strlen(versionBuffer));
+
+			  // Entry point address
+			  char entryPointBuffer[48];
+			  snprintf(entryPointBuffer, sizeof(entryPointBuffer), "  Entry point address: 0x%x\n", header32.e_entry);
+			  output.append(entryPointBuffer, strlen(entryPointBuffer));
+
+
+		  }
+
+		  // Close the file to tidy up and prevent resource leaks
+		  close(fileDescriptor);
+
+		  // Free up memory used by the buffer
+		  heap.free(e_ident);
+		  return;
+	  }
+
+	  // WAITPID
+	  if (tokens[0] == "waitpid")
+	  {
+		  if (tokens.size() <= 1)
+		  {
+			  // Require a PID to wait for
+			  output.append("No PID was provided!\n", 22);
+			  return;
+		  }
+
+		  // Parse the PID (assume it is an integer for now)
+		  char* end;
+		  long int pid = strtol(tokens[1].c_str(), &end, 10);
+		  if (*end != '\0')
+		  {
+			  output.append("Please provide a valid integer PID!\n", 37);
+			  return;
+		  }
+
+		  // Call the waitpid system call
+		  int      status;
+		  uint32_t result = waitpid(pid, &status, 0);
+
+		  // Check the result
+		  if (result == (uint32_t)-1 || result == -ECHILD)
+		  {
+			  output.append("waitpid: Failed to wait for the process.\n", 42);
+			  return;
+		  }
+
+		  output.append("Process with PID ", 18);
+		  char pidBuffer[12];
+		  snprintf(pidBuffer, sizeof(pidBuffer), "%d", pid);
+		  output.append(pidBuffer, strlen(pidBuffer));
+		  output.append(" terminated with status ", 25);
+
+		  // Format the status code
+		  char statusBuffer[12];
+		  snprintf(statusBuffer, sizeof(statusBuffer), "%d", status);
+		  output.append(statusBuffer, strlen(statusBuffer));
+		  output.append("\n", 1);
+
+		  return;
+	  }
+
+
+	  // EXEC - use posix_spawn to execute a file with arguments
+	  if (tokens[0] == "exec")
+	  {
+		  if (tokens.size() < 2)
+		  {
+			  output.append("exec: No command specified.\n", 29);
+			  return;
+		  }
+
+		  // Convert the tokens to a format suitable for posix_spawn
+		  const char* path = tokens[1].c_str();
+		  size_t argc = tokens.size() - 1;
+
+		  // Prepare argv array for the new process
+		  char** argv = (char**)heap.alloc((argc + 1) * sizeof(char*));
+		  if (!argv)
+		  {
+			  output.append("exec: Failed to allocate memory for arguments.\n", 48);
+			  return;
+		  }
+
+		  for (int i = 0; i < argc; ++i)
+		  {
+			  argv[i] = const_cast<char*>(tokens[i + 1].c_str());
+		  }
+		  argv[argc] = nullptr; // Null-terminate the argv array
+
+		  // Spawn the new process
+		  uint32_t child_pid;
+		  int      status = posix_spawn(&child_pid, path, nullptr, nullptr, argv, nullptr);
+
+		  // Free allocated memory for argv
+		  heap.free(argv);
+
+		  if (status != 0)
+		  {
+			  output.append("exec: Failed to start process.\n", 32);
+			  return;
+		  }
+
+		  // Wait for the process to finish
+		  int      wait_status;
+		  uint32_t wait_result = waitpid(child_pid, &wait_status, 0);
+
+		  if (wait_result != child_pid)
+		  {
+			  output.append("waitpid: Failed to wait for the process.\n", 42);
+			  return;
+		  }
+
+		  // Now get the process PID
+		  char pidBuffer[12];
+		  snprintf(pidBuffer, sizeof(pidBuffer), "%d", child_pid);
+
+		  // Flush its output
+		  {
+			  // Construct the path /proc/<pid>/stdout
+			  char procPath[64];
+			  snprintf(procPath, sizeof(procPath), "/proc/%s/stdout", pidBuffer);
+
+			  // Open the stdout file
+			  int fd = open(procPath, 0);
+			  if (fd < 0)
+			  {
+				  output.append("Failed to open ", 15);
+				  output.append(procPath, strlen(procPath));
+				  output.append(".\n", 2);
+				  return;
+			  }
+
+			  // Read the file content
+			  char buffer[512];
+			  int  bytesRead = 0;
+			  while ((bytesRead = read(fd, buffer, sizeof(buffer))) > 0)
+			  {
+				  output.append(buffer, bytesRead);
+			  }
+
+			  // Close the file
+			  close(fd);
+		  }
+
+		  // Process with PID 6 terminated with status 0.
+		  char statusBuffer[12];
+		  output.append("Process with PID ", 16);
+		  output.append(pidBuffer, strlen(pidBuffer));
+		  output.append(" terminated with status ", 25);
+		  snprintf(statusBuffer, sizeof(statusBuffer), "%d", wait_status);
+		  output.append(statusBuffer, strlen(statusBuffer));
+		  output.append(".\n", 2);
+
+
 	  }
 
 		  // Unknown command

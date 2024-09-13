@@ -55,6 +55,7 @@ namespace PalmyraOS
 	  static const Color White;
 	  static const Color Gray;
 	  static const Color DarkGray;
+	  static const Color DarkerGray;
 	  static const Color DarkRed;
 	  static const Color DarkGreen;
 	  static const Color DarkBlue;

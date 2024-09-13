@@ -106,6 +106,8 @@ namespace PalmyraOS::kernel
 
   void initializeDrivers();
 
+  void initializePartitions();
+
 }
 
 

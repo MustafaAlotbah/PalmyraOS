@@ -15,7 +15,7 @@ Currently:
 
 Currently, it looks as follows:
 
-![PalmyraOS](media/PalmyraOS__10_07_2024_05_06_39.png)
+![PalmyraOS](media/PalmyraOS__13_09_2024_17_12_00.png)
 
 ## Tools
 
@@ -40,3 +40,10 @@ using Qemu
 qemu-system-i386.exe -cdrom bin/kernel.iso -boot d -m 1024 -S -gdb tcp::1234 -drive file="path/to/hard_disk.vdi",format=vdi,media=disk
 ```
 
+## Convert your hard disk
+
+#### from VDI to Raw
+
+```shell
+VBoxManage.exe convertfromraw harddrive.img harddrive2.vdi --format VDI
+```

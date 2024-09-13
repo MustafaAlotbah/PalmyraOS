@@ -138,6 +138,16 @@ namespace PalmyraOS::kernel
 	   */
 	  void drawHLine(uint32_t x1, uint32_t x2, uint32_t y, Color color);
 
+	  /**
+	   * Draw a line between two points using Bresenham's algorithm.
+	   * @param x1 The x-coordinate of the starting point.
+	   * @param y1 The y-coordinate of the starting point.
+	   * @param x2 The x-coordinate of the ending point.
+	   * @param y2 The y-coordinate of the ending point.
+	   * @param color The color of the line.
+	   */
+	  void drawLine(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
+
 	  REMOVE_COPY(Brush);
 	  // TODO: Circles, Bresenham lines, Curves
    private:

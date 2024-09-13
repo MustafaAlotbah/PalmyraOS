@@ -19,7 +19,7 @@ file(GLOB_RECURSE SOURCES "source/*.cpp" "source/*.asm")
 add_executable(kernel.bin ${SOURCES})
 
 # Set properties for assembly files
-set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-g -f elf")
+set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-g")
 
 # Linker and linker script settings
 set_target_properties(kernel.bin PROPERTIES LINK_FLAGS "-melf_i386 -T ${CMAKE_SOURCE_DIR}/src/linker.ld")

@@ -4,6 +4,7 @@
 #include "core/panic.h"
 #include "core/memory/PhysicalMemory.h"
 #include "core/kernel.h"
+#include "core/tasks/ProcessManager.h"
 
 // External functions from assembly (paging.asm)
 extern "C" void set_page_directory(uint32_t*);
@@ -266,6 +267,40 @@ bool PalmyraOS::kernel::PagingDirectory::isAddressValid(void* address)
 	return true;
 }
 
+void* PalmyraOS::kernel::PagingDirectory::getPhysicalAddress(void* address)
+{
+	if (address == nullptr) return nullptr;
+
+	// Convert the virtual address to a 32-bit unsigned integer for manipulation
+	auto virtualAddr = reinterpret_cast<uint32_t>(address);
+
+	// Extract the Page Directory Index (bits 22-31)
+	uint32_t tableIndex = (virtualAddr >> 22) & 0x3FF;
+
+	// Extract the Page Table Index (bits 12-21)
+	uint32_t pageIndex = (virtualAddr >> 12) & 0x3FF;
+
+	// Extract the Offset (bits 0-11)
+	uint32_t offset = virtualAddr & 0xFFF;
+
+	// Check if the Page Directory Entry is present
+	if (!pageDirectory_[tableIndex].present) return nullptr;
+
+	// Retrieve the Page Table
+	PageTableEntry* table = pageTables_[tableIndex];
+	if (table == nullptr) return nullptr;
+
+	// Retrieve the Page Table Entry
+	PageTableEntry* entry = &table[pageIndex];
+	if (!entry->present) return nullptr;
+
+	// Calculate the Physical Address
+	uint32_t physicalAddr = (entry->physicalAddress << 12) | offset;
+
+	return reinterpret_cast<void*>(physicalAddr);
+}
+
+
 
 void PalmyraOS::kernel::PagingDirectory::freePage(void* pageAddress)
 {
@@ -318,7 +353,6 @@ void PalmyraOS::kernel::PagingDirectory::mapPages(
 		mapPage((void*)physicalAddr_, (void*)virtualAddr_, flags);
 	}
 }
-
 
 
 ///endregion
@@ -417,6 +451,12 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 	}
 	else
 	{
+		// Fetch current process
+		auto& currentProcess = *TaskManager::getCurrentProcess();
+		auto pid           = currentProcess.getPid();
+		auto userStack     = currentProcess.getUserStack();
+		bool stackOverflow = currentProcess.checkStackOverflow();
+
 		// Handle page fault by triggering a kernel panic  TODO (for example, crash current process)
 		kernelPanic(
 			"Page Fault (0x%X) (0x%X) at 0x%X\n"
@@ -425,14 +465,20 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 			"isWrite: %s\n"
 			"isUser: %s\n"
 			"isInstructionFetch: %s\n"
-			"Faulting Instruction: 0x%X\n",
+			"Faulting Instruction: 0x%X\n"
+			"--------------------------\n"
+			"Process: %d\n"
+			"User Stack: 0x%X\n"
+			"Stack Overflow: %s\n",
 			regs->intNo, regs->errorCode, faultingAddress,
 			currentPageDirectory_->getDirectory(), kernel::kernelPagingDirectory_ptr->getDirectory(),
 			(present ? "YES" : "NO"),
 			(write ? "YES" : "NO"),
 			(userMode ? "YES" : "NO"),
 			(instructionFetch ? "YES" : "NO"),
-			regs->eip
+			regs->eip,
+			pid, userStack,
+			(stackOverflow ? "YES" : "NO")
 		);
 	}
 

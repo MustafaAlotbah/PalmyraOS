@@ -3,6 +3,7 @@
 #include "core/peripherals/Logger.h"
 #include "core/SystemClock.h"
 #include "libs/memory.h"
+#include "core/cpu.h"
 
 
 namespace PalmyraOS::kernel
@@ -140,12 +141,28 @@ namespace PalmyraOS::kernel
 	  // Calculate the target tick count for timeout
 	  uint64_t targetTicks = start + timeout * SystemClock::getFrequency() / 1'000;
 
-	  // Loop until the DRQ flag is cleared or timeout occurs
-	  while (!(commandPort_.read() & 0x08))
+	  while (true)
 	  {
+		  uint8_t status = commandPort_.read();
 
-		  // Check if the current tick count exceeds the target tick count
-		  if (SystemClock::getTicks() > targetTicks) return false;
+		  // Not busy and data request ready
+		  if (!(status & 0x80) && (status & 0x08)) return true;
+
+		  // Error flag
+		  if (status & 0x01)
+		  {
+			  LOG_ERROR("ATA Port (0x%X) %s: Error flag set. Status: 0x%X", basePort_, toString(deviceType_), status);
+			  return false;
+		  }
+
+		  if (SystemClock::getTicks() > targetTicks)
+		  {
+			  LOG_ERROR("ATA Port (0x%X) %s: Timeout waiting for ready. Status: 0x%X",
+						basePort_,
+						toString(deviceType_),
+						status);
+			  return false;
+		  }
 	  }
 	  return true;
   }
@@ -159,11 +176,6 @@ namespace PalmyraOS::kernel
 	  controlPort_.write(0);
 
 	  return (commandPort_.read() != 0x00);
-  }
-
-  uint16_t ATA::swapBytes(uint16_t word)
-  {
-	  return (word >> 8) | (word << 8);
   }
 
   void ATA::selectDevice(uint32_t logicalBlockAddress)
@@ -186,16 +198,34 @@ namespace PalmyraOS::kernel
 	  uint32_t timeout
   )
   {
+	  // Optionally check if the drive is already ready and not busy
+	  if (!waitForNotBusy(timeout))
+	  {
+		  LOG_ERROR("ATA Port (0x%X) %s: Command 0x%X timed out (Busy).",
+					basePort_, toString(deviceType_), static_cast<uint8_t>(command)
+		  );
+		  return false;
+	  }
+
 	  selectDevice(logicalBlockAddress);
 	  sectorCountPort_.write(sectorCount);
 	  setLBA(logicalBlockAddress);
 	  commandPort_.write(static_cast<uint8_t>(command));
 
 	  timeout = timeout > 5000 ? 5000 : timeout;    // Maximum 5 seconds timeout
+	  timeout = 100'000;
 
-	  if (!waitForBusy(timeout) || !waitForReady(timeout))
+	  if (!waitForBusy(timeout))
 	  {
-		  LOG_ERROR("ATA Port (0x%X) %s: Command 0x%X timed out.",
+		  LOG_ERROR("ATA Port (0x%X) %s: Command 0x%X timed out (Not Busy).",
+					basePort_, toString(deviceType_), static_cast<uint8_t>(command)
+		  );
+		  return false;
+	  }
+
+	  if (!waitForReady(timeout))
+	  {
+		  LOG_ERROR("ATA Port (0x%X) %s: Command 0x%X timed out (Not Ready).",
 					basePort_, toString(deviceType_), static_cast<uint8_t>(command)
 		  );
 		  return false;
@@ -230,12 +260,43 @@ namespace PalmyraOS::kernel
 		  LOG_ERROR("ATA Port (0x%X) %s: Error occurred. Status: 0x%X",
 					basePort_, toString(deviceType_), status
 		  );
+		  clearError();
 		  return false;
 	  }
 	  return true;
   }
 
+  bool ATA::clearError()
+  {
+	  // Read the status to check if there is an error.
+	  uint8_t status = commandPort_.read();
+	  if (status & 0x01)
+	  { // ERR bit is set.
+		  LOG_ERROR("ATA Port (0x%X) %s: Error detected. Status: 0x%X", basePort_, toString(deviceType_), status);
 
+		  // Attempt to clear the error by writing a reset command to the control port.
+		  controlPort_.write(0x04); // Reset command.
+		  kernel::CPU::delay(1000);
+		  controlPort_.write(0x00); // Clear the reset.
+
+		  // Check the status again to see if the error is cleared.
+		  status = commandPort_.read();
+		  if (status & 0x01)
+		  {
+			  LOG_ERROR("ATA Port (0x%X) %s: Error not cleared. Status: 0x%X",
+						basePort_,
+						toString(deviceType_),
+						status);
+			  return false;
+		  }
+		  else
+		  {
+			  LOG_INFO("ATA Port (0x%X) %s: Error cleared successfully.", basePort_, toString(deviceType_));
+			  return true;
+		  }
+	  }
+	  return true; // No error detected in the first place.
+  }
 
   // Getters
 
@@ -286,6 +347,21 @@ namespace PalmyraOS::kernel
 		  default:
 			  return "Unknown";
 	  }
+  }
+
+  bool ATA::waitForNotBusy(uint32_t timeout)
+  {
+	  auto     start       = SystemClock::getTicks();
+	  uint64_t targetTicks = start + timeout * SystemClock::getFrequency() / 1000;
+
+	  while (SystemClock::getTicks() < targetTicks)
+	  {
+		  uint8_t status = commandPort_.read();
+
+		  // Not busy
+		  if (!(status & 0x80)) return true;
+	  }
+	  return false;
   }
 
 }

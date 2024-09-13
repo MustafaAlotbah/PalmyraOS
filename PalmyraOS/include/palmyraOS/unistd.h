@@ -1,9 +1,10 @@
 /*
  * The API of PalmyraOS
  * Partially POSIX compliant (under construction)
- * Check out https://github.com/spotify/linux/blob/master/arch/x86/include/asm/unistd_32.h
- * https://man7.org/linux/man-pages/man2/syscalls.2.html
- * https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_32.tbl
+ * Check out
+ * - https://github.com/spotify/linux/blob/master/arch/x86/include/asm/unistd_32.h
+ * - https://man7.org/linux/man-pages/man2/syscalls.2.html
+ * - https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_32.tbl
  * */
 
 #pragma once
@@ -21,15 +22,18 @@
 #define INT_INIT_WINDOW 9595
 #define INT_CLOSE_WINDOW 9596
 #define INT_NEXT_KEY_EVENT 9597
+#define POSIX_INT_POSIX_SPAWN 9598    // posix_spawn (in linux, it's not its own syscall)
 
 
 /* POSIX Interrupts */
 #define POSIX_INT_EXIT 1
 #define POSIX_INT_READ 3
 #define POSIX_INT_WRITE 4
-#define POSIX_INT_GET_PID 20
 #define POSIX_INT_OPEN 5
 #define POSIX_INT_CLOSE 6
+#define POSIX_INT_WAITPID 7
+#define POSIX_INT_LSEEK 19
+#define POSIX_INT_GET_PID 20
 #define POSIX_INT_IOCTL 54
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
@@ -57,9 +61,13 @@
 /* RTC ioctl commands */
 #define RTC_RD_TIME 0x80247009
 
+/* Constants for whence argument in lseek */
+#define SEEK_SET 0  // Seek from the beginning of the file
+#define SEEK_CUR 1  // Seek from the current file offset
+#define SEEK_END 2  // Seek from the end of the file
+
 
 typedef uint32_t fd_t;
-
 
 /**
  * @brief Retrieves the process identifier (PID) of the calling process.
@@ -97,6 +105,20 @@ int write(uint32_t fileDescriptor, const void* buffer, uint32_t count);
  * @return The number of bytes read, or -1 if an error occurred.
  */
 int read(uint32_t fileDescriptor, void* buffer, uint32_t count);
+
+/**
+ * @brief Repositions the offset of the file descriptor.
+ *
+ * @param fd The file descriptor whose offset is to be changed.
+ * @param offset The new offset to be set.
+ * @param whence The directive that specifies how the offset should be interpreted:
+ *               - SEEK_SET: Set the offset to the value specified by offset.
+ *               - SEEK_CUR: Set the offset to the current location plus offset.
+ *               - SEEK_END: Set the offset to the size of the file plus offset.
+ * @return The resulting offset location as measured in bytes from the beginning of the file,
+ *         or -1 if an error occurred.
+ */
+int32_t lseek(fd_t fd, int32_t offset, int whence);
 
 /**
  * @brief Maps files or devices into memory.
@@ -178,3 +200,39 @@ struct linux_dirent
 
 
 int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count);
+
+/**
+ * @brief Starts a new process by spawning the specified ELF file.
+ *
+ * This function is a simplified variant of the POSIX `posix_spawn` function.
+ * It spawns a new process to execute the specified ELF file. The `file_actions`
+ * and `attrp` parameters are provided for compatibility with the POSIX standard,
+ * but they are not used or implemented in this version.
+ *
+ * @param pid A pointer to a variable where the process ID of the new process will be stored.
+ *            This will be of type `uint32_t` rather than the typical `pid_t` used in POSIX.
+ * @param path The path to the ELF file to be executed.
+ * @param file_actions Reserved for compatibility, but not used or implemented in this function.
+ * @param attrp Reserved for compatibility, but not used or implemented in this function.
+ * @param argv A null-terminated array of argument strings passed to the new program.
+ * @param envp A null-terminated array of environment variables passed to the new program.
+ * @return 0 on success, or a negative error code on failure.
+ */
+int posix_spawn(
+	uint32_t* pid,
+	const char* path,
+	void* file_actions,
+	void* attrp,
+	char* const argv[],
+	char* const envp[]
+);
+
+/**
+ * @brief Waits for a specific process to change state.
+ *
+ * @param pid The process ID of the child process to wait for.
+ * @param status A pointer to an integer where the exit status of the child process will be stored.
+ * @param options Options for controlling the behavior of the wait.
+ * @return The process ID of the child that changed state, or -1 if an error occurred.
+ */
+uint32_t waitpid(uint32_t pid, int* status, int options);

@@ -1,9 +1,7 @@
 
+#include <algorithm>
 #include "core/FrameBuffer.h"
 #include "libs/memory.h"    // memcpy
-
-
-extern "C" void* memcpy_sse(void* destination, const void* source, size_t num);
 
 
 // PalmyraOS::Color
@@ -35,6 +33,7 @@ const PalmyraOS::Color PalmyraOS::Color::Black      = Color(2, 2, 2);
 const PalmyraOS::Color PalmyraOS::Color::White      = Color(245, 245, 245);
 const PalmyraOS::Color PalmyraOS::Color::Gray       = Color(128, 128, 128);
 const PalmyraOS::Color PalmyraOS::Color::DarkGray = Color(32, 32, 32);
+const PalmyraOS::Color PalmyraOS::Color::DarkerGray = Color(16, 16, 16);
 const PalmyraOS::Color PalmyraOS::Color::DarkRed    = Color(145, 4, 21);
 const PalmyraOS::Color PalmyraOS::Color::DarkGreen  = Color(58, 122, 9);
 const PalmyraOS::Color PalmyraOS::Color::DarkBlue   = Color(10, 44, 145);
@@ -77,12 +76,39 @@ void PalmyraOS::kernel::FrameBuffer::drawRect(
 	PalmyraOS::Color color
 )
 {
+	// Early exit if the frame buffer dimensions are zero
+	if (width_ == 0 || height_ == 0) return;
+
+	// Clamp x1 and x2 to [0, width_]
+	x1 = std::min(x1, static_cast<uint32_t>(width_));
+	x2 = std::min(x2, static_cast<uint32_t>(width_));
+
+	// Swap x1 and x2 if necessary to ensure x1 <= x2
+	if (x1 > x2) std::swap(x1, x2);
+
+	// Clamp y1 and y2 to [0, height_]
+	y1 = std::min(y1, static_cast<uint32_t>(height_));
+	y2 = std::min(y2, static_cast<uint32_t>(height_));
+
+	// Swap y1 and y2 if necessary to ensure y1 <= y2
+	if (y1 > y2) std::swap(y1, y2);
+
+	// If the rectangle has no area after clamping, exit early
+	if (x1 == x2 || y1 == y2) return;
+
+	uint32_t colorValue = color.getColorValue();
+	uint32_t length     = x2 - x1;
+
+	// Optimize by reducing the nested loops to a single loop per row
 	for (uint32_t y = y1; y < y2; ++y)
 	{
-		for (uint32_t x = x1; x < x2; ++x)
+		uint32_t index = x1 + y * width_;
+		uint32_t* dest = backBuffer_ + index;
+
+		// Efficiently set the row pixels to the color value
+		for (uint32_t i = 0; i < length; ++i)
 		{
-			uint32_t index = x + (y * width_);
-			backBuffer_[index] = color.getColorValue();
+			dest[i] = colorValue;
 		}
 	}
 }

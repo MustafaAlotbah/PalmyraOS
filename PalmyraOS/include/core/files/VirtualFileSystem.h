@@ -4,6 +4,7 @@
 
 #include "core/files/VirtualFileSystemBase.h"
 #include "palmyraOS/unistd.h"    // fd_t
+#include <bits/std_function.h>
 
 /*
 Class: FunctionInode
@@ -47,9 +48,9 @@ namespace PalmyraOS::kernel::vfs
   class FunctionInode : public InodeBase
   {
    public:
-	  using ReadFunction = size_t(*)(char* buffer, size_t size, size_t offset);
-	  using WriteFunction = size_t(*)(const char* buffer, size_t size, size_t offset);
-	  using IOCTLFunction = int (*)(int request, void* arg);
+	  using ReadFunction = std::function<size_t(char* buffer, size_t size, size_t offset)>;
+	  using WriteFunction = std::function<size_t(const char* buffer, size_t size, size_t offset)>;
+	  using IOCTLFunction = std::function<int(int request, void* arg)>;
 
 	  /**
 	   * @brief Constructor for FunctionInode.
@@ -218,6 +219,7 @@ namespace PalmyraOS::kernel::vfs
 	  [[nodiscard]] InodeBase* getInode() const;
 	  [[nodiscard]] int getFlags() const;
 	  [[nodiscard]] size_t getOffset() const;
+	  void setOffset(size_t offset);
 	  void advanceOffset(size_t bytes);
 
    private:

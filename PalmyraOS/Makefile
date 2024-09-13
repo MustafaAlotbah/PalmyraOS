@@ -1,6 +1,6 @@
 # Set parameters for the compiler and assembler
 # 32-Bit output
-GPP_PARAMS = -g -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore  -Werror=return-type
+GPP_PARAMS = -g -O0 -m32 -ffreestanding -fno-use-cxa-atexit -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore -fdata-sections -ffunction-sections
 AS_PARAMS = -g -f elf
 LD_PARAMS = -melf_i386
 
@@ -62,6 +62,7 @@ iso: kernel.bin
 	@grub-mkrescue --output bin/kernel.iso bin/iso
 	@echo "ISO image created"
 
+clean:
 	@echo "Cleaning generated subdirectories and object files"
 	@rm bin/*.o
 	@rm -rf bin/iso
@@ -69,6 +70,5 @@ iso: kernel.bin
 		rm -rf bin/$$(basename $$dir); \
 	done
 	@echo "Clean completed"
-
 
 .PHONY: objects build iso

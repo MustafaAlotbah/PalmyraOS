@@ -135,5 +135,70 @@ int64_t __moddi3(int64_t dividend, int64_t divisor)
 	return (dividend < 0) ? -abs_remainder : abs_remainder;
 }
 
+/**
+ * @brief Performs signed 64-bit integer division and modulus operation.
+ *
+ * This function divides a 64-bit signed integer by another 64-bit signed integer
+ * and returns both the quotient and the remainder. It uses the __divdi3 and __moddi3
+ * functions for the actual division and modulus operations.
+ *
+ * @param dividend The 64-bit signed integer to be divided.
+ * @param divisor The 64-bit signed integer by which to divide.
+ * @param remainder Pointer to store the remainder of the division.
+ * @return The quotient of the division. The remainder is stored in the variable pointed to by the remainder parameter.
+ */
+int64_t __divmoddi4(int64_t dividend, int64_t divisor, int64_t* remainder)
+{
+	if (divisor == 0)
+	{
+		// Division by zero is undefined behavior, but we'll return 0 for simplicity.
+		if (remainder)
+		{
+			*remainder = 0;
+		}
+		return 0;
+	}
+
+	int64_t quotient = __divdi3(dividend, divisor);
+	if (remainder)
+	{
+		*remainder = __moddi3(dividend, divisor);
+	}
+
+	return quotient;
+}
+
+/**
+ * @brief Performs unsigned 64-bit integer division and modulus operation.
+ *
+ * This function divides a 64-bit unsigned integer by another 64-bit unsigned integer
+ * and returns both the quotient and the remainder. It uses the __udivdi3 and __umoddi3
+ * functions for the actual division and modulus operations.
+ *
+ * @param dividend The 64-bit unsigned integer to be divided.
+ * @param divisor The 64-bit unsigned integer by which to divide.
+ * @param remainder Pointer to store the remainder of the division.
+ * @return The quotient of the division. The remainder is stored in the variable pointed to by the remainder parameter.
+ */
+uint64_t __udivmoddi4(uint64_t dividend, uint64_t divisor, uint64_t* remainder)
+{
+	if (divisor == 0)
+	{
+		// Division by zero is undefined behavior, but we'll return 0 for simplicity.
+		if (remainder)
+		{
+			*remainder = 0;
+		}
+		return 0;
+	}
+
+	uint64_t quotient = __udivdi3(dividend, divisor);
+	if (remainder)
+	{
+		*remainder = __umoddi3(dividend, divisor);
+	}
+
+	return quotient;
+}
 
 }  // extern "C"

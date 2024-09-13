@@ -28,16 +28,21 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 
 	// Map system call numbers to their respective handler functions
 	// POSIX
-	systemCallHandlers_[POSIX_INT_EXIT]               = &SystemCallsManager::handleExit;
-	systemCallHandlers_[POSIX_INT_GET_PID]            = &SystemCallsManager::handleGetPid;
-	systemCallHandlers_[POSIX_INT_YIELD]              = &SystemCallsManager::handleYield;
-	systemCallHandlers_[POSIX_INT_MMAP]               = &SystemCallsManager::handleMmap;
-	systemCallHandlers_[POSIX_INT_GETTIME]            = &SystemCallsManager::handleGetTime;
-	systemCallHandlers_[POSIX_INT_OPEN]               = &SystemCallsManager::handleOpen;
-	systemCallHandlers_[POSIX_INT_CLOSE]              = &SystemCallsManager::handleClose;
-	systemCallHandlers_[POSIX_INT_WRITE]              = &SystemCallsManager::handleWrite;
-	systemCallHandlers_[POSIX_INT_READ]               = &SystemCallsManager::handleRead;
-	systemCallHandlers_[POSIX_INT_IOCTL]              = &SystemCallsManager::handleIoctl;
+	systemCallHandlers_[POSIX_INT_EXIT]    = &SystemCallsManager::handleExit;
+	systemCallHandlers_[POSIX_INT_GET_PID] = &SystemCallsManager::handleGetPid;
+	systemCallHandlers_[POSIX_INT_YIELD]   = &SystemCallsManager::handleYield;
+	systemCallHandlers_[POSIX_INT_MMAP]    = &SystemCallsManager::handleMmap;
+	systemCallHandlers_[POSIX_INT_GETTIME] = &SystemCallsManager::handleGetTime;
+
+	systemCallHandlers_[POSIX_INT_OPEN]        = &SystemCallsManager::handleOpen;
+	systemCallHandlers_[POSIX_INT_CLOSE]       = &SystemCallsManager::handleClose;
+	systemCallHandlers_[POSIX_INT_WRITE]       = &SystemCallsManager::handleWrite;
+	systemCallHandlers_[POSIX_INT_READ]        = &SystemCallsManager::handleRead;
+	systemCallHandlers_[POSIX_INT_IOCTL]       = &SystemCallsManager::handleIoctl;
+	systemCallHandlers_[POSIX_INT_LSEEK]       = &SystemCallsManager::handleLongSeek;
+	systemCallHandlers_[POSIX_INT_WAITPID]     = &SystemCallsManager::handleWaitPID;
+	systemCallHandlers_[POSIX_INT_POSIX_SPAWN] = &SystemCallsManager::handleSpawn;
+
 	systemCallHandlers_[POSIX_INT_CLOCK_NANOSLEEP_64] = &SystemCallsManager::handleClockNanoSleep64;
 
 	// Custom
@@ -50,6 +55,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 
 }
 
+// TODO isValidAddress(void* addr, size_t size) this way we are sure for more than one byte!!
 bool PalmyraOS::kernel::SystemCallsManager::isValidAddress(void* addr)
 {
 	// Validate if the given address is within the current process's valid address range
@@ -215,6 +221,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleWrite(PalmyraOS::kernel::inter
 
 	// Get the current process
 	auto* proc = TaskManager::getCurrentProcess();
+	bufferPointer = (char*)proc->pagingDirectory_->getPhysicalAddress(bufferPointer);
 
 	// TODO move to actual
 	// TODO 0
@@ -386,7 +393,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleNextKeyboardEvent(PalmyraOS::k
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
-	// int write(uint32_t fd, const void *buf, uint32_t count)
+	// int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count)
 
 	// Extract arguments from registers
 	size_t fileDescriptor = regs->ebx;
@@ -395,23 +402,25 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 
 	// Check if bufferPointer is a valid pointer
 	if (!isValidAddress(bufferPointer)) return;
-	if (!isValidAddress(bufferPointer + count)) return;
+	if (!isValidAddress((char*)bufferPointer + count)) return;
 
 	// TODO: uncap and allow for iterative
-	count = count > 100 ? 100 : count;
-
+	count = count > 512 ? 512 : count;
 
 	// Get the file associated with the file descriptor
 	auto file = TaskManager::getCurrentProcess()->fileTableDescriptor_.getOpenFile(fileDescriptor);
 	if (!file || file->getInode()->getType() != vfs::InodeBase::Type::Directory)
 	{
-		// If the file is not open, set the number of bytes read to 0
+		// If the file is not open, or not a directory, set the number of bytes read to 0
 		regs->eax = -1; // invalid operation
 		return;
 	}
 
+	// Enable interrupts to allow the system to handle other tasks while sleeping
+	interrupts::InterruptController::enableInterrupts();
+
 	// Read directory entries by offset
-	auto dentries = file->getInode()->getDentries(file->getOffset());
+	auto dentries = file->getInode()->getDentries(file->getOffset(), count);
 	file->advanceOffset(dentries.size());
 
 	char* buffer = (char*)bufferPointer;
@@ -419,21 +428,20 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 
 	for (size_t index = 0; index < dentries.size() && bytesRead < count; ++index)
 	{
-		auto dentry = dentries[index];
-		auto name   = dentry.first;
-		auto type   = (uint8_t)dentry.second->getType();
-		auto d_ino  = (uint32_t)dentry.second->getInodeNumber();
+		auto [name, inode] = dentries[index];
+
+		// TODO: Check second inode (nullptr? etc..)
+
+		auto type  = (uint8_t)inode->getType();
+		auto d_ino = (uint32_t)inode->getInodeNumber();
 
 		size_t nameLen = name.size();
 
 		// +1 for null-terminator, +1 for d_type
 		size_t reclen = sizeof(linux_dirent) + nameLen + 1 + 1;
 
-		if (bytesRead + reclen > count)
-		{
-			break; // Not enough space in the buffer
-		}
-
+		// Not enough space in the buffer
+		if (bytesRead + reclen > count) break;
 
 		auto* dirent = (linux_dirent*)(buffer + bytesRead);
 		dirent->d_ino    = d_ino;
@@ -447,6 +455,9 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 
 		bytesRead += reclen;
 	}
+
+	// Disable interrupts
+	interrupts::InterruptController::disableInterrupts();
 
 	regs->eax = bytesRead;
 }
@@ -483,6 +494,184 @@ void PalmyraOS::kernel::SystemCallsManager::handleClockNanoSleep64(PalmyraOS::ke
 	interrupts::InterruptController::disableInterrupts();
 
 	// Set the result to 0 to indicate success
+	regs->eax = 0;
+
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleLongSeek(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+
+	// int32_t lseek(uint32_t fd, int32_t offset, int whence)
+
+	// Extract arguments from registers
+	uint32_t fd     = regs->ebx;       // File descriptor
+	int32_t  offset = regs->ecx;    // Offset
+	int      whence = regs->edx;        // Reference point (SEEK_SET, SEEK_CUR, SEEK_END)
+
+	// Get the current process
+	auto* proc = TaskManager::getCurrentProcess();
+
+	// Get the file associated with the file descriptor
+	auto file = proc->fileTableDescriptor_.getOpenFile(fd);
+	if (!file)
+	{
+		// If the file is not open, set eax to -1 to indicate failure
+		regs->eax = -1;
+		return;
+	}
+
+	// Determine the new offset based on the whence value
+	int32_t newOffset;
+	switch (whence)
+	{
+		case SEEK_SET:
+			newOffset = offset;
+			break;
+		case SEEK_CUR:
+			newOffset = file->getOffset() + offset;
+			break;
+//		case SEEK_END: // TODO
+//			newOffset = file->getInode()->getSize() + offset;
+//			break;
+		default:
+			// Invalid whence value, return an error
+			regs->eax = -EINVAL;
+			return;
+	}
+
+	// Check if the new offset is within valid bounds // TODO inode->getSize()
+	if (newOffset < 0 /*|| static_cast<uint32_t>(newOffset) > file->getInode()->getSize()*/)
+	{
+		// If the new offset is out of bounds, return an error
+		regs->eax = -EINVAL;
+		return;
+	}
+
+	// Set the file's offset to the new offset
+	file->setOffset(newOffset);
+
+	// Return the new offset in eax
+	regs->eax = newOffset;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleWaitPID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// uint32_t waitpid(uint32_t pid, int* status, int options);
+
+	// Extract arguments from registers
+	uint32_t pid = regs->ebx;       // The process ID to wait for
+	int* status = (int*)regs->ecx;  // A pointer to store the status
+	int options = regs->edx;        // Options for waitpid (not used in this implementation)
+
+	// Validate the status pointer
+	if (status && !isValidAddress(status))
+	{
+		regs->eax = -EFAULT;  // Invalid memory address
+		return;
+	}
+
+	// Get the current process TODO needed?
+	// auto* currentProcess = TaskManager::getCurrentProcess();
+
+	// Find the child process with the given PID
+	auto* childProcess = TaskManager::getProcess(pid);
+	if (!childProcess)
+	{
+		// If no process with the given PID exists, return an error
+		regs->eax = -ECHILD;  // No such child process
+		return;
+	}
+
+	// Enable interrupts to allow the system to handle other tasks while sleeping
+	interrupts::InterruptController::enableInterrupts();
+
+	// Busy-wait loop until the child process is terminated
+	while (childProcess->getState() != Process::State::Killed)
+	{
+		// Yield the CPU to allow other processes to run
+		sched_yield();
+	}
+
+	// Disable interrupts
+	interrupts::InterruptController::disableInterrupts();
+
+	// If a status pointer is provided, write the child's exit status to it
+	if (status) *status = childProcess->getExitCode();
+
+	// Return the PID of the terminated child process
+	regs->eax = pid;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+
+	// uint32_t posix_spawn(uint32_t* pid, const char* path, void* file_actions, void* attrp, char* const argv[], char* const envp[]);
+
+	// Extract arguments from registers
+	auto      * pid  = reinterpret_cast<uint32_t*>(regs->ebx);
+	const char* path = reinterpret_cast<const char*>(regs->ecx);
+	char* const* argv = reinterpret_cast<char* const*>(regs->edx);
+	char* const* envp = reinterpret_cast<char* const*>(regs->esi);
+
+	// file_actions and attrp are ignored in this implementation
+	// void* file_actions = reinterpret_cast<void*>(regs->esi); // Ignored
+	// void* attrp = reinterpret_cast<void*>(regs->edi);         // Ignored
+
+	// Check if path is a valid pointer
+	if (!isValidAddress(const_cast<char*>(path)))
+	{
+		regs->eax = -EFAULT; // Bad address
+		return;
+	}
+
+	// Load the ELF file from the specified path
+	auto file = vfs::VirtualFileSystem::getInodeByPath(KString(path));
+	if (!file)
+	{
+		regs->eax = -ENOENT; // No such file or directory
+		return;
+	}
+
+	// Read the file content into memory
+	auto             fileSize = file->getSize();
+	KVector<uint8_t> fileContent(fileSize);
+	if (file->read((char*)fileContent.data(), fileSize, 0) != fileSize)
+	{
+		regs->eax = -EIO; // I/O error
+		return;
+	}
+
+
+	// Count the number of arguments in argv
+	int argc = 0;
+	while (argv[argc] != nullptr)
+	{
+		argc++;
+	}
+
+	// Execute the ELF file as a new process
+	Process* proc = kernel::TaskManager::execv_elf(
+		fileContent,
+		kernel::Process::Mode::User,
+		kernel::Process::Priority::Low,
+		argc,
+		argv
+	);
+
+
+	if (!proc)
+	{
+		regs->eax = -ENOMEM; // Out of memory or failed to create the process
+		return;
+	}
+
+	// If pid is a valid pointer, store the process ID of the new process
+	if (isValidAddress(pid))
+	{
+		*pid = proc->getPid();
+	}
+
+	// Return success
 	regs->eax = 0;
 
 }

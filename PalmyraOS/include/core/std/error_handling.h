@@ -11,5 +11,6 @@ namespace PalmyraOS::kernel::runtime
 
   void setLengthErrorHandler(ExceptionHandler handler);
   void setOutOfRangeHandler(ExceptionHandler handler);
+  void setBadFunctionCallHandler(ExceptionHandler handler);
 
 }

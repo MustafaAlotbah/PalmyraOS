@@ -107,6 +107,8 @@ namespace PalmyraOS::kernel
 	   */
 	  bool waitForBusy(uint32_t timeout);
 
+	  bool waitForNotBusy(uint32_t timeout);
+
 	  /**
 	   * @brief Wait for the ATA device to be ready for data transfer
 	   * @param timeout Timeout in milliseconds
@@ -125,13 +127,6 @@ namespace PalmyraOS::kernel
 	   * @param logicalBlockAddress Logical Block Address to be set in the device registers
 	   */
 	  void setLBA(uint32_t logicalBlockAddress);
-
-	  /**
-	   * @brief Swap bytes in a 16-bit word (used for endianness correction)
-	   * @param word The 16-bit word to swap bytes
-	   * @return The byte-swapped 16-bit word
-	   */
-	  uint16_t swapBytes(uint16_t word);
 
 	  /**
 	   * @brief Helper function to extract a string from the identity data
@@ -162,6 +157,12 @@ namespace PalmyraOS::kernel
 	   * @return true if no errors are present, false otherwise
 	   */
 	  bool checkStatus();
+
+	  /**
+	   * @brief Clear the error on the ATA device.
+	   * @return true if the error was successfully cleared, false otherwise.
+	   */
+	  bool clearError();
    protected:
 	  // I/O ports for ATA communication
 	  uint32_t        basePort_;                    // keep the base port for logging

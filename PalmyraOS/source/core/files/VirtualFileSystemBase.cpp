@@ -2,6 +2,7 @@
 #include "core/files/VirtualFileSystemBase.h"
 #include <algorithm> // std::find
 
+#include "core/peripherals/Logger.h"
 
 namespace PalmyraOS::kernel::vfs
 {
@@ -33,7 +34,8 @@ namespace PalmyraOS::kernel::vfs
 
   SuperBlockBase::SuperBlockBase(size_t blockSize, FileSystemType* fileSystemType)
 	  : blockSize_(blockSize), fileSystemType_(fileSystemType)
-  {}
+  {
+  }
 
   size_t SuperBlockBase::getBlockSize() const
   {
@@ -118,7 +120,9 @@ namespace PalmyraOS::kernel::vfs
 		modificationTime_(0),
 		changeTime_(0),
 		superBlock_(nullptr)
-  {}
+  {
+	  LOG_INFO("Constructing inode: %d", inodeNumber_);
+  }
 
   size_t InodeBase::getInodeNumber() const
   {
@@ -213,7 +217,7 @@ namespace PalmyraOS::kernel::vfs
 	  return 0;
   }
 
-  KVector<std::pair<KString, InodeBase*>> InodeBase::getDentries(size_t offset, size_t count) const
+  KVector<std::pair<KString, InodeBase*>> InodeBase::getDentries(size_t offset, size_t count)
   {
 	  // Create a vector to hold the directory entries.
 	  KVector<std::pair<KString, InodeBase*>> dentryVector;
@@ -222,7 +226,7 @@ namespace PalmyraOS::kernel::vfs
 	  auto it = dentries_.begin();
 	  std::advance(it, offset);
 
-	  // Add each entry in the map to the vector, considering the limit. // TODO hard coded 512
+	  // Add each entry in the map to the vector, considering the limit.
 	  for (size_t index = 0; it != dentries_.end() && index < offset + count; ++it, ++index)
 	  {
 		  dentryVector.emplace_back(*it);
@@ -240,6 +244,7 @@ namespace PalmyraOS::kernel::vfs
 	  // If found, erase it from the map.
 	  if (it != dentries_.end())
 	  {
+		  heapManager.free(it->second);
 		  dentries_.erase(it);
 		  return true; // Return true indicating the entry was removed.
 	  }
@@ -252,6 +257,27 @@ namespace PalmyraOS::kernel::vfs
   {
 	  // By default, return an error indicating ioctl is not supported.
 	  return -1; // Error code indicating unsupported operation
+  }
+
+  void InodeBase::clearDentries()
+  {
+	  // destruct all inner nodes
+	  for (auto& [childName, inode] : dentries_)
+	  {
+		  heapManager.free(inode);
+	  }
+	  dentries_.clear();
+  }
+
+  InodeBase::~InodeBase()
+  {
+	  LOG_INFO("Destructing inode: %d", inodeNumber_);
+	  clearDentries();
+  }
+
+  size_t InodeBase::getSize() const
+  {
+	  return size_;
   }
 
   ///endregion

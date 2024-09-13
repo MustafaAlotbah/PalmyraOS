@@ -192,6 +192,8 @@ namespace PalmyraOS::kernel
 	   */
 	  bool isAddressValid(void* address);
 
+	  void* getPhysicalAddress(void* address);
+
 	  /**
 	  * @brief Gets or creates a page table by index
 	  *

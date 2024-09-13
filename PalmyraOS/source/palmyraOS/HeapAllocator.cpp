@@ -2,7 +2,6 @@
 #include "palmyraOS/HeapAllocator.h"
 #include "palmyraOS/stdlib.h" // malloc / free
 
-
 void* PalmyraOS::types::UserHeapManager::allocateMemory(size_t size)
 {
 	return malloc(size);

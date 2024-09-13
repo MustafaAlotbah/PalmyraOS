@@ -13,14 +13,18 @@
 #include "core/tasks/WindowManager.h"
 #include "core/peripherals/RTC.h"
 #include "core/peripherals/Keyboard.h"
+#include "core/peripherals/Mouse.h"
 
-#include "palmyraOS/unistd.h"
+//#include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
 
 #include "core/files/VirtualFileSystem.h"
 #include "core/files/partitions/MasterBootRecord.h"
+#include "core/files/partitions/VirtualDisk.h"
+#include "core/files/partitions/Fat32.h"
 
 #include "userland/userland.h"
+
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -158,7 +162,7 @@ namespace Processes
 		  fb.swapBuffers();
 		  sched_yield();
 
-		  if (proc_2_counter >= 1000'000) break;
+		  if (proc_2_counter >= 10'000) break;
 	  }
 
 //	  brush.fill(PalmyraOS::Color::DarkBlue);
@@ -188,7 +192,6 @@ namespace Processes
 
 	  return -1;
   }
-
 
 }
 
@@ -291,6 +294,35 @@ void callConstructors()
 		kernel::CPU::delay(SHORT_DELAY);
 	}
 
+	{
+		class Resource
+		{
+		 public:
+			Resource(PalmyraOS::kernel::TextRenderer& cout, int x)
+				:
+				cout_(cout),
+				number_(x)
+			{
+				cout_ << "Resource " << number_ << " constructed.\n" << SWAP_BUFF();
+			}
+
+			~Resource()
+			{
+				cout_ << "Resource " << number_ << " destructed.\n" << SWAP_BUFF();
+			}
+		 private:
+			PalmyraOS::kernel::TextRenderer& cout_;
+			int number_;
+		};
+
+		{
+			Resource res1(textRenderer, 1);
+		}
+
+
+	}
+
+//	while(true);
 	// ----------------------- Initialize Physical Memory -------------------------------
 	textRenderer << "Initializing Physical Memory\n" << SWAP_BUFF();
 	kernel::initializePhysicalMemory(x86_multiboot_info);
@@ -313,31 +345,16 @@ void callConstructors()
 	kernel::vfs::VirtualFileSystem::initialize();
 
 	kernel::initializeDrivers(); // ATAs after interrupts run
+	LOG_INFO("Initialized Drivers.");
 
-	if (kernel::ata_primary_master)
-	{
-		uint8_t masterSector[512];
-		kernel::ata_primary_master->readSector(0, masterSector, 100);
-		auto mbr = kernel::vfs::MasterBootRecord(masterSector);
-
-		for (int i = 0; i < 4; ++i)
-		{
-			auto entry = mbr.getEntry(i);
-			LOG_INFO("ATA Primary Master: Partition %d:", i);
-			LOG_INFO(
-				"bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
-				entry.isBootable,
-				kernel::vfs::MasterBootRecord::toString(entry.type),
-				entry.lbaStart,
-				entry.lbaCount * 512 / 1048576
-			);
-		}
-	}
 
 	// ----------------------- Initialize Tasks -------------------------------
 	kernel::TaskManager::initialize();
 	textRenderer << "TaskManager is initialized.\n" << SWAP_BUFF();
 	kernel::CPU::delay(SHORT_DELAY);
+
+	kernel::initializePartitions();
+	LOG_INFO("Initialized Partitions.");
 
 	kernel::SystemCallsManager::initialize();
 	textRenderer << "SystemCallsManager is initialized.\n" << SWAP_BUFF();
@@ -354,18 +371,20 @@ void callConstructors()
 
 	kernel::Keyboard::initialize();
 
+	kernel::Mouse::initialize();
+
 	// ---------------------------- Add Processes -----------------------------------
 
 	// Add Important Processes
 	{
 		// Initialize the Window Manager in Kernel Mode
 		{
-			char* argv[] = { nullptr };
+			char* argv[] = { const_cast<char*>("windowsManager.exe"), nullptr };
 			kernel::TaskManager::newProcess(
 				Processes::windowManager,
 				kernel::Process::Mode::Kernel,
 				kernel::Process::Priority::Medium,
-				0, argv
+				0, argv, true
 			);
 		}
 
@@ -379,14 +398,14 @@ void callConstructors()
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				1,
-				argv
+				argv, true
 			);
 		}
 
 		// Run the kernel terminal
 		{
 			char* argv[] = {
-				const_cast<char*>("keylogger.exe"),
+				const_cast<char*>("kernelTerminal.exe"),
 				const_cast<char*>("-count"),
 				const_cast<char*>("arg3"), nullptr
 			};
@@ -395,7 +414,7 @@ void callConstructors()
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				3,
-				argv
+				argv, true
 			);
 		}
 
@@ -407,7 +426,7 @@ void callConstructors()
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				2,
-				argv
+				argv, true
 			);
 		}
 
@@ -423,7 +442,7 @@ void callConstructors()
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				3,
-				argv
+				argv, true
 			);
 		}
 

@@ -2,6 +2,7 @@
 
 #include "core/definitions.h"    // stdint + size_t
 #include "libs/stdio.h"
+#include "libs/ctype.h"            // tolower
 #include <vector>
 
 /**
@@ -118,6 +119,9 @@ namespace PalmyraOS::types
 	  using size_type = typename std::vector<_CharT, _Alloc<_CharT>>::size_type;
 	  using reference = _CharT&;
 	  using const_reference = const _CharT&;
+	  using iterator = typename std::vector<_CharT, _Alloc<_CharT>>::iterator;
+	  using const_iterator = typename std::vector<_CharT, _Alloc<_CharT>>::const_iterator;
+
 
 	  // Constructors
 	  explicit string(_Alloc<_CharT> alloc) : data_(alloc)
@@ -501,6 +505,113 @@ namespace PalmyraOS::types
 
 		  ensure_null_terminator();
 		  cstr = &data_[0];
+		  return *this;
+	  }
+
+	  // Substring method
+	  string substr(size_type pos, size_type count = npos) const
+	  {
+		  if (pos > size()) pos = size();
+
+		  size_type len = (count == npos || pos + count > size()) ? size() - pos : count;
+		  return string(data_.begin() + pos, data_.begin() + pos + len);
+	  }
+
+	  // Method to find the last occurrence of any character from the set `chars`
+	  size_type find_last_of(const _CharT* chars, size_type pos = npos) const
+	  {
+		  if (pos >= size())
+		  {
+			  pos = size() - 1;
+		  }
+
+		  for (size_type i = pos; i != npos; --i)
+		  {
+			  for (const _CharT* p = chars; *p != '\0'; ++p)
+			  {
+				  if (data_[i] == *p)
+				  {
+					  return i;
+				  }
+			  }
+		  }
+		  return npos;
+	  }
+
+	  // Insert a single character at position `pos`
+	  string& insert(size_type pos, const _CharT& ch)
+	  {
+		  if (pos > size()) pos = size();
+
+		  data_.insert(data_.begin() + pos, ch);
+		  ensure_null_terminator();
+		  return *this;
+	  }
+
+	  // Insert a C-string at position `pos`
+	  string& insert(size_type pos, const _CharT* s)
+	  {
+		  size_type len = strlen(s);
+		  if (pos > size()) pos = size();
+
+		  data_.insert(data_.begin() + pos, s, s + len);
+		  ensure_null_terminator();
+		  return *this;
+	  }
+
+	  // Insert another string at position `pos`
+	  string& insert(size_type pos, const string& str)
+	  {
+		  if (pos > size()) pos = size();
+
+		  data_.insert(data_.begin() + pos, str.data_.begin(), str.data_.end() - 1); // Exclude null terminator
+		  ensure_null_terminator();
+		  return *this;
+	  }
+
+	  // Insert a substring at position `pos`
+	  string& insert(size_type pos, const _CharT* s, size_type count)
+	  {
+		  if (pos > size()) pos = size();
+
+		  data_.insert(data_.begin() + pos, s, s + count);
+		  ensure_null_terminator();
+		  return *this;
+	  }
+
+	  // Insert single character at iterator position
+	  iterator insert(iterator pos, const _CharT& ch)
+	  {
+		  auto it = data_.insert(pos, ch);
+		  ensure_null_terminator();
+		  return it;
+	  }
+
+	  // Insert count copies of character at iterator position
+	  iterator insert(iterator pos, size_type count, const _CharT& ch)
+	  {
+		  auto it = data_.insert(pos, count, ch);
+		  ensure_null_terminator();
+		  return it;
+	  }
+
+	  string& toLower()
+	  {
+		  for (auto& ch : data_)
+		  {
+			  ch = tolower(ch);
+		  }
+		  ensure_null_terminator();
+		  return *this;
+	  }
+
+	  string& toUpper()
+	  {
+		  for (auto& ch : data_)
+		  {
+			  ch = toupper(ch);
+		  }
+		  ensure_null_terminator();
 		  return *this;
 	  }
    private:

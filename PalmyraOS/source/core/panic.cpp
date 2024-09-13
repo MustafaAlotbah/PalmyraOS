@@ -41,7 +41,7 @@ extern "C" void disable_paging();
 	uint16_t window_y2     = window_offset + height + 2 * extendWindow;
 
 	// Window Background
-	brush.fillRectangle(window_offset, window_offset, window_x2, window_y2, Color::DarkGray);
+	brush.fillRectangle(window_offset, window_offset, window_x2, window_y2, Color::DarkerGray);
 	brush.drawHLine(window_offset, window_x2, window_offset, Color::White);
 	brush.drawHLine(window_offset, window_x2, window_y2, Color::White);
 	brush.drawVLine(window_offset, window_offset, window_y2, Color::White);

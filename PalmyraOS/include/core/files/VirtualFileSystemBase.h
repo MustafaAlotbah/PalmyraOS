@@ -168,6 +168,8 @@ namespace PalmyraOS::kernel::vfs
 	   */
 	  InodeBase(Type type, Mode mode, UserID userId, GroupID groupId);
 
+	  ~InodeBase(); // not virtual to avoid overriding delete operator
+
 	  /**
 	   * @brief Set the associated SuperBlock for the inode.
 	   * @param superBlock Pointer to the SuperBlock.
@@ -212,7 +214,9 @@ namespace PalmyraOS::kernel::vfs
 	   * @param count The number of directory entries to retrieve. Defaults to 10.
 	   * @return A vector of pairs, each containing the name (KString) and inode pointer (InodeBase*) of a directory entry.
 	   */
-	  [[nodiscard]] KVector<std::pair<KString, InodeBase*>> getDentries(size_t offset = 0, size_t count = 10) const;
+	  [[nodiscard]] virtual KVector<std::pair<KString, InodeBase*>> getDentries(size_t offset, size_t count);
+
+	  void clearDentries();
 
 	  /**
 	   * @brief Virtual method for reading from the inode.
@@ -267,7 +271,8 @@ namespace PalmyraOS::kernel::vfs
 	  [[nodiscard]] UserID getUserId() const;
 	  [[nodiscard]] GroupID getGroupId() const;
 	  [[nodiscard]] Type getType() const;
-   private:
+	  [[nodiscard]] size_t getSize() const;
+   protected:
 	  static size_t inodes;                ///< Static variable to track the number of inodes.
 	  size_t        inodeNumber_;          ///< Unique inode number.
 	  Mode          mode_;                 ///< Permissions of the inode (e.g., 0644).

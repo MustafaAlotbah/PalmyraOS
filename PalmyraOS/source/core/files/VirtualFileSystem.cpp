@@ -18,9 +18,9 @@ namespace PalmyraOS::kernel::vfs
 	  UserID::ROOT,
 	  GroupID::ROOT
   ),
-		readFunction_(readFunc),
-		writeFunction_(writeFunc),
-		ioctlFunction_(ioctlFunc)
+		readFunction_(std::move(readFunc)),
+		writeFunction_(std::move(writeFunc)),
+		ioctlFunction_(std::move(ioctlFunc))
   {}
 
   size_t FunctionInode::read(char* buffer, size_t size, size_t offset)
@@ -187,7 +187,7 @@ namespace PalmyraOS::kernel::vfs
 	  }
 
 	  // Retrieve and return the directory entries
-	  return inode->getDentries();
+	  return inode->getDentries(0, 100);
   }
 
   InodeBase::Type VirtualFileSystem::getType(const KString& path)
@@ -356,6 +356,11 @@ namespace PalmyraOS::kernel::vfs
   void OpenFile::advanceOffset(size_t bytes)
   {
 	  offset_ += bytes;
+  }
+
+  void OpenFile::setOffset(size_t offset)
+  {
+	  offset_ = offset;
   }
 
 

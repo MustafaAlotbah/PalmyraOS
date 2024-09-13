@@ -245,6 +245,66 @@ int getdents(unsigned int fileDescriptor, linux_dirent* dirp, unsigned int count
 	return result;
 }
 
+int32_t lseek(uint32_t fd, int32_t offset, int whence)
+{
+	int32_t result;
+
+	// Prepare the registers for the system call
+	register uint32_t syscall_no asm("eax") = POSIX_INT_LSEEK;
+	register uint32_t file_desc asm("ebx")  = fd;
+	register int32_t  offset_val asm("ecx") = offset;
+	register int      whence_val asm("edx") = whence;
+
+	// Perform the system call using inline assembly
+	asm volatile(
+		"int $0x80"            // Interrupt to trigger system call
+		: "=a" (result)        // Output: store the result (new offset or error code) in result
+		: "r" (syscall_no), "r" (file_desc), "r" (offset_val), "r" (whence_val) // Inputs
+		: "memory"             // Clobbered memory
+		);
+
+	return result;  // Return the new file offset or -1 if an error occurred
+}
+
+int posix_spawn(uint32_t* pid, const char* path, void* file_actions, void* attrp, char* const* argv, char* const* envp)
+{
+	int result;
+
+	register uint32_t syscall_no asm("eax") = POSIX_INT_POSIX_SPAWN;
+	register uint32_t pid_reg asm("ebx")    = reinterpret_cast<uint32_t>(pid);
+	register const char* path_reg asm("ecx") = path;
+	register char* const* argv_reg asm("edx") = argv;
+	register char* const* envp_reg asm("esi") = envp;
+
+	asm volatile(
+		"int $0x80"
+		: "=a" (result)
+		: "r" (syscall_no), "r" (pid_reg), "r" (path_reg), "r" (argv_reg), "r" (envp_reg)
+		: "memory"
+		);
+
+	return result;
+}
+
+uint32_t waitpid(uint32_t pid, int* status, int options)
+{
+	uint32_t ret;
+
+	register uint32_t syscall_no asm("eax") = POSIX_INT_WAITPID;
+	register uint32_t pid_reg asm("ebx")    = pid;
+	register int* status_reg asm("ecx") = status;
+	register int options_reg asm("edx") = options;
+
+	asm volatile(
+		"int $0x80"
+		: "=a" (ret)
+		: "r" (syscall_no), "r" (pid_reg), "r" (status_reg), "r" (options_reg)
+		: "memory"
+		);
+
+	return ret;
+}
+
 int clock_nanosleep(uint32_t clock_id, int flags, const struct timespec* req, struct timespec* rem)
 {
 	int               result;
