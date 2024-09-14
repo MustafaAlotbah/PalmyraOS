@@ -67,7 +67,8 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex, Page
 	mapPage(newTable, newTable, flags);
 	pagesCount_--; // to avoid double increment by mapPage()
 
-	return (uint32_t*)pageTables_[tableIndex];
+	// return the physical address (the user doesn't work with page tables anyway)
+	return (uint32_t*)newTable;
 }
 
 void PalmyraOS::kernel::PagingDirectory::destruct()
@@ -106,6 +107,7 @@ void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtu
 
 	// Get or create the corresponding table
 	uint32_t* table = getTable(tableIndex, flags);
+
 	// if table == physical address --> problem
 	// Set the page in the table
 	setPage(table, pageIndex, (uint32_t)physicalAddr, flags);
