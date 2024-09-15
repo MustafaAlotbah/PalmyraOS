@@ -446,6 +446,20 @@ void callConstructors()
 			);
 		}
 
+		// Process with a window that exists later for testing
+		{
+			char* argv[] = {
+				const_cast<char*>("clock.exe"), nullptr
+			};
+			kernel::TaskManager::newProcess(
+				PalmyraOS::Userland::builtin::KernelClock::main,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				1,
+				argv, true
+			);
+		}
+
 
 	}
 
