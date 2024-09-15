@@ -17,7 +17,6 @@ void log_msg(const char* message)
 	uint64_t maxBuffer = 4096;
 	for (int i         = 0; i < maxBuffer; ++i)
 	{
-		PalmyraOS::kernel::CPU::delay(512 * 1024);
 		if (message[i] == '\0') break;
 		loggingPort.write(message[i]);
 	}

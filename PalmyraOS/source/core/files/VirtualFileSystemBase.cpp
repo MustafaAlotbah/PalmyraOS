@@ -121,7 +121,7 @@ namespace PalmyraOS::kernel::vfs
 		changeTime_(0),
 		superBlock_(nullptr)
   {
-	  LOG_INFO("Constructing inode: %d", inodeNumber_);
+	  LOG_DEBUG("Constructing inode: %d", inodeNumber_);
   }
 
   size_t InodeBase::getInodeNumber() const
@@ -271,7 +271,6 @@ namespace PalmyraOS::kernel::vfs
 
   InodeBase::~InodeBase()
   {
-	  LOG_INFO("Destructing inode: %d", inodeNumber_);
 	  clearDentries();
   }
 

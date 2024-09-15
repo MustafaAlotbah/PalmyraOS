@@ -194,7 +194,7 @@ namespace PalmyraOS::kernel::vfs
 	   * @param name The name of the directory entry.
 	   * @return Pointer to the inode of the directory entry.
 	   */
-	  InodeBase* getDentry(const KString& name);
+	  virtual InodeBase* getDentry(const KString& name);
 
 	  /**
 	   * @brief Remove a directory entry by name.

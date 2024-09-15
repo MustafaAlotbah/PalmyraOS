@@ -23,11 +23,12 @@ PalmyraOS::kernel::vfs::FAT32Directory::FAT32Directory(
 }
 
 PalmyraOS::kernel::KVector<std::pair<PalmyraOS::kernel::KString, PalmyraOS::kernel::vfs::InodeBase*>>
+
 PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 {
 
 	// Initialize all dentries again
-//	LOG_INFO("Browsing Folder at %d:", directoryStartCluster_);
+	// LOG_DEBUG("Browsing Folder at %d:", directoryStartCluster_);
 
 	// Clear all dentries
 
@@ -35,11 +36,11 @@ PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 	clearDentries();
 
 	// Retrieve all dentries
-//	LOG_INFO("Retrieving Dentries");
+//	LOG_DEBUG("Retrieving Dentries");
 
-	auto entries = parentPartition_.getDirectoryEntries(directoryStartCluster_);
+	KVector<DirectoryEntry> entries = parentPartition_.getDirectoryEntries(directoryStartCluster_);
 
-//	LOG_INFO("Retrieved %d Dentries", entries.size());
+//	LOG_DEBUG("Retrieved %d Dentries", entries.size());
 
 	// Add them to local register
 	// skip '.', '..'
@@ -51,7 +52,7 @@ PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 		{
 			auto longName = entry.getNameLong();
 
-//			LOG_INFO("Entry '%s': %d", longName.c_str(), directoryStartCluster_);
+//			LOG_DEBUG("Entry '%s': %d", longName.c_str(), directoryStartCluster_);
 			// Create a test inode with a lambda function for reading test string
 			auto rtcNode = kernel::heapManager.createInstance<vfs::FAT32Directory>(
 				parentPartition_,
@@ -67,7 +68,7 @@ PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 
 		// TODO Add Archive / File
 
-		if ((uint8_t)(entry.getAttributes() & EntryAttribute::Archive))
+		else if ((uint8_t)(entry.getAttributes() & EntryAttribute::Archive))
 		{
 			auto longName = entry.getNameLong();
 			// Create a test inode with a lambda function for reading test string
@@ -86,6 +87,14 @@ PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 	}
 
 	return InodeBase::getDentries(offset, count);
+}
+
+PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::getDentry(const PalmyraOS::kernel::KString& name)
+{
+	// Just update in case it is empty which is clearl not as expected.
+	if (dentries_.empty()) getDentries(0, 100);
+
+	return InodeBase::getDentry(name);
 }
 
 ///endregion
@@ -111,12 +120,12 @@ PalmyraOS::kernel::vfs::FAT32Archive::FAT32Archive(
 
 size_t PalmyraOS::kernel::vfs::FAT32Archive::read(char* buffer, size_t size, size_t offset)
 {
+	// If the offset is greater than or equal to the file size, return 0 as there's nothing to read
+	if (offset >= getSize()) return 0;
+
 
 	// Read the entire file data starting from the beginning
 	KVector<uint8_t> data4 = parentPartition_.readFile(directoryEntry_.getFirstCluster(), offset + size);
-
-	// If the offset is greater than or equal to the file size, return 0 as there's nothing to read
-	if (offset >= data4.size()) return 0;
 
 	// Calculate the number of bytes to read
 	size_t bytesToRead = std::min(size, data4.size() - offset);

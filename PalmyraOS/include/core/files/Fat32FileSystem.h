@@ -39,6 +39,7 @@ namespace PalmyraOS::kernel::vfs
 
 	  [[nodiscard]] KVector<std::pair<KString, InodeBase*>> getDentries(size_t offset, size_t count) final;
 
+	  InodeBase* getDentry(const KString& name) final;
    private:
 	  FAT32Partition& parentPartition_;
 	  uint32_t directoryStartCluster_;
