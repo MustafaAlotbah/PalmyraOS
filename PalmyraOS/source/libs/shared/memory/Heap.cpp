@@ -187,7 +187,3 @@ PalmyraOS::types::HeapChunk* PalmyraOS::types::HeapManagerBase::findSmallestHole
 	}
 	return bestFit;
 }
-
-//PalmyraOS::types::HeapManagerBase::~HeapManagerBase() {
-//
-//};
