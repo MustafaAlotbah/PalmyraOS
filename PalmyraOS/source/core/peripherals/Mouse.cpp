@@ -8,7 +8,6 @@
 PalmyraOS::kernel::ports::BytePort  PalmyraOS::kernel::Mouse::commandPort_(0x64);
 PalmyraOS::kernel::ports::BytePort  PalmyraOS::kernel::Mouse::dataPort_(0x60);
 
-bool    PalmyraOS::kernel::Mouse::initialized_ = false;
 uint8_t PalmyraOS::kernel::Mouse::buffer_[3]{ 0 };
 uint8_t PalmyraOS::kernel::Mouse::offset_      = 0;
 
@@ -20,8 +19,6 @@ uint8_t PalmyraOS::kernel::Mouse::offset_      = 0;
 
 bool PalmyraOS::kernel::Mouse::initialize()
 {
-	initialized_ = false;
-
 	// 1: Enable the mouse device (PS2_ENABLE_SECOND_PORT)
 	commandPort_.write(0xA8);
 	dataPort_.read();                // Flush the output buffer
@@ -36,20 +33,11 @@ bool PalmyraOS::kernel::Mouse::initialize()
 	commandPort_.write(0xD4);
 	dataPort_.write(0xF4);        // Enable reporting
 
+	if (!expectACK()) return false;
+
 	// Set the Mouse interrupt handler anyway (TODO move to end)
 	interrupts::InterruptController::setInterruptHandler(0x2c, &handleInterrupt);
 
-	if (dataPort_.read() != 0xFA) return false;
-
-	// // Optional: Verify mouse is in correct reporting mode
-	// commandPort.write(0xD4);
-	// dataPort.write(0xF2);               // Request mouse ID
-	// uint8_t mouseID = dataPort.read(); // Read ID
-	// if (mouseID != 0x03) { // Standard PS/2 mouse ID
-	//     return false;
-	// }
-
-	initialized_ = true;
 	return true;
 }
 
@@ -108,6 +96,19 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 	);
 
 	return (uint32_t*)regs;
+}
+
+bool PalmyraOS::kernel::Mouse::expectACK()
+{
+	waitForOutputBuffer();
+	uint8_t response = dataPort_.read();
+	return (response == 0xFA); // 0xFA is ACK
+}
+
+void PalmyraOS::kernel::Mouse::waitForOutputBuffer()
+{
+	// Wait until Output Buffer is full
+	while (!(commandPort_.read() & 0x01));
 }
 
 

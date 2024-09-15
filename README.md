@@ -40,6 +40,12 @@ using Qemu
 qemu-system-i386.exe -cdrom bin/kernel.iso -boot d -m 1024 -S -gdb tcp::1234 -drive file="path/to/hard_disk.vdi",format=vdi,media=disk
 ```
 
+or
+
+```shell
+qemu-system-i386.exe -cdrom bin/kernel.iso -boot d -m 1024 -S -gdb tcp::1234 -hda "path/to/hard_disk.vhd" -serial file:serial_output.txt
+```
+
 ## Convert your hard disk
 
 #### from VDI to Raw

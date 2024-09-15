@@ -34,15 +34,23 @@
 #define POSIX_INT_WAITPID 7
 #define POSIX_INT_LSEEK 19
 #define POSIX_INT_GET_PID 20
+#define POSIX_INT_BRK 45
 #define POSIX_INT_IOCTL 54
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
+#define POSIX_INT_GETUID 199
+#define POSIX_INT_GETGID 200
+#define POSIX_INT_GETEUID32 201
+#define POSIX_INT_GETEGID32 202
+
 #define POSIX_INT_GETTIME 228    // time.h (in linux, dependent on version)
+#define POSIX_INT_SETTHREADAREA 243
 #define POSIX_INT_CLOCK_NANOSLEEP_32 267    // NOT SUPPORTED
 #define POSIX_INT_CLOCK_NANOSLEEP_64 407
 
 /* From Linux */
 #define LINUX_INT_GETDENTS 141
+#define LINUX_INT_PRCTL 384
 
 
 /* mmap protection flags */
@@ -66,8 +74,13 @@
 #define SEEK_CUR 1  // Seek from the current file offset
 #define SEEK_END 2  // Seek from the end of the file
 
+/* Constants for Arch Prctl */
+#define ARCH_SET_FS 0x1002  // Set FS segment base
+#define ARCH_GET_FS 0x1003  // Get FS segment base
+
 
 typedef uint32_t fd_t;
+
 
 /**
  * @brief Retrieves the process identifier (PID) of the calling process.
@@ -134,7 +147,17 @@ int32_t lseek(fd_t fd, int32_t offset, int whence);
 void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t offset);
 
 // PalmyraOS specific, returns id of the window
-uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+struct palmyra_window
+{
+	uint32_t x;
+	uint32_t y;
+	uint32_t width;
+	uint32_t height;
+	bool     movable;
+	char     title[50];
+};
+
+uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow);
 
 /**
  * @brief Closes the window identified by the given window ID.
@@ -236,3 +259,14 @@ int posix_spawn(
  * @return The process ID of the child that changed state, or -1 if an error occurred.
  */
 uint32_t waitpid(uint32_t pid, int* status, int options);
+
+int arch_prctl(int code, unsigned long addr);
+
+int brk(void* end_data_segment);
+
+int set_thread_area(struct user_desc* u_info);
+
+uint32_t getuid();
+uint32_t getgid();
+uint32_t geteuid32();
+uint32_t getegid32();

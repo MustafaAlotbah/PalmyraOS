@@ -16,6 +16,8 @@
 #include "core/SystemClock.h"
 #include "core/files/VirtualFileSystem.h"
 
+#include "core/peripherals/Logger.h"
+
 
 // Define the static member systemCallHandlers_
 PalmyraOS::kernel::KMap<uint32_t, PalmyraOS::kernel::SystemCallsManager::SystemCallHandler>
@@ -28,22 +30,31 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 
 	// Map system call numbers to their respective handler functions
 	// POSIX
-	systemCallHandlers_[POSIX_INT_EXIT]    = &SystemCallsManager::handleExit;
-	systemCallHandlers_[POSIX_INT_GET_PID] = &SystemCallsManager::handleGetPid;
-	systemCallHandlers_[POSIX_INT_YIELD]   = &SystemCallsManager::handleYield;
-	systemCallHandlers_[POSIX_INT_MMAP]    = &SystemCallsManager::handleMmap;
-	systemCallHandlers_[POSIX_INT_GETTIME] = &SystemCallsManager::handleGetTime;
+	systemCallHandlers_[POSIX_INT_EXIT]               = &SystemCallsManager::handleExit;
+	systemCallHandlers_[POSIX_INT_GET_PID]            = &SystemCallsManager::handleGetPid;
+	systemCallHandlers_[POSIX_INT_YIELD]              = &SystemCallsManager::handleYield;
+	systemCallHandlers_[POSIX_INT_MMAP]               = &SystemCallsManager::handleMmap;
+	systemCallHandlers_[POSIX_INT_GETTIME]            = &SystemCallsManager::handleGetTime;
+	systemCallHandlers_[POSIX_INT_CLOCK_NANOSLEEP_64] = &SystemCallsManager::handleClockNanoSleep64;
+	systemCallHandlers_[POSIX_INT_BRK]                = &SystemCallsManager::handleBrk;
+	systemCallHandlers_[POSIX_INT_SETTHREADAREA]      = &SystemCallsManager::handleSetThreadArea;
+	systemCallHandlers_[POSIX_INT_GETUID]             = &SystemCallsManager::handleGetUID;
+	systemCallHandlers_[POSIX_INT_GETGID]             = &SystemCallsManager::handleGetGID;
+	systemCallHandlers_[POSIX_INT_GETEUID32]          = &SystemCallsManager::handleGetEUID;
+	systemCallHandlers_[POSIX_INT_GETEGID32]          = &SystemCallsManager::handleGetEUID;
 
-	systemCallHandlers_[POSIX_INT_OPEN]        = &SystemCallsManager::handleOpen;
-	systemCallHandlers_[POSIX_INT_CLOSE]       = &SystemCallsManager::handleClose;
-	systemCallHandlers_[POSIX_INT_WRITE]       = &SystemCallsManager::handleWrite;
-	systemCallHandlers_[POSIX_INT_READ]        = &SystemCallsManager::handleRead;
-	systemCallHandlers_[POSIX_INT_IOCTL]       = &SystemCallsManager::handleIoctl;
-	systemCallHandlers_[POSIX_INT_LSEEK]       = &SystemCallsManager::handleLongSeek;
+	// VFS
+	systemCallHandlers_[POSIX_INT_OPEN]  = &SystemCallsManager::handleOpen;
+	systemCallHandlers_[POSIX_INT_CLOSE] = &SystemCallsManager::handleClose;
+	systemCallHandlers_[POSIX_INT_WRITE] = &SystemCallsManager::handleWrite;
+	systemCallHandlers_[POSIX_INT_READ]  = &SystemCallsManager::handleRead;
+	systemCallHandlers_[POSIX_INT_IOCTL] = &SystemCallsManager::handleIoctl;
+	systemCallHandlers_[POSIX_INT_LSEEK] = &SystemCallsManager::handleLongSeek;
+
+	// Interprocess
 	systemCallHandlers_[POSIX_INT_WAITPID]     = &SystemCallsManager::handleWaitPID;
 	systemCallHandlers_[POSIX_INT_POSIX_SPAWN] = &SystemCallsManager::handleSpawn;
 
-	systemCallHandlers_[POSIX_INT_CLOCK_NANOSLEEP_64] = &SystemCallsManager::handleClockNanoSleep64;
 
 	// Custom
 	systemCallHandlers_[INT_INIT_WINDOW]  = &SystemCallsManager::handleInitWindow;
@@ -52,6 +63,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 
 	// Adopted from Linux
 	systemCallHandlers_[LINUX_INT_GETDENTS] = &SystemCallsManager::handleGetdents;
+	systemCallHandlers_[LINUX_INT_PRCTL]  = &SystemCallsManager::handleArchPrctl;
 
 }
 
@@ -82,6 +94,12 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 		// Call the handler function
 		it->second(regs);
 	}
+	else
+	{
+		// unsupported syscall!!
+		LOG_WARN("Unknown SYSCALL (%d) at 0x%X", regs->eax, regs->eip);
+		regs->eax = -EINVAL;
+	}
 
 	// Retrieve the current process
 	auto* proc = TaskManager::getCurrentProcess();
@@ -92,7 +110,7 @@ uint32_t* PalmyraOS::kernel::SystemCallsManager::handleInterrupt(PalmyraOS::kern
 	if (condition_01 || condition_02)
 		return TaskManager::interruptHandler(regs);
 	else
-		return (uint32_t * )(regs);
+		return (uint32_t*)(regs);
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleExit(PalmyraOS::kernel::interrupts::CPURegisters* regs)
@@ -327,35 +345,53 @@ void PalmyraOS::kernel::SystemCallsManager::handleIoctl(PalmyraOS::kernel::inter
 
 void PalmyraOS::kernel::SystemCallsManager::handleInitWindow(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
-	// Extract arguments from registers
-	auto** userBuffer = (uint32_t**)regs->ebx;
-	uint32_t x             = regs->ecx;
-	uint32_t y             = regs->edx;
-	uint32_t width         = regs->esi;
-	uint32_t height        = regs->edi;
-	uint32_t requiredSize  = width * height * sizeof(uint32_t); // Calculate required size
-	uint32_t requiredPages = CEIL_DIV_PAGE_SIZE(requiredSize);  // Calculate required pages
+	// Extract the arguments from the CPU registers
+	auto** userBuffer = reinterpret_cast<uint32_t**>(regs->ebx);    // Buffer pointer
+	auto* windowInfo  = reinterpret_cast<palmyra_window*>(regs->ecx); // Window information structure
 
-	// Check if userBuffer is a valid pointer
-	if (!isValidAddress(userBuffer)) return;
-
-	// Allocate the required pages for the window buffer
-	auto* proc          = TaskManager::getCurrentProcess();
-	auto* allocatedAddr = (uint32_t*)proc->allocatePages(requiredPages);
-	*userBuffer = allocatedAddr;     // Set the user buffer to the allocated address
-
-	// Request a window with the given parameters
-	auto* window = WindowManager::requestWindow(allocatedAddr, x, y, width, height);
-	if (!window)
+	// Check if the windowInfo pointer is a valid memory address
+	if (!isValidAddress(windowInfo))
 	{
-		// If the window cannot be created, set eax to -1
-		regs->eax = -1;
+		regs->eax = -EINVAL;  // Invalid address error
 		return;
 	}
 
-	// Add the window ID to the process's list of windows and set eax to the window ID
+	// Extract window parameters from the palmyra_window structure
+	uint32_t x      = windowInfo->x;
+	uint32_t y      = windowInfo->y;
+	uint32_t width  = windowInfo->width;
+	uint32_t height = windowInfo->height;
+
+	// Calculate the size required for the window buffer
+	uint32_t requiredSize = width * height * sizeof(uint32_t); // Each pixel is 32 bits (4 bytes)
+	uint32_t requiredPages = CEIL_DIV_PAGE_SIZE(requiredSize);  // Calculate required pages
+
+	// Check if userBuffer is a valid pointer
+	if (!isValidAddress(userBuffer))
+	{
+		regs->eax = -EINVAL;  // Invalid address error
+		return;
+	}
+
+	// Allocate memory pages for the window buffer
+	auto* proc          = TaskManager::getCurrentProcess();
+	auto* allocatedAddr   = reinterpret_cast<uint32_t*>(proc->allocatePages(requiredPages));
+
+	// Set the user buffer to the allocated address
+	*userBuffer = allocatedAddr;
+
+	// Request a window with the extracted parameters and title
+	auto* window = WindowManager::requestWindow(allocatedAddr, x, y, width, height);
+	if (!window)
+	{
+		regs->eax = -ENOMEM;  // Error: Could not create the window
+		return;
+	}
+	window->setMovable(windowInfo->movable);
+
+	// Add the window ID to the process's list of windows and return the window ID in eax
 	proc->windows_.push_back(window->getID());
-	regs->eax = window->getID();
+	regs->eax = window->getID();  // Return the window ID
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleCloseWindow(PalmyraOS::kernel::interrupts::CPURegisters* regs)
@@ -421,6 +457,9 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 
 	// Read directory entries by offset
 	auto dentries = file->getInode()->getDentries(file->getOffset(), count);
+
+	interrupts::InterruptController::disableInterrupts();
+
 	file->advanceOffset(dentries.size());
 
 	char* buffer = (char*)bufferPointer;
@@ -457,7 +496,6 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 	}
 
 	// Disable interrupts
-	interrupts::InterruptController::disableInterrupts();
 
 	regs->eax = bytesRead;
 }
@@ -649,6 +687,8 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 		argc++;
 	}
 
+	LOG_INFO("Spawning %s", path);
+
 	// Execute the ELF file as a new process
 	Process* proc = kernel::TaskManager::execv_elf(
 		fileContent,
@@ -674,5 +714,108 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 	// Return success
 	regs->eax = 0;
 
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleArchPrctl(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// int arch_prctl(int code, unsigned long addr)
+
+	uint32_t code = regs->ebx;        // The operation code (ARCH_SET_FS or ARCH_GET_FS)
+	uint32_t addr = regs->ecx;        // The address to set or the value to get
+
+	LOG_DEBUG("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
+//	kernelPanic("ArchPrctl was called!");
+
+	regs->eax = -1;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// int brk(void *end_data_segment);
+
+	// Get the requested new break address from the register
+	uint32_t requested_brk = regs->ebx;
+
+	LOG_DEBUG("SYSCALL brk(0x%X)", requested_brk);
+
+	// Get the current process
+	Process* currentProcess = TaskManager::getCurrentProcess();
+
+	// If the requested break is 0, return the current break
+	if (requested_brk == 0)
+	{
+		regs->eax = currentProcess->current_brk;
+		return;
+	}
+
+
+	// Ensure the requested break is within the allowed range (between initial_brk and max_brk)
+	if (requested_brk >= currentProcess->initial_brk && requested_brk <= currentProcess->max_brk)
+	{
+		// Adjust the current break to the requested break
+		currentProcess->current_brk = requested_brk;
+		regs->eax                   = currentProcess->current_brk; // Success, return the new break
+	}
+	else if (requested_brk > currentProcess->max_brk)
+	{
+		// Calculate the additional pages required
+		size_t additional_pages = (requested_brk - currentProcess->max_brk + PAGE_SIZE - 1) / PAGE_SIZE;
+
+		// Use allocatePagesAt to allocate memory starting at max_brk
+		void* allocated_memory = currentProcess->allocatePagesAt(
+			reinterpret_cast<void*>(currentProcess->max_brk),
+			additional_pages
+		);
+
+		if (allocated_memory != nullptr)
+		{
+			// Successfully allocated new pages
+			currentProcess->max_brk += additional_pages * PAGE_SIZE;
+			currentProcess->current_brk = requested_brk;
+			regs->eax                   = currentProcess->current_brk; // Return the new break
+		}
+		else
+		{
+			// Memory allocation failed, return failure (-1)
+			regs->eax = (uint32_t)-1;
+		}
+	}
+	else
+	{
+		// Requested break is below the initial break or invalid, return failure (-1)
+		regs->eax = (uint32_t)-1;
+	}
+
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleSetThreadArea(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+
+	// Extract the pointer to the user descriptor (TLS descriptor) from the registers
+//	auto* userDescriptor = reinterpret_cast<UserDescriptor*>(regs->ebx);
+
+	LOG_DEBUG("SYSCALL set_thread_area(0x%X)", regs->ebx);
+
+	regs->eax = (uint32_t)-1;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetUID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	regs->eax = 1000;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetGID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	regs->eax = 1000;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetEUID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	regs->eax = 1000;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetEGID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	regs->eax = 1000;
 }
 

@@ -23,6 +23,7 @@ namespace PalmyraOS::kernel
 	  static uint16_t readCurrentCount();
 	  static uint64_t getTicks();
 	  static uint64_t getMilliseconds();
+	  static uint64_t getNanoseconds();
 	  static uint64_t getSeconds();
 	  static inline uint32_t getFrequency()
 	  { return frequency_; };

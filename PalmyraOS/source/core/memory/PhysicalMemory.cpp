@@ -40,19 +40,22 @@ void* PalmyraOS::kernel::kmalloc(uint32_t size)
 // Globals
 
 
-uint32_t* PalmyraOS::kernel::PhysicalMemory::frameBits = nullptr; ///< Pointer to the frame usage bitmap
-uint32_t PalmyraOS::kernel::PhysicalMemory::framesCount = 0; ///< Total number of frames
+uint32_t* PalmyraOS::kernel::PhysicalMemory::frameBits_ = nullptr; ///< Pointer to the frame usage bitmap
+uint32_t PalmyraOS::kernel::PhysicalMemory::framesCount_ = 0; ///< Total number of frames
 
+uint32_t PalmyraOS::kernel::PhysicalMemory::freeFramesCount_ = 0;   // Initialize free frames count
+uint32_t PalmyraOS::kernel::PhysicalMemory::allocatedFrames_ = 0;   // Initialize allocated frames count
 
 
 void PalmyraOS::kernel::PhysicalMemory::initialize(uint32_t safeSpace, uint32_t memorySize)
 {
 	// Initialize frames count
-	framesCount = memorySize >> PAGE_BITS;    //  = size / PAGE_SIZE
+	framesCount_     = memorySize >> PAGE_BITS;    //  = size / PAGE_SIZE
+	freeFramesCount_ = framesCount_;            // Initially all frames are free
 
 	// Allocate and clear memory for the bitmap
-	frameBits = (uint32_t*)kmalloc(INDEX_FROM_BIT(framesCount));
-	memset(frameBits, 0, INDEX_FROM_BIT(framesCount));
+	frameBits_ = (uint32_t*)kmalloc(INDEX_FROM_BIT(framesCount_));
+	memset(frameBits_, 0, INDEX_FROM_BIT(framesCount_));
 
 	// Unmark all frames initially
 	unmarkAll();
@@ -65,6 +68,8 @@ void PalmyraOS::kernel::PhysicalMemory::initialize(uint32_t safeSpace, uint32_t 
 	for (uint32_t i = 0; i < reservedUpperAligned; ++i)
 	{
 		markFrame(i);
+		allocatedFrames_++;      // Increment reserved frames count
+		freeFramesCount_--;     // Decrement free frames count
 	}
 
 	// TODO also mark this class as 'used'
@@ -78,6 +83,8 @@ void* PalmyraOS::kernel::PhysicalMemory::allocateFrame()
 
 	// Mark the frame as used
 	markFrame((uint32_t)frame);
+	allocatedFrames_++;     // Track allocated frames
+	freeFramesCount_--;     // Reduce the count of free frames
 
 	// Return the frame address (* PAGE_SIZE)
 	return (void*)(frame << PAGE_BITS);
@@ -90,15 +97,17 @@ void PalmyraOS::kernel::PhysicalMemory::freeFrame(void* frame)
 
 	// Unmark the frame
 	unmarkFrame((uint32_t)frame >> PAGE_BITS);
+	allocatedFrames_--;     // Reduce allocated frame count
+	freeFramesCount_++;     // Increase free frame count
 }
 
 uint32_t PalmyraOS::kernel::PhysicalMemory::findFirstFreeFrame()
 {
 	// Iterate through the bitmap to find a free frame
-	for (uint32_t i = 0; i < INDEX_FROM_BIT(framesCount); i++)
+	for (uint32_t i = 0; i < INDEX_FROM_BIT(framesCount_); i++)
 	{
 		// If at least one bit is free
-		if (frameBits[i] != 0xFFFFFFFF)
+		if (frameBits_[i] != 0xFFFFFFFF)
 		{
 			// at least a bit is free (corresponds to 4KiB)
 			for (uint32_t j = 0; j < 32; j++)
@@ -106,7 +115,7 @@ uint32_t PalmyraOS::kernel::PhysicalMemory::findFirstFreeFrame()
 				uint32_t toTest = 0x1 << j;
 
 				// Check if the bit is free
-				if (!(frameBits[i] & toTest))
+				if (!(frameBits_[i] & toTest))
 				{
 					return (i * 32) + j;
 				}
@@ -130,6 +139,9 @@ void* PalmyraOS::kernel::PhysicalMemory::allocateFrames(uint32_t num)
 		markFrame(firstFrame + i);
 	}
 
+	allocatedFrames_ += num;  // Track allocated frames
+	freeFramesCount_ -= num;  // Reduce free frame count
+
 	// Return the address of the first frame
 	return (void*)(firstFrame << PAGE_BITS);
 }
@@ -143,6 +155,9 @@ void PalmyraOS::kernel::PhysicalMemory::freeFrames(void* frame, uint32_t num)
 	{
 		unmarkFrame(firstFrame + i);
 	}
+
+	allocatedFrames_ -= num;  // Reduce allocated frame count
+	freeFramesCount_ += num;  // Increase free frame count
 }
 
 
@@ -152,7 +167,7 @@ uint32_t PalmyraOS::kernel::PhysicalMemory::findFirstFreeFrames(uint32_t num)
 	uint32_t consecutive = 0;
 	uint32_t firstFrame  = 0;
 
-	for (uint32_t i = 0; i < framesCount; ++i)
+	for (uint32_t i = 0; i < framesCount_; ++i)
 	{
 		// Check if the frame is free
 		if (!getFrameMark(i))
@@ -177,7 +192,7 @@ void PalmyraOS::kernel::PhysicalMemory::markFrame(uint32_t num)
 	// Mark the frame as used in the bitmap
 	uint32_t word_index = INDEX_FROM_BIT(num);
 	uint32_t bit_index  = OFFSET_FROM_BIT(num);
-	frameBits[word_index] |= (1 << bit_index);
+	frameBits_[word_index] |= (1 << bit_index);
 }
 
 void PalmyraOS::kernel::PhysicalMemory::unmarkFrame(uint32_t num)
@@ -185,7 +200,7 @@ void PalmyraOS::kernel::PhysicalMemory::unmarkFrame(uint32_t num)
 	// Unmark the frame in the bitmap
 	uint32_t word_index = INDEX_FROM_BIT(num);
 	uint32_t bit_index  = OFFSET_FROM_BIT(num);
-	frameBits[word_index] &= ~(1 << bit_index);
+	frameBits_[word_index] &= ~(1 << bit_index);
 }
 
 bool PalmyraOS::kernel::PhysicalMemory::getFrameMark(uint32_t num)
@@ -194,31 +209,43 @@ bool PalmyraOS::kernel::PhysicalMemory::getFrameMark(uint32_t num)
 	uint32_t word_index = INDEX_FROM_BIT(num);
 	uint32_t bit_index  = OFFSET_FROM_BIT(num);
 //	return (frameBits[word_index] & (1 << bit_index)) >> bit_index;
-	return (frameBits[word_index] & (1 << bit_index)) != 0;
+	return (frameBits_[word_index] & (1 << bit_index)) != 0;
 }
 
 void PalmyraOS::kernel::PhysicalMemory::unmarkAll()
 {
 	// Unmark all frames in the bitmap
-	for (uint32_t i = 0; i < INDEX_FROM_BIT(framesCount); i++) frameBits[i] = 0;
+	for (uint32_t i = 0; i < INDEX_FROM_BIT(framesCount_); i++) frameBits_[i] = 0;
 }
 
 uint32_t PalmyraOS::kernel::PhysicalMemory::size()
 {
 	// Return the total number of frames
-	return framesCount;
+	return framesCount_;
 }
 
 void PalmyraOS::kernel::PhysicalMemory::reserveFrame(void* frame)
 {
 	// Reserve a frame by marking it as used
 	markFrame((uint32_t)frame >> PAGE_BITS);
+	allocatedFrames_++;      // Increment reserved frames count
+	freeFramesCount_--;     // Decrement free frames count
 }
 
 bool PalmyraOS::kernel::PhysicalMemory::isFrameFree(void* frame)
 {
 	// Check if a frame is free
 	return getFrameMark((uint32_t)frame >> PAGE_BITS);
+}
+
+uint32_t PalmyraOS::kernel::PhysicalMemory::getFreeFrames()
+{
+	return freeFramesCount_; // Return the number of free frames
+}
+
+uint32_t PalmyraOS::kernel::PhysicalMemory::getAllocatedFrames()
+{
+	return allocatedFrames_; // Return the number of allocated frames
 }
 
 

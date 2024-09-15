@@ -48,6 +48,9 @@ namespace PalmyraOS::kernel
 	  MouseEvent popMouseEvent();
 
 	  void setPosition(uint32_t x, uint32_t y);
+
+	  void setMovable(bool status);
+
    private:
 	  static uint32_t count; ///< Static counter for window IDs.
 
@@ -61,6 +64,7 @@ namespace PalmyraOS::kernel
 	  KString name_;          ///< The name of the window.
 	  uint32_t* buffer_;        ///< Pointer to the buffer for the window's content.
 	  bool visible_{ true };    ///< Visibility status of the window.
+	  bool isMovable_{ true };
 
 	  KQueue<KeyboardEvent> keyboardsEvents_;
 	  KQueue<MouseEvent>    mouseEvents_;
@@ -101,6 +105,8 @@ namespace PalmyraOS::kernel
 	   */
 	  static void composite();
 
+	  [[noreturn]] static int thread(uint32_t argc, char* argv[]);
+
 	  static void queueKeyboardEvent(KeyboardEvent event);
 
 	  static void queueMouseEvent(MouseEvent event);
@@ -135,6 +141,8 @@ namespace PalmyraOS::kernel
    private:
 	  static KVector<Window> windows_; ///< Vector of all windows managed by the WindowManager. // TODO  KMap
 	  static uint32_t activeWindowId_;
+	  static uint32_t update_ns_;
+	  static uint64_t fps_;
 
 	  static KQueue<KeyboardEvent>* keyboardsEvents_;
 	  static KQueue<MouseEvent>   * mouseEvents_;
@@ -147,6 +155,7 @@ namespace PalmyraOS::kernel
 
 	  // Dragging state
 	  static DragState dragState_;
+	  static bool      sortingNeeded_;
   };
 
 

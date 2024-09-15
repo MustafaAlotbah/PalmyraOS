@@ -61,6 +61,8 @@ iso: kernel.bin
 	@cp source/core/boot/grub.cfg bin/iso/boot/grub/grub.cfg
 	@grub-mkrescue --output bin/kernel.iso bin/iso
 	@echo "ISO image created"
+	@objdump -d ./bin/kernel.bin > ./bin/dump.S
+	@echo "disassembly created"
 
 clean:
 	@echo "Cleaning generated subdirectories and object files"

@@ -175,7 +175,7 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 	// get Glyph from font
 	auto& glyph = font_.getGlyph(ch); // TODO implement more parsing e.g. \u05468
 	size_t advance_x = glyph.width + 0;
-	size_t advance_y = glyph.height + 3;
+	size_t advance_y = font_.getGlyph('A').height + 3;
 
 	for (size_t _x = 0; _x < glyph.width; _x += 1)
 	{

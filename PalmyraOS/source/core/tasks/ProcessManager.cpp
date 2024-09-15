@@ -9,13 +9,14 @@
 #include "libs/string.h"
 #include "libs/memory.h"
 #include "libs/stdio.h"
+#include "libs/stdlib.h" // uitoa64
 
 #include "palmyraOS/unistd.h" // _exit()
 
 #include "core/tasks/WindowManager.h"    // for cleaning up windows upon terminating
 
 #include "core/files/VirtualFileSystem.h"
-
+#include "core/peripherals/Logger.h"
 ///region Process
 
 
@@ -30,6 +31,9 @@ PalmyraOS::kernel::Process::Process(
 )
 	: pid_(pid), age_(2), state_(State::Ready), mode_(mode), priority_(priority)
 {
+
+	LOG_DEBUG("Constructing Process [pid %d]", pid_);
+
 	// Assertions to ensure the entry point is within kernel space.
 	// TODO: just temporarily check to prevent entry points outside the kernel.
 	if (((uint32_t)entryPoint >> 12) > kernel::kernelLastPage)
@@ -79,101 +83,17 @@ PalmyraOS::kernel::Process::Process(
 
 
 	// 5. Initialize Virtual File System Hooks
-	char buffer[50];
-	snprintf(buffer, sizeof(buffer), "/proc/%d", pid);
-
-	KString directory = KString(buffer);
-
-	vfs::VirtualFileSystem::createDirectory(directory, vfs::InodeBase::Mode::USER_READ);
-
-	auto statusNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
-		// Read
-		[this](char* buffer, size_t size, size_t offset) -> size_t
-		{
-		  // Create a string with the desired format
-		  char   output[512];
-		  size_t written = snprintf(
-			  output, sizeof(output),
-			  ""
-			  "Pid: %d\n"
-			  "State: %s\n"
-			  "Up Time: %d\n"
-			  "Pages: %d\n"
-			  "Windows: %d\n"
-			  "exitCode: %d\n",
-			  pid_,
-			  stateToString(),
-			  upTime_,
-			  physicalPages_.size(),
-			  windows_.size(),
-			  exitCode_
-		  );
-
-		  // Ensure the output fits in the buffer, considering the offset
-		  if (offset >= written) return 0;
-
-		  size_t available = written - offset;
-		  size_t to_copy   = available < size ? available : size;
-		  memcpy(buffer, output + offset, to_copy);
-
-		  return to_copy;
-		}, nullptr, nullptr
-	);
-	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/status"), statusNode);
-
-	auto stdoutNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
-		// Read
-		[this](char* buffer, size_t size, size_t offset) -> size_t
-		{
-
-		  // Calculate the size of stdout_ vector
-		  size_t stdout_size = stdout_.size();
-
-		  // Ensure the offset is within the bounds of the stdout_ data
-		  if (offset >= stdout_size) return 0;
-
-		  // Calculate the number of bytes to copy to the buffer
-		  size_t available = stdout_size - offset;
-		  size_t to_copy   = available < size ? available : size;
-
-		  // Copy the data from stdout_ to the provided buffer
-		  memcpy(buffer, stdout_.data() + offset, to_copy);
-
-		  return to_copy;
-		}, nullptr, nullptr
-	);
-	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stdout"), stdoutNode);
-
-	auto stderrNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
-		// Read
-		[this](char* buffer, size_t size, size_t offset) -> size_t
-		{
-
-		  // Calculate the size of stdout_ vector
-		  size_t stderrsize = stderr_.size();
-
-		  // Ensure the offset is within the bounds of the stdout_ data
-		  if (offset >= stderrsize) return 0;
-
-		  // Calculate the number of bytes to copy to the buffer
-		  size_t available = stderrsize - offset;
-		  size_t to_copy   = available < size ? available : size;
-
-		  // Copy the data from stdout_ to the provided buffer
-		  memcpy(buffer, stderr_.data() + offset, to_copy);
-
-		  return to_copy;
-		}, nullptr, nullptr
-	);
-	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stderr"), stderrNode);
+	initializeProcessInVFS();
 
 
+	LOG_DEBUG("Constructing Process [pid %d] success", pid_);
 }
 
 void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, bool isInternal)
 {
 
 	// 1. Create and map the paging directory to itself based on the process mode.
+	LOG_DEBUG("Creating Paging Directory.");
 	if (mode == Process::Mode::Kernel)
 	{
 		// For kernel mode, use the kernel's paging directory.
@@ -197,26 +117,29 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 	// Page directory is initialized
 
 	// 2. Map the kernel stack for both kernel and user mode processes.
+	LOG_DEBUG("Mapping Kernel Stack");
 	kernelStack_ = kernelPagingDirectory_ptr->allocatePages(PROCESS_KERNEL_STACK_SIZE);
 	registerPages(kernelStack_, PROCESS_KERNEL_STACK_SIZE);
 	pagingDirectory_->mapPages(
 		kernelStack_,
 		kernelStack_,
 		PROCESS_KERNEL_STACK_SIZE,
-		PageFlags::Present | PageFlags::ReadWrite
+		PageFlags::Present | PageFlags::ReadWrite //| PageFlags::UserSupervisor // TODO investigation with ELF
 	);
 
 	// 3. If the process is in user mode, set up the user stack.
 	if (mode == Process::Mode::User)
 	{
 		// Allocate and map the user stack.
+		LOG_DEBUG("Mapping User Stack");
 		userStack_ = allocatePages(PROCESS_USER_STACK_SIZE);
-		// registers pages automatically
 
+		// registers pages automatically
 		PageFlags kernelSpaceFlags = PageFlags::Present | PageFlags::ReadWrite;
 		if (isInternal) kernelSpaceFlags = kernelSpaceFlags | PageFlags::UserSupervisor;
 
 		// The kernel is still mapped, but only accessed in user mode for internal applications.
+		LOG_DEBUG("Mapping Kernel Space");
 		pagingDirectory_->mapPages(
 			nullptr,
 			nullptr,
@@ -259,7 +182,7 @@ void PalmyraOS::kernel::Process::initializeCPUState()
 
 	// For user mode, initialize the user stack pointer (userEsp).
 	if (mode_ == Mode::User)
-		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE;
+		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE - 16;
 
 	// Set the CR3 register to point to the process's paging directory.
 	stack_.cr3 = reinterpret_cast<uint32_t>(pagingDirectory_->getDirectory());
@@ -326,6 +249,7 @@ void PalmyraOS::kernel::Process::terminate(int exitCode)
 {
 	state_ = Process::State::Terminated;
 	exitCode_ = exitCode;
+
 }
 
 void PalmyraOS::kernel::Process::kill()
@@ -339,12 +263,14 @@ void PalmyraOS::kernel::Process::kill()
 	{
 		kernel::kernelPagingDirectory_ptr->freePage(physicalPage);
 	}
+	physicalPages_.clear();
 
 	// clean up windows buffers
 	for (auto windowID : windows_)
 	{
 		WindowManager::closeWindow(windowID);
 	}
+	windows_.clear();
 
 	// TODO free directory table arrays if user process
 }
@@ -452,8 +378,11 @@ void* PalmyraOS::kernel::Process::allocatePagesAt(void* virtual_address, size_t 
 
 	return physicalAddress;
 }
+
 void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* const* argv)
 {
+	LOG_DEBUG("argc=%d", argc);
+
 	// Calculate the total size required for argv pointers and the strings themselves
 	size_t        totalSize = (argc + 1) * sizeof(char*); // Space for argv pointers + null termination
 	for (uint32_t i         = 0; i < argc; ++i)
@@ -485,24 +414,10 @@ void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* 
 		memcpy(reinterpret_cast<void*>(stack_.userEsp), argv_copy, (argc + 1) * sizeof(char*));
 		uint32_t argv_pointer = stack_.userEsp; // Save the location of argv
 
-
 		// 2. Place argc 4 bytes before the current stack pointer
 		stack_.userEsp -= sizeof(uint32_t);
 		*reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
 
-//		// 3. Reserve 28 bytes for stack alignment and other potential purposes
-//		stack_.userEsp -= 20;
-//
-//		// 4. Place the argv pointer on the stack
-//		stack_.userEsp -= sizeof(char**);
-//		*reinterpret_cast<char***>(stack_.userEsp) = reinterpret_cast<char**>(argv_pointer);
-//
-//		// 5. copy argc again
-//		stack_.userEsp -= sizeof(uint32_t);
-//		*reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
-
-		// 5. Adjust the stack pointer as required (so _start function's assumption is correct)
-		//	stack_.userEsp = stack_.userEsp; // No further adjustment needed as stack_.userEsp is already correct
 	}
 	else
 	{
@@ -514,14 +429,104 @@ void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* 
 
 		stack_.esp -= sizeof(uint32_t);
 		*reinterpret_cast<uint32_t*>(stack_.esp) = argc;
-
-		stack_.esp -= sizeof(char**);
-		*reinterpret_cast<char***>(stack_.esp) = reinterpret_cast<char**>(argv_pointer);
-
-		stack_.esp -= 28;
-		stack_.esp =
-			stack_.esp; // No further adjustment needed as stack_.esp is already correct
 	}
+}
+
+void PalmyraOS::kernel::Process::initializeProcessInVFS()
+{
+
+	LOG_DEBUG("Initializing VFS hooks");
+
+	char buffer[50];
+	snprintf(buffer, sizeof(buffer), "/proc/%d", pid_);
+
+	KString directory = KString(buffer);
+
+	vfs::VirtualFileSystem::createDirectory(directory, vfs::InodeBase::Mode::USER_READ);
+
+	auto statusNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+		  char uptime[40];
+		  uitoa64(upTime_, uptime, 10, false);
+
+		  // Create a string with the desired format
+		  char   output[512];
+		  size_t written = snprintf(
+			  output, sizeof(output),
+			  ""
+			  "Pid: %d\n"
+			  "State: %s\n"
+			  "Up Time: %s\n"
+			  "Pages: %d\n"
+			  "Windows: %d\n"
+			  "exitCode: %d\n",
+			  pid_,
+			  stateToString(),
+			  uptime,
+			  physicalPages_.size(),
+			  windows_.size(),
+			  exitCode_
+		  );
+
+		  // Ensure the output fits in the buffer, considering the offset
+		  if (offset >= written) return 0;
+
+		  size_t available = written - offset;
+		  size_t to_copy   = available < size ? available : size;
+		  memcpy(buffer, output + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/status"), statusNode);
+
+	auto stdoutNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+
+		  // Calculate the size of stdout_ vector
+		  size_t stdout_size = stdout_.size();
+
+		  // Ensure the offset is within the bounds of the stdout_ data
+		  if (offset >= stdout_size) return 0;
+
+		  // Calculate the number of bytes to copy to the buffer
+		  size_t available = stdout_size - offset;
+		  size_t to_copy   = available < size ? available : size;
+
+		  // Copy the data from stdout_ to the provided buffer
+		  memcpy(buffer, stdout_.data() + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stdout"), stdoutNode);
+
+	auto stderrNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+		// Read
+		[this](char* buffer, size_t size, size_t offset) -> size_t
+		{
+
+		  // Calculate the size of stdout_ vector
+		  size_t stderrsize = stderr_.size();
+
+		  // Ensure the offset is within the bounds of the stdout_ data
+		  if (offset >= stderrsize) return 0;
+
+		  // Calculate the number of bytes to copy to the buffer
+		  size_t available = stderrsize - offset;
+		  size_t to_copy   = available < size ? available : size;
+
+		  // Copy the data from stdout_ to the provided buffer
+		  memcpy(buffer, stderr_.data() + offset, to_copy);
+
+		  return to_copy;
+		}, nullptr, nullptr
+	);
+	vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stderr"), stderrNode);
 }
 
 
@@ -712,6 +717,7 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 	if (elfHeader->e_machine != EM_386) return nullptr;
 
 	// Validations are successful.
+	LOG_DEBUG("Elf Validations successful. Loading headers..");
 
 	// Create a new process
 	Process* process = newProcess(nullptr, mode, priority, argc, argv, false);
@@ -720,6 +726,8 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 	// Temporarily set process as killed, in case of invalid initialization
 	process->setState(Process::State::Killed);
 
+	uint32_t highest_vaddr = 0;  // To track the highest loaded segment's address for initializing current_brk
+
 	// Load program headers
 	const auto* programHeaders = reinterpret_cast<const Elf32_Phdr*>(elfFileContent.data() + elfHeader->e_phoff);
 	for (int i = 0; i < elfHeader->e_phnum; ++i)
@@ -727,28 +735,55 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 		const Elf32_Phdr& ph = programHeaders[i];
 
 		// Only load PT_LOAD segments
-		if (ph.p_type == PT_LOAD)
+		if (ph.p_type != PT_LOAD) continue;
+
+		// Align the virtual address down to the nearest page boundary
+		uint32_t aligned_vaddr = ph.p_vaddr & ~(PAGE_SIZE - 1);
+
+		// Calculate the page offset
+		uint32_t page_offset = ph.p_vaddr - aligned_vaddr;
+
+		// Adjust the size to include the page offset
+		uint32_t segment_size = ph.p_memsz + page_offset;
+
+		// Calculate the number of pages needed
+		size_t num_pages = (segment_size + PAGE_SIZE - 1) >> PAGE_BITS;
+
+		LOG_DEBUG("Loading Section %d: at 0x%X for %d pages", i, aligned_vaddr, num_pages);
+		void* segmentAddress = process->allocatePagesAt(reinterpret_cast<void*>(aligned_vaddr), num_pages);
+		if (!segmentAddress) return nullptr;
+
+		// Copy the segment into memory
+		memcpy(segmentAddress, elfFileContent.data() + ph.p_offset, ph.p_filesz);
+
+		// Zero the remaining memory if p_memsz > p_filesz
+		if (ph.p_memsz > ph.p_filesz)
 		{
-			void* segmentAddress = process->allocatePagesAt(
-				reinterpret_cast<void*>(ph.p_vaddr),
-				(ph.p_memsz + PAGE_SIZE - 1) >> PAGE_BITS
-			);
-			if (!segmentAddress) return nullptr;
-
-			// Copy the segment into memory
-			memcpy(segmentAddress, elfFileContent.data() + ph.p_offset, ph.p_filesz);
-
-			// Zero the remaining memory if p_memsz > p_filesz
-			if (ph.p_memsz > ph.p_filesz)
-			{
-				memset(reinterpret_cast<uint8_t*>(segmentAddress) + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
-			}
+			memset(reinterpret_cast<uint8_t*>(segmentAddress) + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
 		}
+
+
+		// Update the highest virtual address to track the end of the loaded segments
+		uint32_t segment_end = ph.p_vaddr + ph.p_memsz;
+		if (segment_end > highest_vaddr)
+		{
+			highest_vaddr = segment_end;
+		}
+
 	}
+	LOG_DEBUG("Loading headers completed.");
+
+	// Initialize the program break to the end of the last loaded segment
+	// Set initial_brk and current_brk to just after the highest loaded segment
+	process->initial_brk = (highest_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);  // Align to next page boundary
+	process->current_brk = process->initial_brk;  // Initial and current brk set to the same value
+//	process->max_brk = process->initial_brk + MAX_HEAP_SIZE;  // Set an arbitrary limit for heap size (you can define MAX_HEAP_SIZE)
+
+	LOG_DEBUG("Program break (brk) initialized at: 0x%X", process->initial_brk);
 
 	// Set up the initial CPU state (already initialized in newProcess)
-	uint32_t pointer = process->stack_.esp + 8; // TODO make stuff here more logical PLEASE
-	*(uint32_t*)(pointer) = elfHeader->e_entry;
+	// TODO make stuff here more logical PLEASE (intNo + 2 * sizeof(uint32_t) for eip)
+	*(uint32_t*)(process->stack_.esp + 8) = elfHeader->e_entry;
 	process->stack_.eip = elfHeader->e_entry;
 
 	// Set process state to Ready

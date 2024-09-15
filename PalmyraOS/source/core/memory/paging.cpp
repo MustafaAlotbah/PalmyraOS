@@ -5,6 +5,7 @@
 #include "core/memory/PhysicalMemory.h"
 #include "core/kernel.h"
 #include "core/tasks/ProcessManager.h"
+#include "core/peripherals/Logger.h"
 
 // External functions from assembly (paging.asm)
 extern "C" void set_page_directory(uint32_t*);
@@ -39,6 +40,8 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex, Page
 	// Allocate a new frame for the table if not present
 	void* newTable = PhysicalMemory::allocateFrame();
 	if ((uint32_t)newTable & 0xFFF) kernel::kernelPanic("Unaligned Page Table at 0x%X", newTable);
+	LOG_DEBUG("Allocating a table (i=%d, addr=0x%X)", tableIndex, newTable);
+
 
 	// Save the table address
 	pageTables_[tableIndex] = (PageTableEntry*)newTable;
@@ -156,6 +159,10 @@ void PalmyraOS::kernel::PagingDirectory::setPage(
 {
 	// Set the page table entry
 	auto* entry = (PageTableEntry*)&table[pageIndex];
+	if (is_paging_enabled() && !PagingManager::getCurrentPageDirectory()->isAddressValid(entry))
+	{
+		LOG_ERROR("Address: 0x%X is not valid in kernel space!", entry);
+	}
 	entry->present = ((uint32_t)flags >> 0) & 0x1;
 	entry->rw      = ((uint32_t)flags >> 1) & 0x1;
 	entry->user    = ((uint32_t)flags >> 2) & 0x1;

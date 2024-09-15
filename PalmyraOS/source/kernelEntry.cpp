@@ -15,16 +15,13 @@
 #include "core/peripherals/Keyboard.h"
 #include "core/peripherals/Mouse.h"
 
-//#include "palmyraOS/unistd.h"
 #include "palmyraOS/time.h"
 
 #include "core/files/VirtualFileSystem.h"
-#include "core/files/partitions/MasterBootRecord.h"
-#include "core/files/partitions/VirtualDisk.h"
-#include "core/files/partitions/Fat32.h"
+
+#include "libs/palmyraSDK.h"
 
 #include "userland/userland.h"
-
 
 // Pointers to the start and end of the constructors section (see linker.ld)
 extern "C" void (* first_constructor)();
@@ -51,29 +48,6 @@ namespace Processes
 	  (*integer)++;
   }
 
-  [[noreturn]] int windowManager(uint32_t argc, char* argv[])
-  {
-	  using namespace PalmyraOS;
-	  timespec start_time{};
-	  timespec current_time{};
-
-	  clock_gettime(CLOCK_MONOTONIC, &start_time);
-	  while (true)
-	  {
-		  // wait update every 16.666 ms ~ 60 fps
-		  clock_gettime(CLOCK_MONOTONIC, &current_time);
-		  while (current_time.tv_nsec - start_time.tv_nsec < 16'666L)
-		  {
-			  clock_gettime(CLOCK_MONOTONIC, &current_time);
-			  sched_yield();
-		  }
-		  start_time = current_time;
-
-		  kernel::WindowManager::composite();
-		  sched_yield();
-	  }
-  }
-
   int process_1(uint32_t argc, char* argv[])
   {
 	  while (true)
@@ -81,6 +55,7 @@ namespace Processes
 		  proc_1_counter++;
 		  proc_1_pid = get_pid();
 //		  sched_yield();
+//		  return 0;
 	  }
   }
 
@@ -93,81 +68,34 @@ namespace Processes
 		  write(1, message, 1);
 	  }
 
-	  size_t x      = 40;
-	  size_t y      = 40;
-	  size_t width  = 640;
-	  size_t height = 480;
-
-	  // Calculate the total size for 300 pages
-	  size_t total_size = 301 * 4096;
-
-	  // Request 300 pages using mmap
-	  void* addr = mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-	  if (addr == MAP_FAILED)
-	  {
-		  const char* message = "Failed to map memory\n";
-		  write(1, message, strlen(message));
-	  }
-	  else
-	  {
-		  const char* message = "Success to map memory\n";
-		  write(1, message, strlen(message));
-	  }
-
-	  uint32_t* frameBuffer = (uint32_t*)0xff11ff22;
-	  uint32_t fb_id = initializeWindow(&frameBuffer, x, y, width, height);
-	  if (fb_id == 0)
-	  {
-		  const char* message = "Failed to initialize window\n";
-		  write(1, message, strlen(message));
-	  }
-	  else
-	  {
-		  const char* message = "Success to initialize window\n";
-		  write(1, message, strlen(message));
-	  }
-
-	  PalmyraOS::kernel::FrameBuffer fb(width, height, frameBuffer, (uint32_t*)addr);
-	  PalmyraOS::kernel::Brush        brush(fb);
-	  PalmyraOS::kernel::TextRenderer textRenderer(fb, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
-
-
-	  for (uint32_t i = 0; i < 640 * 480; ++i) frameBuffer[i] = PalmyraOS::Color::DarkRed.getColorValue();
+	  // Set initial window position and dimensions
+	  PalmyraOS::SDK::Window      window(40, 40, 640, 480, true, "Tests");
+	  PalmyraOS::SDK::WindowFrame windowFrame(window);
 
 	  while (true)
 	  {
 		  increase(&proc_2_counter);
 		  proc_2_pid = get_pid();
 
-		  // Draw Window
-		  brush.fill(PalmyraOS::Color::Black);
-		  brush.fillRectangle(0, 0, width, 20, PalmyraOS::Color::DarkRed);
-		  brush.drawHLine(0, width, 0, PalmyraOS::Color::White);
-		  brush.drawHLine(0, width, height - 1, PalmyraOS::Color::White);
-		  brush.drawVLine(0, 0, height - 1, PalmyraOS::Color::White);
-		  brush.drawVLine(width - 1, 0, height - 1, PalmyraOS::Color::White);
-		  brush.drawHLine(0, width, 20, PalmyraOS::Color::White);
+		  windowFrame.text() << PalmyraOS::Color::White;
+		  windowFrame.text().setCursor(1, 1);
+		  windowFrame.text() << "Testy Process\n";
+		  windowFrame.text().reset();
+		  windowFrame.text().setCursor(1, 21);
+		  windowFrame.text() << PalmyraOS::Color::LightBlue;
 
-		  textRenderer << PalmyraOS::Color::White;
-		  textRenderer.setCursor(1, 1);
-		  textRenderer << "Testy Process\n";
-		  textRenderer.reset();
-		  textRenderer.setCursor(1, 21);
-		  textRenderer << PalmyraOS::Color::LightBlue;
+		  windowFrame.text() << "Counter: " << proc_2_counter << "\n";
+		  windowFrame.text() << "Counter proc0: " << proc_1_counter << "\n";
+		  windowFrame.text() << "my pid: " << get_pid() << "\n";
 
-		  textRenderer << "Counter: " << proc_2_counter << "\n";
-		  textRenderer << "Counter proc0: " << proc_1_counter << "\n";
-		  textRenderer << "my pid: " << get_pid() << "\n";
-
-		  fb.swapBuffers();
+		  windowFrame.swapBuffers();
 		  sched_yield();
 
-		  if (proc_2_counter >= 10'000) break;
+		  if (proc_2_counter >= 1'000) break;
 	  }
 
-//	  brush.fill(PalmyraOS::Color::DarkBlue);
-	  textRenderer << "I will exit in 2 seconds" << "\n";
-	  fb.swapBuffers();
+	  windowFrame.text() << "I will exit in 2 seconds" << "\n";
+	  windowFrame.swapBuffers();
 
 	  // wait
 	  {
@@ -184,15 +112,11 @@ namespace Processes
 		  }
 	  }
 
-
 	  const char* message = "I am exiting now!!\n";
 	  write(1, message, strlen(message));
-	  closeWindow(fb_id);
 	  _exit(0);
-
 	  return -1;
   }
-
 }
 
 
@@ -222,7 +146,7 @@ void callConstructors()
 [[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info)
 {
 	using namespace PalmyraOS;
-	constexpr uint64_t SHORT_DELAY = 2500'000'0;
+	constexpr uint64_t SHORT_DELAY = 2'500'000;
 
 	// ----------------------- Call Kernel Constructors -----------------------
 	// first construct globals
@@ -294,37 +218,9 @@ void callConstructors()
 		kernel::CPU::delay(SHORT_DELAY);
 	}
 
-	{
-		class Resource
-		{
-		 public:
-			Resource(PalmyraOS::kernel::TextRenderer& cout, int x)
-				:
-				cout_(cout),
-				number_(x)
-			{
-				cout_ << "Resource " << number_ << " constructed.\n" << SWAP_BUFF();
-			}
-
-			~Resource()
-			{
-				cout_ << "Resource " << number_ << " destructed.\n" << SWAP_BUFF();
-			}
-		 private:
-			PalmyraOS::kernel::TextRenderer& cout_;
-			int number_;
-		};
-
-		{
-			Resource res1(textRenderer, 1);
-		}
-
-
-	}
-
 //	while(true);
 	// ----------------------- Initialize Physical Memory -------------------------------
-	textRenderer << "Initializing Physical Memory\n" << SWAP_BUFF();
+	textRenderer << "Initializing Physical Memory: " << x86_multiboot_info->mem_upper << " KiB\n" << SWAP_BUFF();
 	kernel::initializePhysicalMemory(x86_multiboot_info);
 	kernel::CPU::delay(SHORT_DELAY);
 
@@ -368,10 +264,13 @@ void callConstructors()
 	// ----------------------- Initialize Peripherals -------------------------------
 
 	kernel::RTC::initialize();
+	textRenderer << "RTC is initialized.\n" << SWAP_BUFF();
 
 	kernel::Keyboard::initialize();
+	textRenderer << "Keyboard is initialized.\n" << SWAP_BUFF();
 
 	kernel::Mouse::initialize();
+	textRenderer << "Mouse is initialized.\n" << SWAP_BUFF();
 
 	// ---------------------------- Add Processes -----------------------------------
 
@@ -381,7 +280,7 @@ void callConstructors()
 		{
 			char* argv[] = { const_cast<char*>("windowsManager.exe"), nullptr };
 			kernel::TaskManager::newProcess(
-				Processes::windowManager,
+				kernel::WindowManager::thread,
 				kernel::Process::Mode::Kernel,
 				kernel::Process::Priority::Medium,
 				0, argv, true

@@ -2,63 +2,24 @@
 #include "userland/systemWidgets/clock.h"
 
 #include "palmyraOS/unistd.h"       // Include PalmyraOS system calls
-#include "palmyraOS/time.h"            // For sleeping
-#include "palmyraOS/stdlib.h"       // For dynamic memory management
-#include "palmyraOS/stdio.h"        // For standard input/output functions: printf, perror
-#include "palmyraOS/HeapAllocator.h"// C++ heap allocator for efficient memory management
-#include "palmyraOS/errono.h"
-#include "libs/circularBuffer.h"    // For efficient FIFO buffer implementation
+#include "palmyraOS/time.h"         // For rtc_time truct
+#include "libs/palmyraSDK.h"        // Window, Window Frame
+#include "libs/pmath.h"                // sin, cos
 
-#include "libs/string.h"            // strlen
-#include "libs/pmath.h"
-
-// TODO: move these to libs (or put them in palmyraOS)
-#include "core/FrameBuffer.h"        // FrameBuffer
-#include "core/VBE.h"                // for Brush, TextRenderer
-#include "core/Font.h"               // For Fonts
-
-
-// Helper function to convert degrees to radians
-inline double degToRad(double deg)
-{
-	return deg * 3.14 / 180.0;
-}
 
 int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 {
 
-
-	// Initialize dynamic memory allocator for the application
-	types::UserHeapManager heap;
-
-	// Set initial window position and dimensions
-	size_t x = 10, y = 10, width = 100, height = 120;
-
-	// Allocate a large buffer for double buffering in graphics
-	size_t total_size = (width * height * sizeof(uint32_t)) * 4096;
-	void* backBuffer = malloc(total_size);
-	if (backBuffer == MAP_FAILED) perror("Failed to map memory\n");
-	else printf("Success to map memory\n");
-
 	// Create and set up the main application window
-	uint32_t* frontBuffer = nullptr;
-	uint32_t window_id = initializeWindow(&frontBuffer, x, y, width, height);
-	if (window_id == 0) perror("Failed to initialize window\n");
-	else printf("Success to initialize window\n");
-
-	// Initialize graphics objects for rendering
-	PalmyraOS::kernel::FrameBuffer  frameBuffer(width, height, frontBuffer, (uint32_t*)backBuffer);
-	PalmyraOS::kernel::Brush        brush(frameBuffer);
-	PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
-	textRenderer.setPosition(5, 0);
+	SDK::Window window(10, 10, 100, 120, true, "Palmyra Clock");
+	SDK::WindowFrame windowFrame(window);
 
 	// Initialize time structure
 	size_t   epochTime_fd = 0;
 	rtc_time epochTime{};
-	{
-		epochTime_fd = open("/dev/rtc", 0);
-		if (epochTime_fd) ioctl(epochTime_fd, RTC_RD_TIME, &epochTime);
-	}
+	epochTime_fd = open("/dev/rtc", 0);
+	if (epochTime_fd) ioctl(epochTime_fd, RTC_RD_TIME, &epochTime);
+
 	// Constants for clock hand lengths
 	constexpr int secondHandLength = 35;
 	constexpr int minuteHandLength = 30;
@@ -66,27 +27,13 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 	constexpr int clockRadius      = 40;
 
 	// Center of the clock
-	const int centerX = width / 2;
-	const int centerY = (height + 20) / 2;
+	const int centerX = window.getWidth() / 2;
+	const int centerY = (window.getHeight() + 20) / 2;
 
 	while (true)
 	{
-
-		// Render the terminal UI frame
-		brush.fill(PalmyraOS::Color::DarkerGray);
-		brush.fillRectangle(0, 0, width, 20, PalmyraOS::Color::DarkRed);
-		brush.drawFrame(0, 0, width, height, PalmyraOS::Color::White);
-		brush.drawHLine(0, width, 20, PalmyraOS::Color::White);
-		textRenderer << PalmyraOS::Color::White;
-		textRenderer.setCursor(1, 1);
-		textRenderer << "Palmyra Clock\n";
-		textRenderer.reset();
-		textRenderer.setCursor(1, 21);
-
-
-
 		// Render the numbers around the clock
-		textRenderer << PalmyraOS::Color::Gray;
+		windowFrame.text() << PalmyraOS::Color::Gray;
 		for (int i = 1; i <= 12; ++i)
 		{
 			int angle   = i * 30; // Each hour is 30 degrees apart
@@ -97,8 +44,8 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 			int yOffset = -8; // Adjust vertically for better centering
 
 			// Set text position and render the number
-			textRenderer.setCursor(numberX + xOffset, numberY + yOffset);
-			textRenderer << i;
+			windowFrame.text().setCursor(numberX + xOffset, numberY + yOffset);
+			windowFrame.text() << i;
 		}
 
 		// Render the current time if available
@@ -114,8 +61,7 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 			// Convert seconds, minutes, and hours to degrees
 			int secondAngle = seconds * 6;                // 360 degrees / 60 seconds = 6 degrees per second
 			int minuteAngle = minutes * 6;                // 360 degrees / 60 minutes = 6 degrees per minute
-			int hourAngle   = hours * 30 + (minutes / 2);    // 360 degrees / 12 hours = 30 degrees per hour
-
+			int hourAngle = hours * 30 + (minutes / 2); // 360 degrees / 12 hours = 30 degrees per hour
 
 			// Calculate endpoints for the second hand using lookup tables
 			int secondX = centerX + static_cast<int>(secondHandLength * math::sin(secondAngle));
@@ -130,21 +76,26 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 			int hourY = centerY - static_cast<int>(hourHandLength * math::cos(hourAngle));
 
 			// Draw the clock hands
-			brush.drawLine(centerX, centerY, secondX, secondY, PalmyraOS::Color::LightBlue);     // Red second hand
-			brush.drawLine(centerX, centerY, minuteX, minuteY, PalmyraOS::Color::White);   // White minute hand
-			brush.drawLine(centerX, centerY, hourX, hourY, PalmyraOS::Color::Orange);        // Blue hour hand
+			windowFrame.brush().drawLine(
+				centerX,
+				centerY,
+				secondX,
+				secondY,
+				PalmyraOS::Color::LightBlue
+			);     // Red second hand
+			windowFrame.brush()
+					   .drawLine(centerX, centerY, minuteX, minuteY, PalmyraOS::Color::White);   // White minute hand
+			windowFrame.brush()
+					   .drawLine(centerX, centerY, hourX, hourY, PalmyraOS::Color::Orange);        // Blue hour hand
 
 		}
 
-
 		// Reset text renderer and swap frame buffers for next frame
-		textRenderer.reset();
-		frameBuffer.swapBuffers();
+		windowFrame.swapBuffers();
 
 		// Yield to other processes
 		sched_yield();
 	}
-
 
 	return 0;
 }

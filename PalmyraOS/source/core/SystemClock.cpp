@@ -54,6 +54,11 @@ uint64_t PalmyraOS::kernel::SystemClock::getMilliseconds()
 	return (getTicks() * 1000) / frequency_;
 }
 
+uint64_t PalmyraOS::kernel::SystemClock::getNanoseconds()
+{
+	return (getTicks() * 1'000'000) / frequency_;
+}
+
 uint64_t PalmyraOS::kernel::SystemClock::getSeconds()
 {
 	return getTicks() / frequency_;

@@ -74,6 +74,19 @@ namespace PalmyraOS::kernel
 	   * @return The total number of frames.
 	   */
 	  static uint32_t size();
+
+	  /**
+	   * @brief Gets the number of free frames.
+	   * @return The number of free frames.
+	   */
+	  static uint32_t getFreeFrames();
+
+	  /**
+	   * @brief Gets the number of allocated frames.
+	   * @return The number of allocated frames.
+	   */
+	  static uint32_t getAllocatedFrames();
+
    private:
 	  /**
 	   * @brief Finds the first free frame.
@@ -112,8 +125,11 @@ namespace PalmyraOS::kernel
 	   */
 	  static void unmarkAll();
    private:
-	  static uint32_t* frameBits;    ///< Bitmap array to track frame usage
-	  static uint32_t framesCount;   ///< Total number of frames
+	  static uint32_t* frameBits_;    ///< Bitmap array to track frame usage
+	  static uint32_t framesCount_;   ///< Total number of frames
+
+	  static uint32_t freeFramesCount_;  ///< Track how many frames are free
+	  static uint32_t allocatedFrames_;  ///< Track how many frames are currently allocated
   };
 
 

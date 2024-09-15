@@ -7,7 +7,7 @@ project(PalmyraOS)
 #endif()
 
 # Set the compilation flags for C++
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32 -fno-use-cxa-atexit -nostdlib -fno-builtin -fno-rtti -fno-exceptions -fno-leading-underscore")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m32 -fno-use-cxa-atexit -fno-exceptions -fno-leading-underscore")
 
 # Include directories
 include_directories(include)

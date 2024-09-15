@@ -4,6 +4,7 @@
 #include "core/kernel.h"
 #include "core/Font.h"
 #include "core/VBE.h"
+#include "core/peripherals/Logger.h"
 
 #include <cstdarg>  // Include for va_list and related functions
 
@@ -59,6 +60,9 @@ extern "C" void disable_paging();
 
 	// update video memory
 	vbe.getFrameBuffer().swapBuffers();
+
+	LOG_ERROR("Panic");
+	LOG_ERROR(message);
 
 	// halt
 	while (true);

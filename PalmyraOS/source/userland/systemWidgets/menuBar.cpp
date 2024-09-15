@@ -31,9 +31,9 @@ uint32_t* allocateBackBuffer(size_t requiredMemory)
 }
 
 // Helper function to initialize window
-size_t initializeWindowWrapper(uint32_t** frontBuffer, size_t width, size_t height)
+size_t initializeWindowWrapper(uint32_t** frontBuffer, palmyra_window& windowInfo)
 {
-	size_t bufferId = initializeWindow(frontBuffer, 0, 0, width, height);
+	uint32_t bufferId = initializeWindow(frontBuffer, &windowInfo);
 	if (bufferId == 0)
 	{
 		perror("Failed to initialize window\n");
@@ -55,19 +55,18 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 {
 
 	// Define dimensions and required memory for the window
-	size_t width          = 1024;     // TODO Retrieve actual window width dynamically
-	size_t height         = 20;
-	size_t requiredMemory = width * height * sizeof(uint32_t);
+	palmyra_window w              = { .x=0, .y=0, .width=1024, .height=20, .movable=false, .title="MenuBar" };
+	size_t         requiredMemory = w.width * w.height * sizeof(uint32_t);
 
 	// Allocate memory for the back buffer
 	uint32_t* backBuffer = allocateBackBuffer(requiredMemory);
 
 	// Request and initialize the front buffer window
 	uint32_t* frontBuffer = nullptr;
-	size_t bufferId = initializeWindowWrapper(&frontBuffer, width, height);
+	size_t bufferId = initializeWindowWrapper(&frontBuffer, w);
 
 	// Initialize rendering helpers
-	PalmyraOS::kernel::FrameBuffer frameBuffer(width, height, frontBuffer, backBuffer);
+	PalmyraOS::kernel::FrameBuffer frameBuffer(w.width, w.height, frontBuffer, backBuffer);
 	PalmyraOS::kernel::Brush       brush(frameBuffer);
 
 	// Load the font for text rendering (requires kernel memory) TODO: only allowed at this stage, not anymore later
@@ -96,8 +95,8 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 		clock_gettime(CLOCK_MONOTONIC, &time_spec);
 
 		brush.fill(PalmyraOS::Color::Black);
-		brush.drawHLine(0, width, height - 1, PalmyraOS::Color::White);
-		brush.drawHLine(0, width, height - 2, PalmyraOS::Color::Gray);
+		brush.drawHLine(0, w.width, w.height - 1, PalmyraOS::Color::White);
+		brush.drawHLine(0, w.width, w.height - 2, PalmyraOS::Color::Gray);
 
 		// Render the logo and system information
 		textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
@@ -120,7 +119,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 				epochTime.tm_min,
 				epochTime.tm_sec
 			);
-			textRenderer.setCursor(width / 2 - 50, 0);    // Center the clock text
+			textRenderer.setCursor(w.width / 2 - 50, 0);    // Center the clock text
 			textRenderer << clock_buffer;
 
 

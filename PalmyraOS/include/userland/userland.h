@@ -13,4 +13,5 @@
 #pragma once
 
 #include "userland/systemWidgets/menuBar.h"
-#include "userland/systemWidgets/KernelTermina.h"
+#include "userland/systemWidgets/KernelTerminal.h"
+#include "userland/systemWidgets/clock.h"

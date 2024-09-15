@@ -78,33 +78,6 @@ void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t of
 	return result;
 }
 
-uint32_t initializeWindow(uint32_t** buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
-{
-	uint32_t result;
-	// Prepare the registers for the system call
-	uint32_t eax = INT_INIT_WINDOW; // System call number
-	auto     ebx = reinterpret_cast<uint32_t>(buffer);
-	uint32_t ecx = x;
-	uint32_t edx = y;
-	uint32_t esi = width;
-	uint32_t edi = height;
-
-	// Perform the system call using inline assembly
-	__asm__ volatile (
-		"int $0x80"         // Trigger interrupt 0x80
-		: "=a"(result)      // Output: store result in 'result' from 'eax'
-		:
-		"a"(eax),         // Input: system call number
-		"b"(ebx),         // Input: first parameter (buffer)
-		"c"(ecx),         // Input: second parameter (x)
-		"d"(edx),         // Input: third parameter (y)
-		"S"(esi),         // Input: fourth parameter (width)
-		"D"(edi)          // Input: fifth parameter (height)
-		: "memory"          // Clobber: memory might be affected
-		);
-
-	return result;
-}
 
 void closeWindow(uint32_t windowID)
 {
@@ -323,3 +296,124 @@ int clock_nanosleep(uint32_t clock_id, int flags, const struct timespec* req, st
 
 	return result;
 }
+
+int arch_prctl(int code, unsigned long addr)
+{
+	int result;
+
+	register int           syscall_no asm("eax") = LINUX_INT_PRCTL;
+	register int           arg1 asm("ebx")       = code;     // First argument (operation code)
+	register unsigned long arg2 asm("ecx")       = addr; // Second argument (address or value)
+
+	asm volatile (
+		"int $0x80"  // Trigger syscall interrupt
+		: "=a" (result) // Output the result (return value)
+		: "r" (syscall_no), "r" (arg1), "r" (arg2) // Inputs
+		: "memory"
+		);
+
+	return result;
+}
+
+int brk(void* end_data_segment)
+{
+	int result;
+
+	// Register the system call number for brk()
+	register uint32_t syscall_no asm("eax") = POSIX_INT_BRK;
+
+	// Pass the new program break (end of the data segment) as an argument
+	register void* new_end asm("ebx") = end_data_segment;
+
+	// Perform the system call using inline assembly
+	asm volatile(
+		"int $0x80"            // Trigger interrupt 0x80 (system call entry point)
+		: "=a" (result)        // Output: store the result of the system call
+		: "r" (syscall_no), "r" (new_end) // Input: system call number and new program break
+		: "memory"             // Clobber: memory might be affected
+		);
+
+	// Return the result: 0 on success, -1 on failure
+	return result;
+}
+
+uint32_t getuid()
+{
+	uint32_t          uid;
+	register uint32_t syscall_no asm("eax") = POSIX_INT_GETUID;
+	asm volatile(
+		"int $0x80\n\t"       // Trigger the system call
+		"mov %%eax, %0"
+		: "=r"(uid)           // Output: store the result in uid
+		: "r"(syscall_no)     // Input: system call number
+		: "memory"            // Clobber: memory might be affected
+		);
+	return uid;
+}
+
+uint32_t getgid()
+{
+	uint32_t          gid;
+	register uint32_t syscall_no asm("eax") = POSIX_INT_GETGID;
+	asm volatile(
+		"int $0x80\n\t"       // Trigger the system call
+		"mov %%eax, %0"
+		: "=r"(gid)           // Output: store the result in gid
+		: "r"(syscall_no)     // Input: system call number
+		: "memory"            // Clobber: memory might be affected
+		);
+	return gid;
+}
+
+uint32_t geteuid32()
+{
+	uint32_t          euid;
+	register uint32_t syscall_no asm("eax") = POSIX_INT_GETEUID32;
+	asm volatile(
+		"int $0x80\n\t"       // Trigger the system call
+		"mov %%eax, %0"
+		: "=r"(euid)          // Output: store the result in euid
+		: "r"(syscall_no)     // Input: system call number
+		: "memory"            // Clobber: memory might be affected
+		);
+	return euid;
+}
+
+uint32_t getegid32()
+{
+	uint32_t          egid;
+	register uint32_t syscall_no asm("eax") = POSIX_INT_GETEGID32;
+	asm volatile(
+		"int $0x80\n\t"       // Trigger the system call
+		"mov %%eax, %0"
+		: "=r"(egid)          // Output: store the result in egid
+		: "r"(syscall_no)     // Input: system call number
+		: "memory"            // Clobber: memory might be affected
+		);
+	return egid;
+}
+
+uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow)
+{
+	uint32_t result;
+
+	// Prepare the registers for the system call
+	uint32_t eax = INT_INIT_WINDOW; // System call number for initializeWindow2
+	auto     ebx = reinterpret_cast<uint32_t>(buffer); // Address of buffer
+	uint32_t ecx = reinterpret_cast<uint32_t>(palmyraWindow); // Address of palmyra_window structure
+
+	// Perform the system call using inline assembly
+	asm volatile (
+		"int $0x80"         // Trigger interrupt 0x80
+		: "=a"(result)      // Output: store result in 'result' from 'eax'
+		:
+		"a"(eax),         // Input: system call number
+		"b"(ebx),         // Input: buffer
+		"c"(ecx)          // Input: palmyra_window structure
+		: "memory"          // Clobber: memory might be affected
+		);
+
+	return result; // Return the result of the system call (window ID)
+}
+
+

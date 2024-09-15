@@ -1,8 +1,10 @@
 
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/WindowManager.h"
-#include <algorithm>
+#include "core/SystemClock.h"
+#include "core/peripherals/RTC.h"
 #include "libs/memory.h"
+#include <algorithm>
 
 
 uint32_t PalmyraOS::kernel::Window::count = 0;
@@ -55,6 +57,11 @@ MouseEvent PalmyraOS::kernel::Window::popMouseEvent()
 	return front;
 }
 
+void PalmyraOS::kernel::Window::setMovable(bool status)
+{
+	isMovable_ = status;
+}
+
 /***********************************************************************************************/
 
 PalmyraOS::kernel::KVector<PalmyraOS::kernel::Window> PalmyraOS::kernel::WindowManager::windows_;
@@ -68,6 +75,9 @@ bool PalmyraOS::kernel::WindowManager::isLeftButtonDown_  = false;
 bool PalmyraOS::kernel::WindowManager::wasLeftButtonDown_ = false;
 
 PalmyraOS::kernel::DragState PalmyraOS::kernel::WindowManager::dragState_;
+uint32_t PalmyraOS::kernel::WindowManager::update_ns_     = 16'000L; // 100Hz cap
+uint64_t PalmyraOS::kernel::WindowManager::fps_           = 0;
+bool     PalmyraOS::kernel::WindowManager::sortingNeeded_ = false;
 
 /***********************************************************************************************/
 
@@ -93,27 +103,16 @@ void PalmyraOS::kernel::WindowManager::composite()
 	FrameBuffer & screenBuffer = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
 	TextRenderer& textRenderer = *kernel::textRenderer_ptr;
 
+
+	TaskManager::startAtomicOperation();
 	screenBuffer.fill(Color::DarkGray); // Background
 
-	// Sort windows by z index
-	std::sort(
-		windows_.begin(), windows_.end(), [](const Window& a, const Window& b)
-		{
-		  return a.z_ < b.z_;
-		}
-	);
-
-
 	// Composite each window onto the back buffer
-	{
-		for (const auto& window : windows_)
-		{
-			TaskManager::startAtomicOperation();
-			composeWindow(screenBuffer, window);
-			TaskManager::endAtomicOperation();
-		}
-	}
 
+	for (const auto& window : windows_)
+	{
+		composeWindow(screenBuffer, window);
+	}
 
 	// draw mouse cursor
 	renderMouseCursor();
@@ -121,18 +120,21 @@ void PalmyraOS::kernel::WindowManager::composite()
 	// TODO Window Manager Resources for Realtime Debugging
 	textRenderer.setPosition(20, screenBuffer.getHeight() - 20);
 	textRenderer << "[Window " << activeWindowId_ << "]"
-				 << "[" << mouseX_ << ", " << mouseY_ << "]"
-				 << "[" << mouseEvents_->size() << ", " << keyboardsEvents_->size() << "]";
+												  << "[FPS: " << fps_ << "]"
+												  << "[Mem: "
+												  << (PhysicalMemory::getAllocatedFrames() >> 8)  // pages to MiB
+												  << "/"
+												  << (PhysicalMemory::size() >> 8)
+												  << " MiB]";
 	textRenderer.reset();
 
 	// Atomically Swap the buffers
-	TaskManager::startAtomicOperation();
 	screenBuffer.swapBuffers();
-	TaskManager::endAtomicOperation();
 
 	// Forward Events
 	forwardKeyboardEvents();
 	forwardMouseEvents();
+	TaskManager::endAtomicOperation();
 
 }
 
@@ -145,6 +147,12 @@ void PalmyraOS::kernel::WindowManager::initialize()
 	 */
 	keyboardsEvents_ = heapManager.createInstance<KQueue<KeyboardEvent>>();
 	mouseEvents_ = heapManager.createInstance<KQueue<MouseEvent>>();
+
+
+	FrameBuffer& screenBuffer = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
+
+	mouseX_ = screenBuffer.getWidth() / 2;
+	mouseY_ = screenBuffer.getHeight() / 2;
 }
 
 void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id)
@@ -237,12 +245,10 @@ void PalmyraOS::kernel::WindowManager::setActiveWindow(uint32_t id)
 		else
 		{
 			// Decrement the z-order of other windows
-			if (window.z_ > 0)
-			{
-				window.z_ -= 1;
-			}
+			if (window.z_ > 0) window.z_ -= 1;
 		}
 	}
+	sortingNeeded_ = true;
 }
 
 void PalmyraOS::kernel::WindowManager::composeWindow(
@@ -252,6 +258,20 @@ void PalmyraOS::kernel::WindowManager::composeWindow(
 {
 
 	if (!window.visible_) return;
+
+	TaskManager::startAtomicOperation();
+
+	// Sort windows by z index MUST be here, so that mouse click doesn't affect it
+	if (sortingNeeded_)
+	{
+		std::sort(
+			windows_.begin(), windows_.end(), [](const Window& a, const Window& b)
+			{
+			  return a.z_ < b.z_;
+			}
+		);
+		sortingNeeded_ = false;
+	}
 
 	size_t screenWidth  = buffer.getWidth();
 	size_t screenHeight = buffer.getHeight();
@@ -290,6 +310,7 @@ void PalmyraOS::kernel::WindowManager::composeWindow(
 		// Copy the entire line at once
 		memcpy(destPtr, srcPtr, copyWidth);
 	}
+	TaskManager::endAtomicOperation();
 
 }
 
@@ -355,13 +376,14 @@ void PalmyraOS::kernel::WindowManager::startDragging()
 	uint32_t windowId = getWindowAtPosition(mouseX_, mouseY_);
 	if (windowId == 0) return;
 
+	Window* window = getWindowById(windowId);
+	if (!window) return;
+//	if (!window->isMovable_) return;
+
 	dragState_.windowId   = windowId;
 	dragState_.isDragging = true;
 	setActiveWindow(windowId);
 
-	// Calculate the offset between mouse position and window position
-	const Window* window = getWindowById(windowId);
-	if (!window) return;
 	dragState_.offsetX = mouseX_ - static_cast<int>(window->x_);
 	dragState_.offsetY = mouseY_ - static_cast<int>(window->y_);
 }
@@ -460,6 +482,41 @@ void PalmyraOS::kernel::WindowManager::renderMouseCursor()
 	kernel::brush_ptr->drawLine(mouseX_, mouseY_, mouseX_ + cursorWidth, mouseY_ + cursorHeight, Color::White);
 	kernel::brush_ptr->drawVLine(mouseX_, mouseY_, mouseY_ + cursorHeight, Color::White);
 	kernel::brush_ptr->drawHLine(mouseX_, mouseX_ + cursorWidth, mouseY_ + cursorHeight, Color::White);
+}
+
+int PalmyraOS::kernel::WindowManager::thread(uint32_t argc, char** argv)
+{
+
+	uint64_t start_time   = SystemClock::getNanoseconds();
+	uint64_t current_time = 0;
+
+	// FPS calculation
+	uint64_t frame_index    = 0;
+	uint64_t start_time_rtc = kernel::RTC::now();
+
+	while (true)
+	{
+		// wait update every 16.666 ms ~ 60 fps
+		current_time = SystemClock::getNanoseconds();
+		while (current_time - start_time < update_ns_)
+		{
+			current_time = SystemClock::getNanoseconds();
+			sched_yield();
+		}
+
+		// Calculate FPS as frames per second (1 second = 1,000,000,000 nanoseconds)
+		fps_ = static_cast<uint32_t>(frame_index++ / (kernel::RTC::now() - start_time_rtc));
+
+		// Call the composite function to render the windows
+		kernel::WindowManager::composite();
+
+		// Reset the start_time to current_time for the next frame update
+		start_time = current_time;
+
+		sched_yield();
+	}
+
+//	return 0;
 }
 
 

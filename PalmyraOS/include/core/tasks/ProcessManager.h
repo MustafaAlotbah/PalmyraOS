@@ -270,6 +270,8 @@ namespace PalmyraOS::kernel
 
 	  void initializeArgumentsForELF(uint32_t argc, char* const* argv);
 
+	  void initializeProcessInVFS();
+
    public:
 	  friend class TaskManager;
 
@@ -293,6 +295,10 @@ namespace PalmyraOS::kernel
 	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
 
 	  uint64_t upTime_{ 0 };
+
+	  uint32_t initial_brk = 0;
+	  uint32_t current_brk = 0;
+	  uint32_t max_brk     = 0;
   };
 
   /**
@@ -356,7 +362,7 @@ namespace PalmyraOS::kernel
 	  static uint32_t* interruptHandler(interrupts::CPURegisters*);
 
    private:
-	  static KVector<Process> processes_;           ///< Vector of processes
+	  static KVector<Process> processes_;        ///< Vector of processes
 	  static uint32_t      currentProcessIndex_; ///< Index of the current process
 	  static uint32_t      atomicSectionLevel_;  ///< Level of atomic section nesting
 	  static uint32_t      pid_count;            ///< Counter for assigning PIDs

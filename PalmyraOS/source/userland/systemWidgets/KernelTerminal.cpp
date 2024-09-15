@@ -1,6 +1,6 @@
 
 #include <elf.h>
-#include "userland/systemWidgets/KernelTermina.h"
+#include "userland/systemWidgets/KernelTerminal.h"
 
 #include "palmyraOS/unistd.h"       // Include PalmyraOS system calls
 #include "palmyraOS/time.h"            // For sleeping
@@ -12,7 +12,7 @@
 
 #include "libs/string.h"            // strlen
 
-//#include "palmyraOS/elf.h"
+#include "libs/palmyraSDK.h"        // Window, Window Frame
 
 // TODO: move these to libs (or put them in palmyraOS)
 #include "core/FrameBuffer.h"        // FrameBuffer
@@ -41,25 +41,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  UserHeapManager heap;
 
 	  // Set initial window position and dimensions
-	  size_t x = 240, y = 140, width = 640, height = 480;
-
-	  // Allocate a large buffer for double buffering in graphics
-	  size_t total_size = 301 * 4096;
-	  void* backBuffer = malloc(total_size);
-	  if (backBuffer == MAP_FAILED) perror("Failed to map memory\n");
-	  else printf("Success to map memory\n");
-
-	  // Create and set up the main application window
-	  uint32_t* frontBuffer = nullptr;
-	  uint32_t window_id = initializeWindow(&frontBuffer, x, y, width, height);
-	  if (window_id == 0) perror("Failed to initialize window\n");
-	  else printf("Success to initialize window\n");
-
-	  // Initialize graphics objects for rendering
-	  PalmyraOS::kernel::FrameBuffer  frameBuffer(width, height, frontBuffer, (uint32_t*)backBuffer);
-	  PalmyraOS::kernel::Brush        brush(frameBuffer);
-	  PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
-	  textRenderer.setPosition(5, 0);
+	  SDK::Window      window(240, 140, 640, 480, true, "Palmyra Terminal");
+	  SDK::WindowFrame windowFrame(window);
 
 	  // Setup terminal buffers and initial prompt
 	  auto stdoutBufferPtr = heap.createInstance<KernelTerminal::StdoutType>();
@@ -76,28 +59,17 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  {
 		  count++;
 
-		  // Render the terminal UI frame
-		  brush.fill(PalmyraOS::Color::Black);
-		  brush.fillRectangle(0, 0, width, 20, PalmyraOS::Color::DarkRed);
-		  brush.drawFrame(0, 0, width, height, PalmyraOS::Color::White);
-		  brush.drawHLine(0, width, 20, PalmyraOS::Color::White);
-		  textRenderer << PalmyraOS::Color::White;
-		  textRenderer.setCursor(1, 1);
-		  textRenderer << "Kernel Terminal\n";
-		  textRenderer.reset();
-		  textRenderer.setCursor(1, 21);
-
 		  // Render the prompt
-		  textRenderer << PalmyraOS::Color::White;
-		  textRenderer << stdoutBuffer.get();
+		  windowFrame.text() << PalmyraOS::Color::White;
+		  windowFrame.text() << stdoutBuffer.get();
 
 		  // Another loop to catch all keyboard events
 		  KeyboardEvent event;
 		  while (true)
 		  {
-			  event = nextKeyboardEvent(window_id);        // Fetch the next event
-			  if (event.key == '\0') break;                         // If no key is pressed, break the loop
-			  else if (event.key == 8) stdinBuffer.backspace();     // Handle backspace for corrections
+			  event = nextKeyboardEvent(window.getID());        // Fetch the next event
+			  if (event.key == '\0') break;                             // If no key is pressed, break the loop
+			  else if (event.key == 8) stdinBuffer.backspace();         // Handle backspace for corrections
 				  // Append any other key to our input buffer
 			  else
 			  {
@@ -134,13 +106,12 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  }
 
 		  // Display the current input and a blinking cursor for feedback
-		  textRenderer << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::White;
-		  if ((count >> 5) % 2) textRenderer << "_";
+		  windowFrame.text() << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::White;
+		  if ((count >> 5) % 2) windowFrame.text() << "_";
 
 
 		  // Refresh the display and yield control to other processes
-		  textRenderer.reset();
-		  frameBuffer.swapBuffers();
+		  windowFrame.swapBuffers();
 
 		  // Be a good citizen and yield some CPU time to other processes
 		  sched_yield();
