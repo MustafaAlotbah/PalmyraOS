@@ -60,9 +60,10 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 		if (epochTime_fd) ioctl(epochTime_fd, RTC_RD_TIME, &epochTime);
 	}
 	// Constants for clock hand lengths
-	constexpr int secondHandLength = 40;
-	constexpr int minuteHandLength = 35;
-	constexpr int hourHandLength   = 25;
+	constexpr int secondHandLength = 35;
+	constexpr int minuteHandLength = 30;
+	constexpr int hourHandLength   = 20;
+	constexpr int clockRadius      = 40;
 
 	// Center of the clock
 	const int centerX = width / 2;
@@ -83,6 +84,23 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 		textRenderer.setCursor(1, 21);
 
 
+
+		// Render the numbers around the clock
+		textRenderer << PalmyraOS::Color::Gray;
+		for (int i = 1; i <= 12; ++i)
+		{
+			int angle   = i * 30; // Each hour is 30 degrees apart
+			int numberX = centerX + static_cast<int>(clockRadius * math::sin(angle));
+			int numberY = centerY - static_cast<int>(clockRadius * math::cos(angle));
+
+			int xOffset = -8; // Adjust horizontally for better centering
+			int yOffset = -8; // Adjust vertically for better centering
+
+			// Set text position and render the number
+			textRenderer.setCursor(numberX + xOffset, numberY + yOffset);
+			textRenderer << i;
+		}
+
 		// Render the current time if available
 		if (epochTime_fd)
 		{
@@ -93,18 +111,23 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 			int minutes = epochTime.tm_min;
 			int hours   = epochTime.tm_hour % 12;
 
+			// Convert seconds, minutes, and hours to degrees
+			int secondAngle = seconds * 6;                // 360 degrees / 60 seconds = 6 degrees per second
+			int minuteAngle = minutes * 6;                // 360 degrees / 60 minutes = 6 degrees per minute
+			int hourAngle   = hours * 30 + (minutes / 2);    // 360 degrees / 12 hours = 30 degrees per hour
+
+
 			// Calculate endpoints for the second hand using lookup tables
-			int secondX = centerX + static_cast<int>(secondHandLength * math::sin_table[seconds]);
-			int secondY = centerY - static_cast<int>(secondHandLength * math::cos_table[seconds]);
+			int secondX = centerX + static_cast<int>(secondHandLength * math::sin(secondAngle));
+			int secondY = centerY - static_cast<int>(secondHandLength * math::cos(secondAngle));
 
 			// Calculate endpoints for the minute hand using lookup tables
-			int minuteX = centerX + static_cast<int>(minuteHandLength * math::sin_table[minutes]);
-			int minuteY = centerY - static_cast<int>(minuteHandLength * math::cos_table[minutes]);
+			int minuteX = centerX + static_cast<int>(minuteHandLength * math::sin(minuteAngle));
+			int minuteY = centerY - static_cast<int>(minuteHandLength * math::cos(minuteAngle));
 
 			// Calculate endpoints for the hour hand (approximate hour angle based on minutes)
-			int hourIndex = (hours * 5) + (minutes / 12); // approximate position of hour based on minutes
-			int hourX     = centerX + static_cast<int>(hourHandLength * math::sin_table[hourIndex]);
-			int hourY     = centerY - static_cast<int>(hourHandLength * math::cos_table[hourIndex]);
+			int hourX = centerX + static_cast<int>(hourHandLength * math::sin(hourAngle));
+			int hourY = centerY - static_cast<int>(hourHandLength * math::cos(hourAngle));
 
 			// Draw the clock hands
 			brush.drawLine(centerX, centerY, secondX, secondY, PalmyraOS::Color::LightBlue);     // Red second hand
