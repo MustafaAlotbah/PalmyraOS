@@ -12,6 +12,7 @@
 #include "core/files/VirtualFileSystem.h"
 #include "core/tasks/elf.h"
 #include "core/tasks/ProcessManager.h"
+#include "core/cpu.h"
 #include <new>
 
 // Globals
@@ -35,8 +36,10 @@ namespace PalmyraOS::kernel
   uint32_t                       kernelLastPage = 0;
 
   // Drivers
-  PalmyraOS::kernel::ATA* ata_primary_master = nullptr;
-  PalmyraOS::kernel::ATA* ata_primary_slave  = nullptr;
+  PalmyraOS::kernel::ATA* ata_primary_master   = nullptr;
+  PalmyraOS::kernel::ATA* ata_primary_slave    = nullptr;
+  PalmyraOS::kernel::ATA* ata_secondary_master = nullptr;
+  PalmyraOS::kernel::ATA* ata_secondary_slave  = nullptr;
 
 
 }
@@ -227,6 +230,8 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 	 * Instead, we use PhysicalMemory::allocateFrames()
 	*/
 
+	auto& textRenderer = *kernel::textRenderer_ptr;
+
 	// Initialize and ensure kernel directory is aligned ~ 8 KiB = 3 frames
 	uint32_t PagingDirectoryFrames = (sizeof(PagingDirectory) >> PAGE_BITS) + 1;
 	kernel::kernelPagingDirectory_ptr = (PagingDirectory*)PhysicalMemory::allocateFrames(PagingDirectoryFrames);
@@ -237,6 +242,8 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 
 	// Map kernel space by identity
 	{
+		textRenderer << "Kernel.." << SWAP_BUFF();
+		kernel::CPU::delay(2'500'000'000L);
 		auto kernelSpace = (uint32_t)PhysicalMemory::allocateFrame();
 		kernel::kernelLastPage = kernelSpace >> PAGE_BITS;
 		kernel::kernelPagingDirectory_ptr->mapPages(
@@ -247,6 +254,8 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 		);
 	}
 
+	textRenderer << "Tables.." << SWAP_BUFF();
+	kernel::CPU::delay(2'500'000'000L);
 	// Initialize all kernel's directory tables, to avoid Recursive Page Table Mapping Problem
 	size_t   max_pages = (x86_multiboot_info->mem_upper >> 12) + 1; // Kilobytes to 4 Megabytes
 	for (int i         = 0; i < max_pages; ++i)
@@ -255,6 +264,8 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 	}
 
 	// Map video memory by identity
+	textRenderer << "Video.." << SWAP_BUFF();
+	kernel::CPU::delay(2'500'000'000L);
 	auto* vbe_mode_info = (vbe_mode_info_t*)(uintptr_t)x86_multiboot_info->vbe_mode_info;
 	{
 		uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
@@ -267,9 +278,9 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
 		);
 	}
 
-
-
 	// Switch to the new kernel paging directory and initialize paging
+	textRenderer << "switching.." << SWAP_BUFF();
+	kernel::CPU::delay(2'500'000'000L);
 	PalmyraOS::kernel::PagingManager::switchPageDirectory(kernel::kernelPagingDirectory_ptr);
 	PalmyraOS::kernel::PagingManager::initialize();
 
@@ -327,182 +338,156 @@ void PalmyraOS::kernel::testMemory()
 
 void PalmyraOS::kernel::initializeDrivers()
 {
+
+	auto& textRenderer = *kernel::textRenderer_ptr;
+
 	LOG_INFO("Start");
 
-	ata_primary_master = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Master);
-	ata_primary_slave  = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Slave);
+	ata_primary_master   = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Master);
+	ata_primary_slave    = heapManager.createInstance<ATA>(0x1F0, ATA::Type::Slave);
+	ata_secondary_master = heapManager.createInstance<ATA>(0x170, ATA::Type::Master);
+	ata_secondary_slave  = heapManager.createInstance<ATA>(0x170, ATA::Type::Slave);
 
-	if (!ata_primary_master)
-	{
-		LOG_ERROR("Failed to allocate memory for ATA Primary Master Device!");
-		return;
-	}
+	auto atas = {
+		std::pair(ata_primary_master, "pM"),
+		std::pair(ata_primary_slave, "pS"),
+		std::pair(ata_secondary_master, "sM"),
+		std::pair(ata_secondary_slave, "sS")
+	};
 
-	if (!ata_primary_slave)
+	for (auto& [ata, name] : atas)
 	{
-		LOG_ERROR("Failed to allocate memory for ATA Primary Slave Device!");
-		return;
-	}
+		if (!ata)
+		{
+			LOG_ERROR("Failed to allocate memory for ATA %s Device!", name);
+			continue; // TODO: or handle in a different way
+		}
 
-	if (ata_primary_master->identify(1000))
-	{
-		char buffer[512];
-		ata_primary_master->readSector(0, (uint8_t*)buffer, 1000);
-		LOG_INFO("Sector 0: '%s'", buffer);
-	}
+		textRenderer << "\nAt [" << name << "] ";
+		if (!ata->identify(1000))
+		{
+			textRenderer << " NONE ";
+			continue;
+		}
 
-	if (ata_primary_slave->identify(1000))
-	{
+		// Identified
+
 		LOG_INFO("ATA Device Identified: "
 				 "Model [%s], Serial [%s], Firmware [%s], Sectors [%zu], Space [%zu MiB]",
-				 ata_primary_slave->getModelNumber(),
-				 ata_primary_slave->getSerialNumber(),
-				 ata_primary_slave->getFirmwareVersion(),
-				 ata_primary_slave->getSectors28Bit(),
-				 ata_primary_slave->getStorageSize() / 1048576
+				 ata->getModelNumber(),
+				 ata->getSerialNumber(),
+				 ata->getFirmwareVersion(),
+				 ata->getSectors28Bit(),
+				 ata->getStorageSize() / 1048576
 		);
-
-		char buffer[512];
-		ata_primary_slave->readSector(0, (uint8_t*)buffer, 1000);
-		LOG_INFO("Sector 0: '%s'", buffer);
+		textRenderer << "Model [" << ata->getModelNumber()
+					 << "] Serial [" << ata->getSerialNumber()
+					 << "] Firmware [" << ata->getFirmwareVersion()
+					 << "] Sectors [" << ata->getSectors28Bit()
+					 << "] Space [" << (ata->getStorageSize() / 1048576)
+					 << " MiB]";
 	}
 
+	textRenderer << "\n";
 }
 
 void PalmyraOS::kernel::initializePartitions()
 {
 	LOG_INFO("Start");
+	// dereference graphics tools
+	auto& textRenderer = *kernel::textRenderer_ptr;
 
 	if (!kernel::ata_primary_master)
 	{
+		textRenderer << "No ATA..";
 		LOG_WARN("ATA Primary Master is not available. Cannot initialize Partitions.");
 		return;
 	}
 
-	// dereference graphics tools
-	auto& textRenderer = *kernel::textRenderer_ptr;
 
+	auto atas = {
+		std::pair(kernel::ata_primary_master, KString("/dev/sda")),
+		std::pair(kernel::ata_primary_slave, KString("/dev/sdb")),
+		std::pair(kernel::ata_secondary_master, KString("/dev/sdc")),
+		std::pair(kernel::ata_secondary_slave, KString("/dev/sde"))
+	};
 
-	// Read the Master Boot Record (MBR)
-	uint8_t masterSector[512];
-	kernel::ata_primary_master->readSector(0, masterSector, 100);
-	auto mbr = kernel::vfs::MasterBootRecord(masterSector);
-
-	// Loop through partition entries
-	for (int i = 0; i < 4; ++i)
+	for (auto& [ata, name] : atas)
 	{
-		// get MBR entry
-		auto mbr_entry = mbr.getEntry(i);
-		LOG_INFO("ATA Primary Master: Partition %d:", i);
-		LOG_INFO(
-			"bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
-			mbr_entry.isBootable,
-			kernel::vfs::MasterBootRecord::toString(mbr_entry.type),
-			mbr_entry.lbaStart,
-			mbr_entry.lbaCount * 512 / 1048576
-		);
+		// Read the Master Boot Record (MBR)
+		uint8_t masterSector[512];
+		ata->readSector(0, masterSector, 100);
+		auto mbr = kernel::vfs::MasterBootRecord(masterSector);
 
-		// If we have a valid FAT32 entry
-		if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::FAT32_LBA)
+		// Loop through partition entries
+		for (int i = 0; i < 4; ++i)
 		{
+			if (!ata) continue; // should not evaluate to true, but for the sake of completeness
 
-
-			// TODO factor out to another function for FAT32 Partitions
-
-			// Initialize a Virtual Disk (Guard against writing outside boundaries)
-			auto virtualDisk = heapManager.createInstance<kernel::VirtualDisk<kernel::ATA>>(
-				*kernel::ata_primary_master,
+			// get MBR entry
+			auto mbr_entry = mbr.getEntry(i);
+			textRenderer << "[" << i << ": ";
+			LOG_INFO("ATA Primary Master: Partition %d:", i);
+			LOG_INFO(
+				"bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
+				mbr_entry.isBootable,
+				kernel::vfs::MasterBootRecord::toString(mbr_entry.type),
 				mbr_entry.lbaStart,
-				mbr_entry.lbaCount
+				mbr_entry.lbaCount * 512 / 1048576
 			);
-			// kernel::VirtualDisk<kernel::ATA> virtualDisk(*kernel::ata_primary_master, mbr_entry.lbaStart, mbr_entry.lbaCount);
 
-			// Pass the virtual disk to Fat32 Partition TODO add to partitions vector somewhere
-			auto fat32_p = heapManager
-				.createInstance<vfs::FAT32Partition>(*virtualDisk, mbr_entry.lbaStart, mbr_entry.lbaCount);
-			auto& fat32 = *fat32_p;
-			// TODO: Mounting System
-
-			auto rootNode = heapManager.createInstance<vfs::FAT32Directory>(
-				fat32,
-				2,
-				vfs::InodeBase::Mode::USER_READ,
-				vfs::InodeBase::UserID::ROOT,
-				vfs::InodeBase::GroupID::ROOT
-			);
-			vfs::VirtualFileSystem::setInodeByPath(KString("/dev/sda"), rootNode);
-
-			vfs::VirtualFileSystem::createDirectory(KString("/dev/sdb"), vfs::InodeBase::Mode::USER_READ);
-
-
-
-			// TODO: Tests
+			// If we have a valid FAT32 entry
+			if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::FAT32_LBA)
 			{
-				// Read some well known files
-//				auto data1 = fat32.readFile(15, 8);
-//				auto data2 = fat32.readFile(11, 8);
-//				auto data3 = fat32.readFile(8, 129);
+				// TODO factor out to another function for FAT32 Partitions
+				// Initialize a Virtual Disk (Guard against writing outside boundaries)
+				auto virtualDisk = heapManager.createInstance<kernel::VirtualDisk<kernel::ATA>>(
+					*ata,
+					mbr_entry.lbaStart,
+					mbr_entry.lbaCount
+				);
 
-				// Log root entries
-				auto entries = fat32.getDirectoryEntries(2);
-				for (auto& _entry : entries)
+				// Pass the virtual disk to Fat32 Partition TODO add to partitions vector somewhere
+				auto fat32_p = heapManager.createInstance<vfs::FAT32Partition>(
+					*virtualDisk, mbr_entry.lbaStart, mbr_entry.lbaCount
+				);
+				auto& fat32 = *fat32_p;
+				// TODO: Mounting System
+				// TODO: check if the type is FAT32 not FAT32 etc..
+
+				if (fat32.getType() == vfs::FAT32Partition::Type::Invalid) textRenderer << "Invalid Fat (X)] ";
+				else if (fat32.getType() == vfs::FAT32Partition::Type::FAT12) textRenderer << "FAT12 (X)] ";
+				else if (fat32.getType() == vfs::FAT32Partition::Type::FAT16) textRenderer << "FAT16 (X)] ";
+				if (fat32.getType() != vfs::FAT32Partition::Type::FAT32)
 				{
-					LOG_INFO("%s", _entry.getNameLong().c_str());
+					// Invalid
+					heapManager.free(fat32_p);
+					continue;
 				}
 
-				// TODO: Try to get some folders/files by path
-				if (false)
-				{
-					auto a = fat32.resolvePathToEntry(kernel::KString("/"));
-					auto b = fat32.resolvePathToEntry(kernel::KString("/folder"));
-					auto c = fat32.resolvePathToEntry(kernel::KString("/folderx"));
-					auto d = fat32.resolvePathToEntry(kernel::KString("/folder/subfolder"));
-				}
+				textRenderer << "FAT32]";
+				auto rootNode = heapManager.createInstance<vfs::FAT32Directory>(
+					fat32,
+					2,
+					vfs::InodeBase::Mode::USER_READ,
+					vfs::InodeBase::UserID::ROOT,
+					vfs::InodeBase::GroupID::ROOT
+				);
+				vfs::VirtualFileSystem::setInodeByPath(name, rootNode);
 
-				// TODO: Test Reading a File
-				if (true)
-				{
-//					auto e            = fat32.resolvePathToEntry(kernel::KString("/folder2/fprint2.elf"));
-					auto e            = fat32.resolvePathToEntry(kernel::KString("/folder2/fprint_args.elf"));
-					auto file_content = fat32.readFile(e.getFirstCluster(), e.getFileSize());
+			}
+			else if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::NTFS)
+			{
+				textRenderer << "NTFS (X)]"; // Unsupported
+			}
+			else
+			{
+				textRenderer << "(X)]"; // Unsupported and unrecognized
+			}
 
-					char* argv[] = {
-						const_cast<char*>("/folder2/fprint_args.elf"),
-						const_cast<char*>("arg1"),
-						const_cast<char*>("arg2"),
-						nullptr
-					};
-					kernel::TaskManager::execv_elf(
-						file_content,
-						kernel::Process::Mode::User,
-						kernel::Process::Priority::Low,
-						3,
-						argv
-					);
-//					loadElf(file_content);
-//					file_content.push_back('\0');
-//					textRenderer << "\"" << (char*)file_content.data() << "\"\n" << SWAP_BUFF();
-//					while (true);
-				}
+		}
+	}
 
-				// TODO: Test Changing File size
-				if (false)
-				{
-					auto e     = fat32.resolvePathToEntry(kernel::KString("/exp1.txt"));
-					auto data4 = fat32.readFile(e.getFirstCluster(), e.getFileSize());
-					e.setFileSize(8);
-					// fat32.flushEntry(e);
-				}
-
-				// TODO: Test Creating a file
-				if (false)
-				{
-					auto b = fat32.resolvePathToEntry(kernel::KString("/folder"));
-					if (fat32.createFile(b, kernel::KString("milx.bs")))
-					{
-						textRenderer << "created file!\n" << SWAP_BUFF();
-					}
-				}
 
 }
 

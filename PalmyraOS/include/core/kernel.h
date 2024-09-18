@@ -55,6 +55,8 @@ namespace PalmyraOS::kernel
   extern uint32_t                       kernelLastPage;
   extern PalmyraOS::kernel::ATA* ata_primary_master;
   extern PalmyraOS::kernel::ATA* ata_primary_slave;
+  extern PalmyraOS::kernel::ATA* ata_secondary_master;
+  extern PalmyraOS::kernel::ATA* ata_secondary_slave;
 
   /**
    * @brief Initializes the graphics system.
