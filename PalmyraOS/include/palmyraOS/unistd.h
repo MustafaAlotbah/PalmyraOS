@@ -19,10 +19,16 @@
 
 
 /* Specific Interrupts */
-#define INT_INIT_WINDOW 9595
-#define INT_CLOSE_WINDOW 9596
-#define INT_NEXT_KEY_EVENT 9597
-#define POSIX_INT_POSIX_SPAWN 9598    // posix_spawn (in linux, it's not its own syscall)
+
+// 95XX Windows
+#define INT_INIT_WINDOW 9500
+#define INT_CLOSE_WINDOW 9501
+#define INT_NEXT_KEY_EVENT 9502
+#define INT_NEXT_MOUSE_EVENT 9503
+#define INT_GET_WINDOW_STATUS 9504
+
+// 96XX Processes
+#define POSIX_INT_POSIX_SPAWN 9600    // posix_spawn (in linux, it's not its own syscall)
 
 
 /* POSIX Interrupts */
@@ -157,6 +163,15 @@ struct palmyra_window
 	char     title[50];
 };
 
+struct palmyra_window_status
+{
+	uint32_t x        = 0;
+	uint32_t y        = 0;
+	uint32_t width    = 0;
+	uint32_t height   = 0;
+	bool     isActive = false;
+};
+
 uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow);
 
 /**
@@ -167,6 +182,11 @@ uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow);
 void closeWindow(uint32_t windowID);
 
 KeyboardEvent nextKeyboardEvent(uint32_t windowID);
+
+MouseEvent nextMouseEvent(uint32_t windowID);
+
+palmyra_window_status getStatus(uint32_t windowID);
+
 
 /**
  * @brief Yields the processor, allowing other threads to run.
@@ -219,7 +239,7 @@ struct linux_dirent
 # define DT_CHR        2
 # define DT_DIR        4
 # define DT_BLK        6
-# define DT_REG        8
+# define DT_REG        8 // file
 
 
 int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count);

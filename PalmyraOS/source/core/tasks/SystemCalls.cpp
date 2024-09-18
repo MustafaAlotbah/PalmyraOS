@@ -17,6 +17,7 @@
 #include "core/files/VirtualFileSystem.h"
 
 #include "core/peripherals/Logger.h"
+#include "userland/userland.h"
 
 
 // Define the static member systemCallHandlers_
@@ -55,11 +56,12 @@ void PalmyraOS::kernel::SystemCallsManager::initialize()
 	systemCallHandlers_[POSIX_INT_WAITPID]     = &SystemCallsManager::handleWaitPID;
 	systemCallHandlers_[POSIX_INT_POSIX_SPAWN] = &SystemCallsManager::handleSpawn;
 
-
 	// Custom
 	systemCallHandlers_[INT_INIT_WINDOW]  = &SystemCallsManager::handleInitWindow;
 	systemCallHandlers_[INT_CLOSE_WINDOW] = &SystemCallsManager::handleCloseWindow;
 	systemCallHandlers_[INT_NEXT_KEY_EVENT] = &SystemCallsManager::handleNextKeyboardEvent;
+	systemCallHandlers_[INT_NEXT_MOUSE_EVENT]  = &SystemCallsManager::handleNextMouseEvent;
+	systemCallHandlers_[INT_GET_WINDOW_STATUS] = &SystemCallsManager::handleGetWindowStatus;
 
 	// Adopted from Linux
 	systemCallHandlers_[LINUX_INT_GETDENTS] = &SystemCallsManager::handleGetdents;
@@ -420,10 +422,48 @@ void PalmyraOS::kernel::SystemCallsManager::handleNextKeyboardEvent(PalmyraOS::k
 	uint32_t windowId = regs->ebx;
 	auto     event    = (KeyboardEvent*)regs->ecx;
 
-	// Check if userBuffer is a valid pointer
+	// Check if event is a valid pointer
 	if (!isValidAddress(event)) return;
 
 	*event = WindowManager::popKeyboardEvent(windowId);
+
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleNextMouseEvent(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	// Extract arguments from registers
+	uint32_t windowId = regs->ebx;
+	auto     event    = (MouseEvent*)regs->ecx;
+
+	// Check if event is a valid pointer
+	if (!isValidAddress(event)) return;
+
+	*event = WindowManager::popMouseEvent(windowId);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetWindowStatus(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+	uint32_t windowId = regs->ebx;
+	auto     status   = (palmyra_window_status*)regs->ecx;
+
+	// Check if status is a valid pointer
+	if (!isValidAddress(status)) return;
+
+	// TODO check if the window belongs actually to current process
+	auto window = WindowManager::getWindowById(windowId);
+	if (!window) return;
+
+	auto [x, y]          = window->getPosition();
+	auto [width, height] = window->getSize();
+	bool isActive        = WindowManager::getActiveWindowId() == windowId;
+
+	*status = {
+		.x = x,
+		.y = y,
+		.width = width,
+		.height = height,
+		.isActive = isActive
+	};
 
 }
 
@@ -441,7 +481,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
 	if (!isValidAddress((char*)bufferPointer + count)) return;
 
 	// TODO: uncap and allow for iterative
-	count = count > 512 ? 512 : count;
+	count = count > 4096 ? 4096 : count;
 
 	// Get the file associated with the file descriptor
 	auto file = TaskManager::getCurrentProcess()->fileTableDescriptor_.getOpenFile(fileDescriptor);
@@ -720,14 +760,6 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 		return;
 	}
 
-
-	// Count the number of arguments in argv
-	int argc = 0;
-	while (argv[argc] != nullptr)
-	{
-		argc++;
-	}
-
 	LOG_INFO("Spawning %s", path);
 
 	// Execute the ELF file as a new process
@@ -835,28 +867,31 @@ void PalmyraOS::kernel::SystemCallsManager::handleSetThreadArea(PalmyraOS::kerne
 	// Extract the pointer to the user descriptor (TLS descriptor) from the registers
 //	auto* userDescriptor = reinterpret_cast<UserDescriptor*>(regs->ebx);
 
-	LOG_DEBUG("SYSCALL set_thread_area(0x%X)", regs->ebx);
+	LOG_WARN("SYSCALL set_thread_area(0x%X)", regs->ebx);
 
 	regs->eax = (uint32_t)-1;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetUID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	LOG_WARN("SYSCALL handleGetUID");
 	regs->eax = 1000;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetGID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	LOG_WARN("SYSCALL handleGetGID");
 	regs->eax = 1000;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetEUID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	LOG_WARN("SYSCALL handleGetEUID");
 	regs->eax = 1000;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetEGID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	LOG_WARN("SYSCALL handleGetEGID");
 	regs->eax = 1000;
 }
-

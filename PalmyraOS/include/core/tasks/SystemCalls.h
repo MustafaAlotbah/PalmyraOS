@@ -23,6 +23,7 @@ namespace PalmyraOS::kernel
 
 	  static bool isValidAddress(void* addr);
 
+	  /* POSIX Interrupts */
 	  static void handleExit(interrupts::CPURegisters* regs);
 	  static void handleGetPid(interrupts::CPURegisters* regs);
 	  static void handleYield(interrupts::CPURegisters* regs);
@@ -37,16 +38,20 @@ namespace PalmyraOS::kernel
 	  static void handleLongSeek(interrupts::CPURegisters* regs);
 	  static void handleIoctl(interrupts::CPURegisters* regs);
 
+	  /* From Linux */
 	  static void handleGetdents(interrupts::CPURegisters* regs);
+	  static void handleArchPrctl(interrupts::CPURegisters* regs);
 
+	  /* PalmyraOS Specific Interrupts */
 	  static void handleInitWindow(interrupts::CPURegisters* regs);
 	  static void handleCloseWindow(interrupts::CPURegisters* regs);
 	  static void handleNextKeyboardEvent(interrupts::CPURegisters* regs);
+	  static void handleNextMouseEvent(interrupts::CPURegisters* regs);
+	  static void handleGetWindowStatus(interrupts::CPURegisters* regs);
 
 	  static void handleWaitPID(interrupts::CPURegisters* regs);
 	  static void handleSpawn(interrupts::CPURegisters* regs);
 
-	  static void handleArchPrctl(interrupts::CPURegisters* regs);
 	  static void handleBrk(interrupts::CPURegisters* regs);
 	  static void handleSetThreadArea(interrupts::CPURegisters* regs);
 

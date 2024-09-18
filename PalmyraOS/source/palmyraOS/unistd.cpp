@@ -78,7 +78,6 @@ void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t of
 	return result;
 }
 
-
 void closeWindow(uint32_t windowID)
 {
 	register uint32_t syscall_no asm("eax") = INT_CLOSE_WINDOW;
@@ -113,6 +112,50 @@ KeyboardEvent nextKeyboardEvent(uint32_t windowID)
 		);
 
 	return event;
+}
+
+MouseEvent nextMouseEvent(uint32_t windowID)
+{
+	register uint32_t syscall_no asm("eax") = INT_NEXT_MOUSE_EVENT;
+	register uint32_t windowId asm("ebx")   = windowID;
+
+	MouseEvent        event;
+	register uint32_t eventPtr asm("ecx") = reinterpret_cast<uint32_t>(&event);
+
+	// TODO
+	asm volatile(
+		"int $0x80"  // Software interrupt to trigger the syscall
+		:            // No output operands
+		:
+		"a"(syscall_no),
+		"b"(windowId),
+		"c"(eventPtr)
+		: "memory"   // Clobbered registers
+		);
+
+	return event;
+}
+
+palmyra_window_status getStatus(uint32_t windowID)
+{
+	register uint32_t syscall_no asm("eax") = INT_GET_WINDOW_STATUS;
+	register uint32_t windowId asm("ebx")   = windowID;
+
+	palmyra_window_status status;
+	register uint32_t     eventPtr asm("ecx") = reinterpret_cast<uint32_t>(&status);
+
+	// TODO
+	asm volatile(
+		"int $0x80"  // Software interrupt to trigger the syscall
+		:            // No output operands
+		:
+		"a"(syscall_no),
+		"b"(windowId),
+		"c"(eventPtr)
+		: "memory"   // Clobbered registers
+		);
+
+	return status;
 }
 
 int sched_yield()

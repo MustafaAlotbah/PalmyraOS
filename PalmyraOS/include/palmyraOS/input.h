@@ -12,13 +12,15 @@ struct KeyboardEvent
 	bool isCtrlDown  = false;
 	bool isShiftDown = false;
 	bool isAltDown   = false;
+	bool isValid = false;
 };
 
 struct MouseEvent
 {
-	int  deltaX       = 0;
-	int  deltaY       = 0;
-	bool isLeftDown   = false;
+	int  x          = 0;
+	int  y          = 0;
+	bool isLeftDown = false;
 	bool isRightDown  = false;
 	bool isMiddleDown = false;
+	bool isEvent    = false; // if event, it was queued, if false, only position and left key are valid.
 };
