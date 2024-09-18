@@ -1,6 +1,7 @@
 
 #include "core/peripherals/Mouse.h"
 #include "core/tasks/WindowManager.h"
+#include "core/cpu.h"
 
 
 ///region Static Variables
@@ -11,6 +12,8 @@ PalmyraOS::kernel::ports::BytePort  PalmyraOS::kernel::Mouse::dataPort_(0x60);
 uint8_t PalmyraOS::kernel::Mouse::buffer_[3]{ 0 };
 uint8_t PalmyraOS::kernel::Mouse::offset_      = 0;
 
+uint64_t PalmyraOS::kernel::Mouse::count_ = 0;
+
 ///endregion
 
 
@@ -19,33 +22,132 @@ uint8_t PalmyraOS::kernel::Mouse::offset_      = 0;
 
 bool PalmyraOS::kernel::Mouse::initialize()
 {
-	// 1: Enable the mouse device (PS2_ENABLE_SECOND_PORT)
+
+	// Disable mouse interrupts during initialization
+	waitForInputBufferEmpty();
+	commandPort_.write(0x20);  // Command to read controller configuration byte
+
+	waitForOutputBufferFull();
+	uint8_t commandByte = dataPort_.read();
+
+	// Modify the command byte:
+	commandByte &= ~0x02; // Disable mouse interrupt (clear bit 1)
+	commandByte |= 0x01;  // Ensure keyboard interrupt remains enabled (bit 0)
+	commandByte &= ~0x10; // Ensure keyboard clock is enabled (clear bit 4)
+	commandByte &= ~0x20; // Ensure mouse clock is enabled (clear bit 5)
+
+	// Write the modified command byte back
+	waitForInputBufferEmpty();
+	commandPort_.write(0x60);  // Command to write controller configuration byte
+	waitForInputBufferEmpty();
+	dataPort_.write(commandByte);
+
+	// Enable the auxiliary (mouse) device
+	waitForInputBufferEmpty();
 	commandPort_.write(0xA8);
-	dataPort_.read();                // Flush the output buffer
 
-	// 2. Set controller configuration byte
-	commandPort_.write(0x20);                // Command to read controller configuration
-	uint8_t status = dataPort_.read() | 0x03;   // Modify configuration to enable interrupt on IRQ12
-	commandPort_.write(0x60);                // Command to write controller configuration
-	dataPort_.write(status);
+	// Clear any residual data
+	while (commandPort_.read() & 0x01)
+	{
+		dataPort_.read();
+	}
 
-	// Enable mouse packet streaming
-	commandPort_.write(0xD4);
-	dataPort_.write(0xF4);        // Enable reporting
+	// Reset the mouse
+	waitForInputBufferEmpty();
+	commandPort_.write(0xD4);  // Send to mouse
 
-	if (!expectACK()) return false;
+	waitForInputBufferEmpty();
+	dataPort_.write(0xFF);  // Mouse Reset command
 
-	// Set the Mouse interrupt handler anyway (TODO move to end)
-	interrupts::InterruptController::setInterruptHandler(0x2c, &handleInterrupt);
+	waitForOutputBufferFull();
+	if (dataPort_.read() != 0xFA)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Wait for self-test completion code
+	waitForOutputBufferFull();
+	if (dataPort_.read() != 0xAA)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Mouse sends another ACK after reset
+	waitForOutputBufferFull();
+	if (dataPort_.read() != 0x00)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Set default settings (optional)
+	waitForInputBufferEmpty();
+	commandPort_.write(0xD4);  // Send to mouse
+
+	waitForInputBufferEmpty();
+	dataPort_.write(0xF6);  // Set defaults
+
+	waitForOutputBufferFull();
+	if (dataPort_.read() != 0xFA)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Enable data reporting
+	waitForInputBufferEmpty();
+	commandPort_.write(0xD4);  // Send to mouse
+
+	waitForInputBufferEmpty();
+	dataPort_.write(0xF4);  // Enable Data Reporting
+
+	waitForOutputBufferFull();
+	if (dataPort_.read() != 0xFA)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Re-enable mouse interrupts after initialization
+	waitForInputBufferEmpty();
+	commandPort_.write(0x20);  // Command to read controller configuration byte
+
+	waitForOutputBufferFull();
+	commandByte = dataPort_.read();
+
+	commandByte |= 0x02;  // Enable mouse interrupt (set bit 1)
+
+	waitForInputBufferEmpty();
+	commandPort_.write(0x60);  // Command to write controller configuration byte
+	waitForInputBufferEmpty();
+	dataPort_.write(commandByte);
+
+	// Set the mouse interrupt handler
+	interrupts::InterruptController::setInterruptHandler(0x2C, &handleInterrupt);
 
 	return true;
 }
 
 uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+	// Check if data is available
+	uint8_t status = commandPort_.read();
+//	if (!(status & 0x01)) {
+//		// No data available
+//		return (uint32_t*)regs;
+//	}
 
-	uint8_t status = commandPort_.read();              // Read the next byte from the mouse data port
-	if (!(status & 0x20)) return (uint32_t*)regs;      // Check if the PS/2 data is from mouse
+	// Check if the data is from the mouse
+	if (!(status & 0x20))
+	{
+		// Data is not from mouse
+		return (uint32_t*)regs;
+	}
+
+	count_++;
+
 
 	uint8_t mouse_in = dataPort_.read();
 	// process mouse packet
@@ -71,6 +173,8 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 			break;
 
 		default:
+			// Should not reach here, reset offset
+			offset_ = 0;
 			break;
 	}
 
@@ -91,7 +195,8 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 			-deltaY,
 			isLeftDown,
 			isRightDown,
-			isMiddleDown
+			isMiddleDown,
+			true
 		}
 	);
 
@@ -100,15 +205,25 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 
 bool PalmyraOS::kernel::Mouse::expectACK()
 {
-	waitForOutputBuffer();
+	waitForOutputBufferFull();
 	uint8_t response = dataPort_.read();
-	return (response == 0xFA); // 0xFA is ACK
+	return (response == 0xFA);  // 0xFA is ACK
 }
 
-void PalmyraOS::kernel::Mouse::waitForOutputBuffer()
+void PalmyraOS::kernel::Mouse::waitForInputBufferEmpty()
 {
-	// Wait until Output Buffer is full
-	while (!(commandPort_.read() & 0x01));
+	while (commandPort_.read() & 0x02)
+	{
+		// Wait until Bit 1 (Input Buffer Status) is clear
+	}
+}
+
+void PalmyraOS::kernel::Mouse::waitForOutputBufferFull()
+{
+	while (!(commandPort_.read() & 0x01))
+	{
+		// Wait until Bit 0 (Output Buffer Status) is set
+	}
 }
 
 

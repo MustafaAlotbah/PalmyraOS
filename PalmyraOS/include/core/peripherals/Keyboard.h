@@ -33,10 +33,16 @@ namespace PalmyraOS::kernel
 	  static bool initialize();
 	  static bool togglKey(LockKey lockKey);
 
+	  static inline uint64_t getCount()
+	  { return counter_; }
+
    private:
 	  static bool updateLockKeyStatus();
 	  static void initializeLockKeys();
 	  static void toggleLockKeys(uint8_t keyCode);
+
+	  static void waitForInputBufferEmpty();
+	  static void waitForOutputBufferFull();
 
 	  static uint32_t* handleInterrupt(interrupts::CPURegisters* regs);
    private:
@@ -44,7 +50,6 @@ namespace PalmyraOS::kernel
 	  static ports::BytePort  commandPort_;
 	  static ports::BytePort  dataPort_;
 
-	  static bool   initialized_;
 	  static size_t buffer_last_index_;
 	  static char   buffer_[bufferSize];
 
@@ -54,6 +59,7 @@ namespace PalmyraOS::kernel
 	  static bool isCapsLockOn_;
 	  static bool isNumLockOn_;
 	  static bool isScrollLockOn_;
+	  static uint64_t counter_;
   };
 
 

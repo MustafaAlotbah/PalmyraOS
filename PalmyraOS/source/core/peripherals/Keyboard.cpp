@@ -23,48 +23,68 @@ const char qwertzToAscii[128] = {
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::Keyboard::commandPort_(0x64);
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::Keyboard::dataPort_(0x60);
 
-bool   PalmyraOS::kernel::Keyboard::initialized_                  = false;
 size_t PalmyraOS::kernel::Keyboard::buffer_last_index_            = 0;
 char   PalmyraOS::kernel::Keyboard::buffer_[Keyboard::bufferSize] = { 0 };
 
-bool PalmyraOS::kernel::Keyboard::isShiftPressed_ = false;
-bool PalmyraOS::kernel::Keyboard::isCtrlPressed_  = false;
-bool PalmyraOS::kernel::Keyboard::isAltPressed_   = false;
-bool PalmyraOS::kernel::Keyboard::isCapsLockOn_   = false;
-bool PalmyraOS::kernel::Keyboard::isNumLockOn_    = false;
-bool PalmyraOS::kernel::Keyboard::isScrollLockOn_ = false;
+bool     PalmyraOS::kernel::Keyboard::isShiftPressed_ = false;
+bool     PalmyraOS::kernel::Keyboard::isCtrlPressed_  = false;
+bool     PalmyraOS::kernel::Keyboard::isAltPressed_   = false;
+bool     PalmyraOS::kernel::Keyboard::isCapsLockOn_   = false;
+bool     PalmyraOS::kernel::Keyboard::isNumLockOn_    = false;
+bool     PalmyraOS::kernel::Keyboard::isScrollLockOn_ = false;
+uint64_t PalmyraOS::kernel::Keyboard::counter_        = 0;
 
 bool PalmyraOS::kernel::Keyboard::initialize()
 {
-	initialized_ = false;
+	// Disable the keyboard
+	waitForInputBufferEmpty();
+	commandPort_.write(0xAD);
 
-	while (commandPort_.read() & 0x2);        // Wait to be ready
+	// Clear the output buffer
+	while (commandPort_.read() & 0x01)
+	{
+		dataPort_.read();
+	}
 
-	commandPort_.write(0xAD);                // DISABLE
+	// Read the current command byte
+	waitForInputBufferEmpty();
+	commandPort_.write(0x20);  // Command to read controller configuration byte
 
-	// Clear previously pressed keys from the PIC's buffer
-	while (commandPort_.read() & 0x1) dataPort_.read();
+	waitForOutputBufferFull();
+	uint8_t commandByte = dataPort_.read();
 
-	commandPort_.write(0xAE);                // Enable the keyboard
+	// Modify the command byte:
+	commandByte |= 0x01;  // Enable keyboard interrupt (bit 0)
+	commandByte |= 0x02;  // Ensure mouse interrupt is enabled (bit 1)
+	commandByte &= ~0x10; // Enable keyboard clock (clear bit 4)
+	commandByte &= ~0x20; // Ensure mouse clock is enabled (clear bit 5)
 
-	commandPort_.write(0x20);                // Command to get the current state
-	uint8_t status = dataPort_.read();
-	status = (status | 1) & ~0x10;
-	commandPort_.write(0x60);                // Command to set state
-	dataPort_.write(status);                 // Write the modified state
+	// Write the modified command byte back
+	waitForInputBufferEmpty();
+	commandPort_.write(0x60);  // Command to write controller configuration byte
+	waitForInputBufferEmpty();
+	dataPort_.write(commandByte);
 
-	dataPort_.write(0xF4);                   // Enable the scanning
+	// Enable the keyboard
+	waitForInputBufferEmpty();
+	commandPort_.write(0xAE);
+
+	// Enable scanning
+	waitForInputBufferEmpty();
+	dataPort_.write(0xF4);
+
+	waitForOutputBufferFull();
 	uint8_t response = dataPort_.read();
 
-	// Set the keyboard interrupt handler anyway (TODO move to end)
+	if (response != 0xFA)
+	{
+		// Handle error
+		return false;
+	}
+
+	// Set the keyboard interrupt handler
 	interrupts::InterruptController::setInterruptHandler(0x21, &handleInterrupt);
 
-	// Handle error, maybe retry or log the error
-	if (response != 0xFA) return false;
-
-	updateLockKeyStatus();
-
-	initialized_ = true;
 	return true;
 }
 
@@ -124,6 +144,14 @@ void PalmyraOS::kernel::Keyboard::initializeLockKeys()
 
 uint32_t* PalmyraOS::kernel::Keyboard::handleInterrupt(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
+
+	// Ensure the interrupt is for the keyboard (IRQ1 corresponds to interrupt vector 0x21)
+	if (regs->intNo != 0x21)
+	{
+		// Not a keyboard interrupt, ignore it
+		return (uint32_t*)regs;
+	}
+
 	uint8_t  keyIndex = dataPort_.read();
 	KeyState state    = KeyState::PRESSED;
 
@@ -151,13 +179,13 @@ uint32_t* PalmyraOS::kernel::Keyboard::handleInterrupt(PalmyraOS::kernel::interr
 		if (state == KeyState::PRESSED) toggleLockKeys(keyIndex);
 	}
 
-
+	counter_++;
 	buffer_last_index_++;
 	if (buffer_last_index_ >= bufferSize) buffer_last_index_ = 0;
 
 	buffer_[buffer_last_index_] = qwertzToAscii[keyIndex];
 
-	if (state == KeyState::RELEASED && buffer_[buffer_last_index_] != 0)
+	if (/*state == KeyState::RELEASED && */buffer_[buffer_last_index_] != 0)
 	{
 		WindowManager::queueKeyboardEvent(
 			{
@@ -165,10 +193,27 @@ uint32_t* PalmyraOS::kernel::Keyboard::handleInterrupt(PalmyraOS::kernel::interr
 				state == KeyState::PRESSED,
 				isCtrlPressed_,
 				isShiftPressed_,
-				isAltPressed_
+				isAltPressed_,
+				true
 			}
 		);
 	}
 
 	return (uint32_t*)regs;
+}
+
+void PalmyraOS::kernel::Keyboard::waitForInputBufferEmpty()
+{
+	while (commandPort_.read() & 0x02)
+	{
+		// Wait until Bit 1 (Input Buffer Status) is clear
+	}
+}
+
+void PalmyraOS::kernel::Keyboard::waitForOutputBufferFull()
+{
+	while (!(commandPort_.read() & 0x01))
+	{
+		// Wait until Bit 0 (Output Buffer Status) is set
+	}
 }
