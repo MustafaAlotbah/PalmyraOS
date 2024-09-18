@@ -125,6 +125,8 @@ namespace PalmyraOS::kernel::vfs
    public:
 	  explicit FAT32Partition(VirtualDisk<ATA>& diskDriver, uint32_t startSector, uint32_t countSectors);
 
+	  [[nodiscard]] Type getType();
+
 	  // Reading FAT Files from a cluster
 	  [[nodiscard]] KVector<uint8_t> readFile(uint32_t startCluster, uint32_t size) const;
 	  [[nodiscard]] KVector<uint8_t> readEntireFile(uint32_t startCluster) const;

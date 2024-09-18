@@ -119,7 +119,8 @@ namespace PalmyraOS::kernel::vfs
 	  countClusters_ = dataSectorCount_ / clusterSize_; // floor division
 
 	  // Determine the FAT type based on the number of clusters.
-	  if (countClusters_ < 4085) type_ = Type::FAT12;
+	  if (countClusters_ < 3) type_ = Type::Invalid;
+	  else if (countClusters_ < 4085) type_ = Type::FAT12;
 	  else if (countClusters_ < 65525) type_ = Type::FAT16;
 	  else type_ = Type::FAT32;
 
@@ -350,7 +351,15 @@ namespace PalmyraOS::kernel::vfs
 
 	  // TODO: add params: offset, count
 
-	  if (directoryStartCluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+	  if (directoryStartCluster >= countClusters_)
+		  kernelPanic(
+			  "%s: Invalid cluster index!\n"
+			  "Count Clusters   : %d\n"
+			  "Requested Cluster: %d\n",
+			  __PRETTY_FUNCTION__,
+			  countClusters_,
+			  directoryStartCluster
+		  );
 
 	  KVector<uint8_t>                      data = readEntireFile(directoryStartCluster);
 	  KVector<DirectoryEntry>               entries;
@@ -1024,6 +1033,11 @@ namespace PalmyraOS::kernel::vfs
 	  );
 
 	  return newEntry;
+  }
+
+  FAT32Partition::Type FAT32Partition::getType()
+  {
+	  return type_;
   }
 
 
