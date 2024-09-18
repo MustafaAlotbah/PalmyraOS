@@ -175,9 +175,13 @@ namespace PalmyraOS::kernel
 	   */
 	  static bool isSHAAvailable();
 
+	  static uint32_t getCPUFrequency()
+	  { return CPU_frequency_; }
+	  static uint32_t getHSCFrequency()
+	  { return HSC_frequency_; }
+
    private:
 	  static uint32_t  CPU_frequency_;
-
-
+	  static uint32_t  HSC_frequency_;
   };
 }

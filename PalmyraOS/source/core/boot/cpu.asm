@@ -14,7 +14,7 @@ global memcpy_sse:function
 ; Function to read the low 32 bits of the time stamp counter
 read_tsc_low:
     rdtsc
-    mov eax, eax
+    mov eax, eax ; TODO redundant but kept for clarity
     ret
 
 ; Function to read the high 32 bits of the time stamp counter

@@ -2,11 +2,14 @@
 #include "core/cpu.h"
 #include "libs/memory.h"
 #include "core/SystemClock.h"
+#include "core/peripherals/RTC.h"
+#include "core/peripherals/Logger.h"
 
 extern "C" uint64_t read_tsc_low();
 extern "C" uint64_t read_tsc_high();
 
 uint32_t PalmyraOS::kernel::CPU::CPU_frequency_ = 0;
+uint32_t PalmyraOS::kernel::CPU::HSC_frequency_ = 0;
 
 
 uint64_t PalmyraOS::kernel::CPU::getTSC()
@@ -223,38 +226,46 @@ uint32_t PalmyraOS::kernel::CPU::detectCpuFrequency()
 	 * CPU Frequency = Elapsed TSC / (Elapsed Seconds * 10^6)
 	 */
 
-	if (CPU_frequency_ > 500) return CPU_frequency_;
+	//if (CPU_frequency_ > 500) return CPU_frequency_;
 
 	// Ensure the CPUID serializing instruction
 	cpuid(0, 0);
 
+
+	uint64_t secondsOfDayStart = RTC::getSecondsOfDay();
+	uint64_t secondsOfDayEnd   = RTC::getSecondsOfDay();
+
+	// wait for a change
+	while (secondsOfDayEnd == secondsOfDayStart) secondsOfDayEnd = RTC::getSecondsOfDay();
+
 	// Capture the initial timestamp counter and clock tick
 	uint64_t start_tsc  = getTSC();
 	uint64_t start_tick = SystemClock::getTicks();
+	secondsOfDayStart = secondsOfDayEnd;
 
-	// Wait for several clock ticks to ensure a longer measurement interval
-	constexpr uint64_t tick_interval_count = 100; // Measure over 25 ticks
-	uint64_t           current_tick        = start_tick;
-	while (current_tick < start_tick + tick_interval_count)
+	// wait for 2 seconds
+	constexpr uint64_t secondsMeasurement = 2; // Measure over 25 ticks
+	while (secondsOfDayEnd < secondsOfDayStart + secondsMeasurement)
 	{
-		current_tick = SystemClock::getTicks();
+		secondsOfDayEnd = RTC::getSecondsOfDay();
 	}
 
-	// Capture the timestamp counter at the end of the measurement interval
+	// Capture the timestamps at the end of the measurement interval
+	uint64_t end_ticks = SystemClock::getTicks();
 	uint64_t end_tsc = getTSC();
 
 	// Calculate the number of ticks in the measurement interval
-	uint64_t elapsed_ticks = current_tick - start_tick;
+	uint64_t elapsed_ticks = end_ticks - start_tick;
 
 	// Calculate the number of TSC ticks in the measurement interval
 	uint64_t elapsed_tsc = end_tsc - start_tsc;
 
-	// Get the clock tick frequency
-	uint64_t CLOCK_TICK_FREQ = SystemClock::getFrequency(); // Example: 100 Hz
+	CPU_frequency_ = elapsed_tsc / secondsMeasurement / 1e6;
+	HSC_frequency_ = elapsed_ticks / secondsMeasurement;
 
-	uint64_t cpu_freq_mhz = elapsed_tsc * CLOCK_TICK_FREQ / 1e6 / elapsed_ticks;
-
-	CPU_frequency_ = static_cast<uint32_t>(cpu_freq_mhz);
+	LOG_WARN("CPU (TSC)   frequency %d MHz", CPU_frequency_);
+	LOG_WARN("HSC (Ticks) frequency %d Hz", HSC_frequency_);
 
 	return CPU_frequency_;
 }
+

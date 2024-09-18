@@ -195,3 +195,12 @@ size_t PalmyraOS::kernel::RTC::read(char* buffer, size_t size, size_t offset)
 
 	return to_copy;
 }
+
+uint64_t PalmyraOS::kernel::RTC::getSecondsOfDay()
+{
+	seconds_ = bcd_to_dec(kernel::CMOS::read(RTC_Second));
+	minutes_ = bcd_to_dec(kernel::CMOS::read(RTC_Minute));
+	hours_   = bcd_to_dec(kernel::CMOS::read(RTC_Hour));
+
+	return seconds_ + minutes_ * 60 + hours_ * 24;
+}

@@ -50,6 +50,8 @@ namespace PalmyraOS::kernel
 	  static uint64_t now();
 
 	  static bool initializeVFSElements();
+
+	  static uint64_t getSecondsOfDay();
    public:
 	  static bool isLeapYear(uint32_t year);
 	  static uint16_t daysInYear(uint32_t year);
