@@ -14,6 +14,13 @@ namespace PalmyraOS::kernel
   constexpr uint32_t PROCESS_KERNEL_STACK_SIZE = 10;
   constexpr uint32_t PROCESS_USER_STACK_SIZE   = 10;
 
+  struct ProcessDebug
+  {
+	  uint32_t entryEip       = 0;
+	  uint32_t lastWorkingEip = 0;
+  };
+
+
   /**
    * @enum EFlags
    * @brief Enum class representing the CPU EFlags register bits.
@@ -238,6 +245,9 @@ namespace PalmyraOS::kernel
 	   */
 	  [[nodiscard]] bool checkStackOverflow() const;
 
+	  [[nodiscard]] PagingDirectory* getPagingDirectory()
+	  { return pagingDirectory_; };
+
 	  // A process can only be moved
 	  DEFINE_DEFAULT_MOVE(Process);
 	  REMOVE_COPY(Process);
@@ -272,6 +282,7 @@ namespace PalmyraOS::kernel
 
 	  void initializeProcessInVFS();
 
+
    public:
 	  friend class TaskManager;
 
@@ -293,12 +304,14 @@ namespace PalmyraOS::kernel
 
 	  KVector<uint32_t> windows_;                        ///< List of windows allocated
 	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
+	  ProcessDebug debug_;
 
 	  uint64_t upTime_{ 0 };
 
 	  uint32_t initial_brk = 0;
 	  uint32_t current_brk = 0;
 	  uint32_t max_brk     = 0;
+
   };
 
   /**
@@ -352,6 +365,7 @@ namespace PalmyraOS::kernel
 	  // atomic TODO: other solution?
 	  static void startAtomicOperation();
 	  static void endAtomicOperation();
+	  static uint32_t getAtomicLevel();
 
    public:
 	  /**

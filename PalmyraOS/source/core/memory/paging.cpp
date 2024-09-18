@@ -34,13 +34,33 @@ PalmyraOS::kernel::PagingDirectory::PagingDirectory()
 
 uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex, PageFlags flags)
 {
+	auto* physicalAddress = (uint32_t*)pageTables_[tableIndex];
+
 	// Check if the table is already present
-	if (pageDirectory_[tableIndex].present) return (uint32_t*)pageTables_[tableIndex];
+	if (pageDirectory_[tableIndex].present && physicalAddress)
+	{
+		// Increase the flags if possible. (If requested user page, but table has no user -> Page Fault)
+		setTable(tableIndex, (uint32_t)physicalAddress, flags);
+
+		if (is_paging_enabled() && !PagingManager::getCurrentPageDirectory()->isAddressValid(physicalAddress))
+		{
+			LOG_ERROR("Allocated Table at 0x%X is not valid in kernel space!", physicalAddress);
+			kernelPanic("Allocated Table at 0x%X is not valid in kernel space!", physicalAddress);
+		}
+
+		/**
+		 * @note this might override previous page privileges, but the pages themselves would be safe.
+		 * i.e. the table might have more privileges now, but its pages might still have less so.
+		 */
+		// Now return it
+		return physicalAddress;
+	}
 
 	// Allocate a new frame for the table if not present
 	void* newTable = PhysicalMemory::allocateFrame();
 	if ((uint32_t)newTable & 0xFFF) kernel::kernelPanic("Unaligned Page Table at 0x%X", newTable);
-	LOG_DEBUG("Allocating a table (i=%d, addr=0x%X)", tableIndex, newTable);
+	LOG_TRACE("Allocating a table (i=%d, addr=0x%X)", tableIndex, newTable);
+	if (!newTable) kernel::kernelPanic("Could not allocate a new paging table!");
 
 
 	// Save the table address
@@ -57,6 +77,12 @@ uint32_t* PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex, Page
 			newTable, newTable, PageFlags::Present | PageFlags::ReadWrite
 		);
 	}
+
+	if (is_paging_enabled() && !PagingManager::getCurrentPageDirectory()->isAddressValid(newTable))
+	{
+		LOG_ERROR("Address: 0x%X is not valid in kernel space!", newTable);
+	}
+
 	{
 		/*
 		 * WARNING: here we might override mapPage if 1-1 mapping points the table to itself
@@ -88,9 +114,9 @@ void PalmyraOS::kernel::PagingDirectory::destruct()
 void PalmyraOS::kernel::PagingDirectory::setTable(uint32_t tableIndex, uint32_t tableAddress, PageFlags flags)
 {
 	// Set the page directory entry for the table
-	pageDirectory_[tableIndex].present = ((uint32_t)flags >> 0) & 0x1;
-	pageDirectory_[tableIndex].rw      = ((uint32_t)flags >> 1) & 0x1;
-	pageDirectory_[tableIndex].user    = ((uint32_t)flags >> 2) & 0x1;
+	pageDirectory_[tableIndex].present |= ((uint32_t)flags >> 0) & 0x1;
+	pageDirectory_[tableIndex].rw |= ((uint32_t)flags >> 1) & 0x1;
+	pageDirectory_[tableIndex].user |= ((uint32_t)flags >> 2) & 0x1;
 	pageDirectory_[tableIndex].tableAddress = tableAddress >> 12;
 }
 
@@ -110,6 +136,11 @@ void PalmyraOS::kernel::PagingDirectory::mapPage(void* physicalAddr, void* virtu
 
 	// Get or create the corresponding table
 	uint32_t* table = getTable(tableIndex, flags);
+
+	if (is_paging_enabled() && !PagingManager::getCurrentPageDirectory()->isAddressValid(table))
+	{
+		LOG_ERROR("Address: 0x%X is not valid in kernel space!", table);
+	}
 
 	// if table == physical address --> problem
 	// Set the page in the table
@@ -161,7 +192,7 @@ void PalmyraOS::kernel::PagingDirectory::setPage(
 	auto* entry = (PageTableEntry*)&table[pageIndex];
 	if (is_paging_enabled() && !PagingManager::getCurrentPageDirectory()->isAddressValid(entry))
 	{
-		LOG_ERROR("Address: 0x%X is not valid in kernel space!", entry);
+		LOG_ERROR("Address: 0x%X of Page %d is not valid in kernel space!", entry, pageIndex);
 	}
 	entry->present = ((uint32_t)flags >> 0) & 0x1;
 	entry->rw      = ((uint32_t)flags >> 1) & 0x1;
@@ -363,6 +394,11 @@ void PalmyraOS::kernel::PagingDirectory::mapPages(
 	}
 }
 
+PalmyraOS::kernel::PageDirectoryEntry PalmyraOS::kernel::PagingDirectory::getTable(uint32_t tableIndex)
+{
+	return pageDirectory_[tableIndex];
+}
+
 
 ///endregion
 
@@ -466,19 +502,45 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 		auto userStack     = currentProcess.getUserStack();
 		bool stackOverflow = currentProcess.checkStackOverflow();
 
+		// Get Indices
+		uint32_t tableIndex = (uint32_t)faultingAddress >> 22;
+		uint32_t pageIndex  = ((uint32_t)faultingAddress >> 12) & 0x3FF;
+
+		// Kernel Paging Directory
+		auto _kernelTable = currentPageDirectory_->getTable(tableIndex);
+		auto* kernelTable = currentPageDirectory_->getTable(tableIndex, PageFlags::UserSupervisor);
+		auto* kernelEntry = (PageTableEntry*)&kernelTable[pageIndex];
+
+		// User Paging Directory
+		auto* procPDir = currentProcess.getPagingDirectory();
+		auto _userTable = procPDir->getTable(tableIndex);
+		uint32_t* userTable = procPDir->getTable(tableIndex, PageFlags::UserSupervisor);
+		auto    * userEntry = (PageTableEntry*)&userTable[pageIndex];
+
 		// Handle page fault by triggering a kernel panic  TODO (for example, crash current process)
 		kernelPanic(
 			"Page Fault (0x%X) (0x%X) at 0x%X\n"
 			"System: CR3: 0x%X, Kernel CR3: 0x%X\n"
+			"--------------------------\n"
 			"isPresent: %s\n"
 			"isWrite: %s\n"
 			"isUser: %s\n"
 			"isInstructionFetch: %s\n"
 			"Faulting Instruction: 0x%X\n"
-			"--------------------------\n"
+			"---USER / KERNEL---------\n"
 			"Process: %d\n"
+			"PageTable has User Privileges: %s / %s\n"
+			"PageTable Physical Address   : 0x%X / 0x%X\n"
+			"Page Address                 : 0x%X / 0x%X\n"
+			"Page is present              : %s / %s\n"
+			"Page has User Privileges     : %s / %s\n"
+			"Page has RW Privileges       : %s / %s\n"
+			"Page Physical Address        : 0x%X / 0x%X\n"
+			"--------------------------\n"
 			"User Stack: 0x%X\n"
-			"Stack Overflow: %s\n",
+			"Stack Overflow: %s\n"
+			"Process entry EIP: 0x%X\n"
+			"Process last EIP : 0x%X\n",
 			regs->intNo, regs->errorCode, faultingAddress,
 			currentPageDirectory_->getDirectory(), kernel::kernelPagingDirectory_ptr->getDirectory(),
 			(present ? "YES" : "NO"),
@@ -486,8 +548,18 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 			(userMode ? "YES" : "NO"),
 			(instructionFetch ? "YES" : "NO"),
 			regs->eip,
-			pid, userStack,
-			(stackOverflow ? "YES" : "NO")
+			pid,
+			(_userTable.user ? "YES" : "NO "), (_kernelTable.user ? "YES" : "NO"),
+			(_userTable.tableAddress << 12), (_kernelTable.tableAddress << 12),
+			(userEntry), (kernelEntry),
+			(userEntry->present ? "YES" : "NO "), (kernelEntry->present ? "YES" : "NO"),
+			(userEntry->user ? "YES" : "NO "), (kernelEntry->user ? "YES" : "NO"),
+			(userEntry->rw ? "YES" : "NO "), (kernelEntry->rw ? "YES" : "NO"),
+			(userEntry->physicalAddress << 12), (kernelEntry->physicalAddress << 12),
+			userStack,
+			(stackOverflow ? "YES" : "NO"),
+			currentProcess.debug_.entryEip,
+			currentProcess.debug_.lastWorkingEip
 		);
 	}
 

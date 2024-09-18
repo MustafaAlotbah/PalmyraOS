@@ -2,6 +2,7 @@
 
 #include <elf.h>
 #include <algorithm>
+#include <new>
 
 #include "core/tasks/ProcessManager.h"
 #include "core/SystemClock.h"
@@ -81,6 +82,7 @@ PalmyraOS::kernel::Process::Process(
 		stack_.esp += offsetof(interrupts::CPURegisters, intNo); // 52
 	}
 
+	debug_.entryEip = reinterpret_cast<uint32_t>(entryPoint);
 
 	// 5. Initialize Virtual File System Hooks
 	initializeProcessInVFS();
@@ -106,6 +108,8 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 		pagingDirectory_ = static_cast<PagingDirectory*>(
 			kernelPagingDirectory_ptr->allocatePages(PagingDirectoryFrames)
 		);
+		new(pagingDirectory_) PagingDirectory();
+
 		registerPages(pagingDirectory_, PagingDirectoryFrames);
 		pagingDirectory_->mapPages(
 			pagingDirectory_,
@@ -126,6 +130,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 		PROCESS_KERNEL_STACK_SIZE,
 		PageFlags::Present | PageFlags::ReadWrite //| PageFlags::UserSupervisor // TODO investigation with ELF
 	);
+	LOG_INFO("Kernel Stack at 0x%X of size %d pages", kernelStack_, PROCESS_KERNEL_STACK_SIZE);
 
 	// 3. If the process is in user mode, set up the user stack.
 	if (mode == Process::Mode::User)
@@ -133,6 +138,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 		// Allocate and map the user stack.
 		LOG_DEBUG("Mapping User Stack");
 		userStack_ = allocatePages(PROCESS_USER_STACK_SIZE);
+		LOG_INFO("User Stack at 0x%X of size %d pages", userStack_, PROCESS_USER_STACK_SIZE);
 
 		// registers pages automatically
 		PageFlags kernelSpaceFlags = PageFlags::Present | PageFlags::ReadWrite;
@@ -182,7 +188,10 @@ void PalmyraOS::kernel::Process::initializeCPUState()
 
 	// For user mode, initialize the user stack pointer (userEsp).
 	if (mode_ == Mode::User)
-		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE - 16;
+	{
+		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE;
+		LOG_DEBUG("userEsp set at 0x%X.", stack_.userEsp);
+	}
 
 	// Set the CR3 register to point to the process's paging directory.
 	stack_.cr3 = reinterpret_cast<uint32_t>(pagingDirectory_->getDirectory());
@@ -577,8 +586,22 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(
 uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::interrupts::CPURegisters* regs)
 {
 
+	// If there are no processes, or we are in an atomic section, return the current registers.
+	if (processes_.empty()) return reinterpret_cast<uint32_t*>(regs);
+	if (atomicSectionLevel_ > 0) return reinterpret_cast<uint32_t*>(regs);
+	/**
+	 * @Note TaskScheduler can be called in an atomicSection
+	 * If the WindowsManager is composing windows, and here we kill the process -> close the window
+	 * -> erase the window, memcpy would be writing to an illegal address.
+	 * -> Hence Atomic Section guarantees that it is fully atomic
+	 * @short Once should also implement deferred erasing.
+	 */
+
 	size_t nextProcessIndex;
 	uint32_t* result;
+
+	// Debug Information
+	processes_[currentProcessIndex_].debug_.lastWorkingEip = regs->eip;
 
 	// kill terminated processes
 	for (int i = 0; i < processes_.size(); ++i)
@@ -589,10 +612,6 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 			processes_[i].kill();
 		}
 	}
-
-	// If there are no processes, or we are in an atomic section, return the current registers.
-	if (processes_.empty()) return reinterpret_cast<uint32_t*>(regs);
-	if (atomicSectionLevel_ > 0) return reinterpret_cast<uint32_t*>(regs);
 
 	// Save the current process state if a process is running.
 	if (currentProcessIndex_ < MAX_PROCESSES)
@@ -785,12 +804,20 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 	// TODO make stuff here more logical PLEASE (intNo + 2 * sizeof(uint32_t) for eip)
 	*(uint32_t*)(process->stack_.esp + 8) = elfHeader->e_entry;
 	process->stack_.eip = elfHeader->e_entry;
+	process->debug_.entryEip = reinterpret_cast<uint32_t>(elfHeader->e_entry);
 
 	// Set process state to Ready
 	process->setState(Process::State::Ready);
 
+	LOG_DEBUG("userEsp finally at 0x%X.", process->stack_.userEsp);
+
 	return process;
 
+}
+
+uint32_t PalmyraOS::kernel::TaskManager::getAtomicLevel()
+{
+	return atomicSectionLevel_;
 }
 
 

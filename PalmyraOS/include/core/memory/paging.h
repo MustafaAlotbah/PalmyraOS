@@ -205,6 +205,8 @@ namespace PalmyraOS::kernel
 	  */
 	  uint32_t* getTable(uint32_t tableIndex, PageFlags flags);
 
+	  PageDirectoryEntry getTable(uint32_t tableIndex);
+
 	  DEFINE_DEFAULT_MOVE(PagingDirectory);
 	  REMOVE_COPY(PagingDirectory);
    private:
