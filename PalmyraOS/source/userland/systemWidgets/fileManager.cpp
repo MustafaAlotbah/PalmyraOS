@@ -1,0 +1,553 @@
+
+#include <elf.h>
+#include <algorithm>
+#include "userland/systemWidgets/fileManager.h"
+
+#include "libs/palmyraSDK.h"        // Window, Window Frame
+#include "palmyraOS/HeapAllocator.h"
+
+
+namespace PalmyraOS::Userland::builtin::fileManager
+{
+  enum class EntryType
+  {
+	  Directory,
+	  Invalid,
+	  Archive,
+	  Elf32,
+	  Elf64,
+	  ElfLib
+  };
+
+  struct DirectoryEntry
+  {
+	  types::UString<char> name;
+	  EntryType            dentryType;
+	  uint32_t             size;
+  };
+
+  int constructDirectoryPath(
+	  char* buffer,
+	  size_t bufferSize,
+	  const types::UVector<types::UString<char>>& currentDirectory
+  );
+
+  int fetchContent(
+	  types::UserHeapManager& heap,
+	  types::UVector<types::UString<char>>& currentDirectory,
+	  types::UVector<DirectoryEntry>& content
+  );
+
+  void pushArchive(
+	  types::UserHeapManager& heap,
+	  types::UVector<DirectoryEntry>& content,
+	  const types::UString<char>& parentDirectory,
+	  const types::UString<char>& entryName
+  );
+
+  int isElf(types::UserHeapManager& heap, const types::UString<char>& absolutePath);
+
+}
+
+int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv)
+{
+	// Initialize dynamic memory allocator for the application
+	types::UserHeapManager heap;
+
+	// Create and set up the main application window
+	SDK::Window    window(400, 320, 480, 360, true, "Palmyra File Manager");
+	SDK::WindowGUI windowGui(window);
+
+	// Globals
+	types::UVector<types::UString<char>> currentDirectory(heap);
+	types::UVector<DirectoryEntry>       content(heap);
+	fetchContent(heap, currentDirectory, content);
+
+	// layout
+	int scrollY_content = 0;
+
+	while (true)
+	{
+		// Display Current Directory
+		{
+			SDK::Layout layout(windowGui, nullptr, false, 20);
+			windowGui.brush().fillRectangle(
+				layout.getX(),
+				layout.getY(),
+				layout.getX() + layout.getWidth(),
+				layout.getY() + layout.getHeight(),
+				Color::DarkerGray
+			);
+
+			// Root directory link
+			if (windowGui.link("root"))
+			{
+				currentDirectory.clear();
+				content.clear();
+				fetchContent(heap, currentDirectory, content);
+				continue;
+			}
+			windowGui.text() << "/";
+
+			// Render current directory path
+
+			for (int i = 0; i < currentDirectory.size(); ++i)
+			{
+				if (windowGui.link(currentDirectory[i].c_str()))
+				{
+					// Go back to the selected directory
+					currentDirectory.erase(currentDirectory.begin() + i + 1, currentDirectory.end());
+					content.clear();
+					fetchContent(heap, currentDirectory, content);
+					break;
+				}
+				windowGui.text() << "/";
+			}
+		}
+
+		// Display Content
+		{
+			SDK::Layout layout(windowGui, &scrollY_content, true);
+
+			uint32_t contentIndex = 0;
+
+			// File Names column
+			int maxFilesOffset = 0;
+			int maxTypesOffset = 0;
+			for (auto& [item, type, size] : content)
+			{
+				if (contentIndex++ % 2 == 0)
+				{
+					windowGui.fillRectangle(
+						layout.getX(),
+						windowGui.text().getCursorY(),
+						layout.getWidth(),
+						18,
+						Color::DarkerGray
+					);
+//					windowGui.brush().fillRectangle(
+//						layout.getX(),
+//						windowGui.text().getPositionY() + windowGui.text().getCursorY(),
+//						layout.getX() + layout.getWidth(),
+//						windowGui.text().getPositionY() + windowGui.text().getCursorY() + 20,
+//						Color::DarkerGray
+//					);
+				}
+
+				if (type == EntryType::Directory)
+				{
+					// Handle Directory here
+					if (windowGui.link(item.c_str()))
+					{
+						currentDirectory.push_back(item);
+						content.clear();
+						int result = fetchContent(heap, currentDirectory, content);
+						break;
+					}
+					windowGui.text() << "/";
+				}
+				else if (type == EntryType::Elf32)
+				{
+					// Handle Executables here
+
+					if (windowGui.link(item.c_str(), false, Color::Red600, Color::Red300, Color::Red900))
+					{
+						// Construct the directory path
+						char directoryBuffer[512];
+						int  offset =
+								 constructDirectoryPath(directoryBuffer, sizeof(directoryBuffer), currentDirectory);
+						if (offset < 0) continue; // Handle buffer overflow error
+						strcpy(directoryBuffer + offset, item.c_str());
+
+						char* argv_[] = {
+							const_cast<char*>("/bin/terminal.elf"),
+							const_cast<char*>("exec"),
+							const_cast<char*>(directoryBuffer), nullptr
+						};
+
+						// Spawn the new process
+						uint32_t child_pid;
+						int      status =
+									 posix_spawn(&child_pid, "/bin/terminal.elf", nullptr, nullptr, argv_, nullptr);
+
+					}
+				}
+				else
+				{
+					if (windowGui.link(item.c_str(), false, Color::Gray300, Color::Gray100, Color::Gray500))
+					{
+						// Construct the directory path
+						char directoryBuffer[512];
+						int  offset =
+								 constructDirectoryPath(directoryBuffer, sizeof(directoryBuffer), currentDirectory);
+						if (offset < 0) continue; // Handle buffer overflow error
+						strcpy(directoryBuffer + offset, item.c_str());
+
+						char* argv[] = {
+							const_cast<char*>("/bin/terminal.elf"),
+							const_cast<char*>("cat"),
+							const_cast<char*>(directoryBuffer), nullptr
+						};
+
+						// Spawn the new process
+						uint32_t child_pid;
+						int      status = posix_spawn(&child_pid, "/bin/terminal.elf", nullptr, nullptr, argv, nullptr);
+					}
+				}
+
+				maxFilesOffset = std::max(maxFilesOffset, windowGui.text().getCursorX());
+				windowGui.text() << "\n";
+			}
+
+			// Second Column
+			windowGui.text().setCursor(maxFilesOffset, scrollY_content);
+			for (auto& [item, type, size] : content)
+			{
+				if (type == EntryType::Directory)
+				{
+					windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
+					windowGui.text() << "Directory";
+				}
+				else if (type == EntryType::Elf32)
+				{
+					windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
+					windowGui.text() << "Elf32";
+				}
+				else
+				{
+					windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
+					windowGui.text() << "Archive";
+				}
+				maxTypesOffset = std::max(maxTypesOffset, windowGui.text().getCursorX());
+				windowGui.text() << "\n";
+			}
+
+
+		}
+
+		// Reset Cursor
+
+
+
+
+		// Reset text renderer and swap frame buffers for next frame then yield
+		windowGui.swapBuffers();
+		sched_yield();
+	}
+
+	return 0;
+}
+
+// TODO sort out to SDK
+int PalmyraOS::Userland::builtin::fileManager::constructDirectoryPath(
+	char* buffer,
+	size_t bufferSize,
+	const types::UVector<types::UString<char>>& currentDirectory
+)
+{
+	int offset = 0;
+	buffer[offset++] = '/';
+
+	// Build the full directory path by concatenating directories from currentDirectory.
+	// Each directory name is followed by a '/'.
+	for (const auto& directory : currentDirectory)
+	{
+		int dirLength = static_cast<int>(directory.size());
+
+		// Ensure there is enough space in the buffer for the directory name and a '/'.
+		if (offset + dirLength + 1 >= bufferSize) return -1; // Buffer overflow error
+
+		// Copy the directory name into the buffer at the current offset.
+		strcpy(buffer + offset, directory.c_str());
+		offset += dirLength;
+
+		// Append a '/' after the directory name.
+		buffer[offset - 1] = '/';
+	}
+
+	if (offset > 1)
+	{
+		// Replace the trailing '/' with a null terminator to complete the path string.
+		buffer[offset] = '\0';
+	}
+	else
+	{
+		// If currentDirectory is empty, set the path to root "/".
+		buffer[0] = '/';
+		buffer[1] = '\0';
+	}
+
+	return offset; // Success
+}
+
+int PalmyraOS::Userland::builtin::fileManager::fetchContent(
+	types::UserHeapManager& heap,
+	types::UVector<types::UString<char>>& currentDirectory,
+	types::UVector<DirectoryEntry>& content
+)
+{
+	char directoryBuffer[512];
+
+	// Construct the directory path
+	int result = constructDirectoryPath(directoryBuffer, sizeof(directoryBuffer), currentDirectory);
+	if (result < 0) return -1; // Handle buffer overflow error
+
+	// Open the directory specified by directoryBuffer.
+	int fileDescriptor = open(directoryBuffer, 0);
+
+	// Error: No such file or directory.
+	if (fileDescriptor < 0)
+	{
+		return -2;
+	}
+
+	// Allocate a buffer to hold directory entries from getdents.
+	const size_t bufferSize = 4096;
+	char* buffer = static_cast<char*>(heap.alloc(bufferSize));
+	if (!buffer)
+	{
+		// Error: Could not allocate memory.
+		heap.free(buffer);
+		close(fileDescriptor);
+		return -3;
+	}
+
+	// Read directory entries into the buffer.
+	int bytesRead = getdents(fileDescriptor, reinterpret_cast<linux_dirent*>(buffer), bufferSize);
+	if (bytesRead < 0)
+	{
+		// Error: Failed to read directory entries.
+		heap.free(buffer);
+		close(fileDescriptor);
+		return -4;
+	}
+
+	// Process each entry in the directory.
+	int currentByteIndex = 0;
+	while (currentByteIndex < bytesRead)
+	{
+		// Get a pointer to the current directory entry.
+		auto* dirEntry = reinterpret_cast<linux_dirent*>(buffer + currentByteIndex);
+
+		// Extract the directory entry type (file, directory, etc.).
+		// Note: The d_type field is often stored at the end of the dirent structure.
+		char dentryType = *(buffer + currentByteIndex + dirEntry->d_reclen - 1);
+
+		// Create a UString for the entry name using the heap allocator.
+		types::UString<char> entryName(heap, dirEntry->d_name);
+
+		if (dentryType == DT_DIR)
+		{
+			// Add the directory entry to the content vector.
+			content.push_back(
+				{
+					.name = entryName,
+					.dentryType = EntryType::Directory,
+					.size = 0
+				}
+			);
+		}
+		else if (dentryType == DT_REG)
+		{
+
+			pushArchive(
+				heap,
+				content,
+				types::UString<char>(heap, directoryBuffer),
+				entryName
+			);
+
+		}
+		else
+		{
+			// Add the directory entry to the content vector.
+			content.push_back(
+				{
+					.name = entryName,
+					.dentryType = EntryType::Invalid,
+					.size = 0
+				}
+			);
+		}
+
+
+		// Move to the next directory entry.
+		currentByteIndex += dirEntry->d_reclen;
+	}
+
+	// Sorting the content based on the type
+	std::sort(
+		content.begin(), content.end(), [](const DirectoryEntry& a, const DirectoryEntry& b)
+		{
+		  return a.dentryType < b.dentryType;
+		}
+	);
+
+	// Clean up resources.
+	heap.free(buffer);
+	close(fileDescriptor);
+
+	return 0;
+}
+
+void PalmyraOS::Userland::builtin::fileManager::pushArchive(
+	types::UserHeapManager& heap,
+	types::UVector<DirectoryEntry>& content,
+	const types::UString<char>& parentDirectory,
+	const types::UString<char>& entryName
+)
+{
+	// Archive or Executable
+
+	// Construct absolute path
+	types::UString<char> absolutePath(heap, parentDirectory.c_str());
+	absolutePath += entryName;
+
+	int isElf_ = isElf(heap, absolutePath);
+
+	if (isElf_ == 0)
+	{
+		// Not an Elf
+		content.push_back(
+			{
+				.name = entryName,
+				.dentryType = EntryType::Archive,
+				.size = 0
+			}
+		);
+	}
+	else if (isElf_ == 32)
+	{
+		// Elf x86 executable
+		content.push_back(
+			{
+				.name = entryName,
+				.dentryType = EntryType::Elf32,
+				.size = 0
+			}
+		);
+	}
+	else if (isElf_ == 64)
+	{
+		// Elf x86_64 executable
+		content.push_back(
+			{
+				.name = entryName,
+				.dentryType = EntryType::Elf64,
+				.size = 0
+			}
+		);
+	}
+	else if (isElf_ == 100)
+	{
+		// Elf x86_64 executable
+		content.push_back(
+			{
+				.name = entryName,
+				.dentryType = EntryType::ElfLib,
+				.size = 0
+			}
+		);
+	}
+	else
+	{
+		// Should not get here
+		content.push_back(
+			{
+				.name = entryName,
+				.dentryType = EntryType::Invalid,
+				.size = 0
+			}
+		);
+	}
+}
+
+// TODO move out to SDK
+// Returns 0 if not ELF, 32 if x86, 64 if x86_64
+// 100 if library
+int PalmyraOS::Userland::builtin::fileManager::isElf(
+	PalmyraOS::types::UserHeapManager& heap,
+	const PalmyraOS::types::UString<char>& absolutePath
+)
+{
+	// path at least some characters
+	if (absolutePath.size() <= 1) return 0;
+
+	// Attempt to open the file specified by the user
+	int fileDescriptor = open(absolutePath.c_str(), 0);
+
+	// Inform if the file couldn't be opened, perhaps it doesn't exist
+	if (fileDescriptor < 0) return 0;
+
+	// Allocate a buffer to read the file content
+	auto e_ident = (char*)heap.alloc(EI_NIDENT);
+
+	// Read up to 512 characters from the file
+	int bytesRead = read(fileDescriptor, e_ident, EI_NIDENT);
+
+	// Check if the file is large enough to contain the ELF identifier
+	if (bytesRead < EI_NIDENT)
+	{
+		heap.free(e_ident);
+		close(fileDescriptor);
+		return 0;
+	}
+
+	// Check ELF magic number
+	if (e_ident[0] != ELFMAG0 ||
+		e_ident[1] != ELFMAG1 ||
+		e_ident[2] != ELFMAG2 ||
+		e_ident[3] != ELFMAG3)
+	{
+		heap.free(e_ident);
+		close(fileDescriptor);
+		return 0;
+	}
+
+	// 32 or 64
+	int architectureBits = 0;
+
+	if (e_ident[EI_CLASS] == ELFCLASS64) architectureBits = 64;
+	else if (e_ident[EI_CLASS] == ELFCLASS32)
+	{
+		architectureBits = 32;
+
+		// Move the file offset back to the start
+		if (lseek(fileDescriptor, 0, SEEK_SET) == -1)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		Elf32_Ehdr header32;
+		bytesRead = read(fileDescriptor, &header32, sizeof(header32));
+		if (bytesRead == -1)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		if (bytesRead < sizeof(header32))
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		if (header32.e_type != ET_EXEC)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 100;
+		}
+
+	}
+
+	// Clean up
+	close(fileDescriptor);
+	heap.free(e_ident);
+
+	return architectureBits;
+}

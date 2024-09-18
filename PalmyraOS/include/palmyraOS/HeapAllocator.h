@@ -185,6 +185,12 @@ namespace PalmyraOS::types
 		  : Base(HeapAllocator<T>(heap))
 	  {}
 
+	  explicit UString(UserHeapManager& heap, const char* initialValue)
+		  : Base(HeapAllocator<T>(heap))
+	  {
+		  *this = initialValue;
+	  }
+
 	  UString(UserHeapManager& heap, size_t count)
 		  : Base(count, HeapAllocator<T>(heap))
 	  {}
@@ -201,6 +207,11 @@ namespace PalmyraOS::types
 	  UString(UserHeapManager& heap, std::initializer_list<T> init)
 		  : Base(init, HeapAllocator<T>(heap))
 	  {}
+
+	  void setHeapManager(UserHeapManager& heap)
+	  {
+		  this->allocator = HeapAllocator<T>(heap);
+	  }
 
   };
 

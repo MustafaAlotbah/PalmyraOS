@@ -316,7 +316,7 @@ void callConstructors()
 	{
 		// Initialize the Window Manager in Kernel Mode
 		{
-			char* argv[] = { const_cast<char*>("windowsManager.exe"), nullptr };
+			char* argv[] = { const_cast<char*>("windowsManager.elf"), nullptr };
 			kernel::TaskManager::newProcess(
 				kernel::WindowManager::thread,
 				kernel::Process::Mode::Kernel,
@@ -328,7 +328,7 @@ void callConstructors()
 		// Initialize the menu bar
 		{
 			char* argv[] = {
-				const_cast<char*>("menuBar.exe"), nullptr
+				const_cast<char*>("menuBar.elf"), nullptr
 			};
 			kernel::TaskManager::newProcess(
 				PalmyraOS::Userland::builtin::MenuBar::main,
@@ -342,7 +342,7 @@ void callConstructors()
 		// Run the kernel terminal
 		{
 			char* argv[] = {
-				const_cast<char*>("kernelTerminal.exe"),
+				const_cast<char*>("terminal.elf"),
 				const_cast<char*>("uname"),
 				nullptr
 			};
@@ -357,7 +357,7 @@ void callConstructors()
 
 		// Background process that counts just for testing
 		{
-			char* argv[] = { const_cast<char*>("proc1.exe"), const_cast<char*>("-count"), nullptr };
+			char* argv[] = { const_cast<char*>("proc1.elf"), const_cast<char*>("-count"), nullptr };
 			kernel::TaskManager::newProcess(
 				Processes::process_1,
 				kernel::Process::Mode::User,
@@ -370,7 +370,7 @@ void callConstructors()
 		// Process with a window that exists later for testing
 		{
 			char* argv[] = {
-				const_cast<char*>("proc2.exe"),
+				const_cast<char*>("proc2.elf"),
 				const_cast<char*>("-count"),
 				const_cast<char*>("arg3"), nullptr
 			};
@@ -386,7 +386,7 @@ void callConstructors()
 		// Process with a window that exists later for testing
 		{
 			char* argv[] = {
-				const_cast<char*>("clock.exe"), nullptr
+				const_cast<char*>("clock.elf"), nullptr
 			};
 			kernel::TaskManager::newProcess(
 				PalmyraOS::Userland::builtin::KernelClock::main,
@@ -414,10 +414,10 @@ void callConstructors()
 		// Process with a window that exists later for testing
 		{
 			char* argv[] = {
-				const_cast<char*>("explorer.exe"), nullptr
+				const_cast<char*>("fileManager.elf"), nullptr
 			};
 			kernel::TaskManager::newProcess(
-				PalmyraOS::Userland::builtin::Explorer::main,
+				PalmyraOS::Userland::builtin::fileManager::main,
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
 				1,
