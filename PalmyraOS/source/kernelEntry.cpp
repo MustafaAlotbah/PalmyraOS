@@ -40,8 +40,6 @@ namespace Processes
 {
   uint64_t proc_1_counter = 0;
   uint64_t proc_2_counter = 0;
-  uint32_t proc_1_pid     = 0;
-  uint32_t proc_2_pid     = 0;
 
   void increase(uint64_t* integer)
   {
@@ -53,8 +51,7 @@ namespace Processes
 	  while (true)
 	  {
 		  proc_1_counter++;
-		  proc_1_pid = get_pid();
-//		  sched_yield();
+		  sched_yield();
 //		  return 0;
 	  }
   }
@@ -69,20 +66,13 @@ namespace Processes
 	  }
 
 	  // Set initial window position and dimensions
-	  PalmyraOS::SDK::Window      window(40, 40, 640, 480, true, "Tests");
-	  PalmyraOS::SDK::WindowFrame windowFrame(window);
+	  PalmyraOS::SDK::Window    window(40, 40, 640, 480, true, "Tests");
+	  PalmyraOS::SDK::WindowGUI windowFrame(window);
 
 	  while (true)
 	  {
 		  increase(&proc_2_counter);
-		  proc_2_pid = get_pid();
-
-		  windowFrame.text() << PalmyraOS::Color::White;
-		  windowFrame.text().setCursor(1, 1);
-		  windowFrame.text() << "Testy Process\n";
-		  windowFrame.text().reset();
-		  windowFrame.text().setCursor(1, 21);
-		  windowFrame.text() << PalmyraOS::Color::LightBlue;
+		  windowFrame.text() << PalmyraOS::Color::LighterBlue;
 
 		  windowFrame.text() << "Counter: " << proc_2_counter << "\n";
 		  windowFrame.text() << "Counter proc0: " << proc_1_counter << "\n";
@@ -146,7 +136,7 @@ void callConstructors()
 [[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info)
 {
 	using namespace PalmyraOS;
-	constexpr uint64_t SHORT_DELAY = 2'500'000;
+	constexpr uint64_t SHORT_DELAY = 2'500'000L;
 
 	// ----------------------- Call Kernel Constructors -----------------------
 	// first construct globals
@@ -203,33 +193,23 @@ void callConstructors()
 		kernel::kernelPanic("Failed to initialize Interrupts");
 	}
 
-	// initialize system clock with frequency of 250 Hz
+	// initialize system clock with frequency of 250 Hz initially
 	PalmyraOS::kernel::SystemClock::initialize(kernel::SystemClockFrequency);
 	textRenderer << "Initialized System Clock at " << kernel::SystemClockFrequency << " Hz.\n" << SWAP_BUFF();
 	LOG_INFO("Initialized System Clock at %d Hz.", kernel::SystemClockFrequency);
 	kernel::CPU::delay(SHORT_DELAY);
 
-	// Measurements that depend on system clock
-	{
-		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-		PalmyraOS::kernel::CPU::initialize();
-		textRenderer << "CPU Frequency: " << PalmyraOS::kernel::CPU::detectCpuFrequency() << " MHz.\n" << SWAP_BUFF();
-		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
-		kernel::CPU::delay(SHORT_DELAY);
-	}
-
-//	while(true);
 	// ----------------------- Initialize Physical Memory -------------------------------
 	textRenderer << "Initializing Physical Memory: " << x86_multiboot_info->mem_upper << " KiB\n" << SWAP_BUFF();
 	kernel::initializePhysicalMemory(x86_multiboot_info);
 	kernel::CPU::delay(SHORT_DELAY);
 
 	// ----------------------- Initialize Virtual Memory -------------------------------
-	textRenderer << "Initializing Virtual Memory\n" << SWAP_BUFF();
-	kernel::CPU::delay(SHORT_DELAY);
-
+	textRenderer << "Initializing Virtual Memory..." << SWAP_BUFF();
+	PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
 	kernel::initializeVirtualMemory(x86_multiboot_info);
-	textRenderer << "Virtual Memory is initialized\n" << SWAP_BUFF();
+	PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 	kernel::CPU::delay(SHORT_DELAY);
 
 //	kernel::testMemory();
@@ -238,37 +218,71 @@ void callConstructors()
 
 	// ----------------------- Virtual File System -------------------------------
 
+	textRenderer << "Initializing Virtual File System..." << SWAP_BUFF();
 	kernel::vfs::VirtualFileSystem::initialize();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 
-	kernel::initializeDrivers(); // ATAs after interrupts run
-	LOG_INFO("Initialized Drivers.");
+	kernel::RTC::initialize();
+	textRenderer << "RTC is initialized.\n" << SWAP_BUFF();
+
+	// Measure Frequencies based on RTC
+	textRenderer << "Measuring CPU frequency.." << SWAP_BUFF();
+	{
+		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+		PalmyraOS::kernel::CPU::initialize();
+		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+		textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
+		textRenderer << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz] " << SWAP_BUFF();
+
+		uint32_t hsc_frequency = PalmyraOS::kernel::CPU::getHSCFrequency();
+		if (hsc_frequency > 50)
+		{
+
+			textRenderer << " Updating HSC to " << hsc_frequency << " Hz] " << SWAP_BUFF();
+			PalmyraOS::kernel::SystemClock::setFrequency(hsc_frequency);
+		}
+
+		kernel::CPU::delay(SHORT_DELAY);
+	}
+	textRenderer << " Done.\n" << SWAP_BUFF();
+
 
 
 	// ----------------------- Initialize Tasks -------------------------------
-	kernel::TaskManager::initialize();
-	textRenderer << "TaskManager is initialized.\n" << SWAP_BUFF();
-	kernel::CPU::delay(SHORT_DELAY);
 
-	kernel::initializePartitions();
-	LOG_INFO("Initialized Partitions.");
 
+	{
+		textRenderer << "Initializing ATA.." << SWAP_BUFF();
+		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+		kernel::initializeDrivers(); // ATAs after interrupts run
+		textRenderer << " Done.\n" << SWAP_BUFF();
+		LOG_INFO("Initialized Drivers.");
+
+		textRenderer << "Initializing Partitions..." << SWAP_BUFF();
+		kernel::initializePartitions();
+		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+		textRenderer << " Done.\n" << SWAP_BUFF();
+		LOG_INFO("Initialized Partitions.");
+	}
+
+	textRenderer << "Initializing SystemCallsManager..." << SWAP_BUFF();
 	kernel::SystemCallsManager::initialize();
-	textRenderer << "SystemCallsManager is initialized.\n" << SWAP_BUFF();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 	kernel::CPU::delay(SHORT_DELAY);
 
+	textRenderer << "Initializing WindowManager..." << SWAP_BUFF();
 	kernel::WindowManager::initialize();
-	textRenderer << "WindowManager is initialized.\n" << SWAP_BUFF();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 	kernel::CPU::delay(SHORT_DELAY);
 
 
 	// ----------------------- Initialize Peripherals -------------------------------
 
-	kernel::RTC::initialize();
-	textRenderer << "RTC is initialized.\n" << SWAP_BUFF();
-
+	textRenderer << "Initializing Keyboard Driver..." << SWAP_BUFF();
 	kernel::Keyboard::initialize();
-	textRenderer << "Keyboard is initialized.\n" << SWAP_BUFF();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 
+	textRenderer << "Initializing Mouse Driver..." << SWAP_BUFF();
 	kernel::Mouse::initialize();
 	textRenderer << " Done.\n" << SWAP_BUFF();
 
@@ -383,11 +397,41 @@ void callConstructors()
 			);
 		}
 
+		// Process with a window that exists later for testing
+//		{
+//			char* argv[] = {
+//				const_cast<char*>("events.exe"), nullptr
+//			};
+//			kernel::TaskManager::newProcess(
+//				PalmyraOS::Userland::Tests::events::main,
+//				kernel::Process::Mode::User,
+//				kernel::Process::Priority::Low,
+//				1,
+//				argv, true
+//			);
+//		}
+
+		// Process with a window that exists later for testing
+		{
+			char* argv[] = {
+				const_cast<char*>("explorer.exe"), nullptr
+			};
+			kernel::TaskManager::newProcess(
+				PalmyraOS::Userland::builtin::Explorer::main,
+				kernel::Process::Mode::User,
+				kernel::Process::Priority::Low,
+				1,
+				argv, true
+			);
+		}
+
 
 	}
 
 
 	// ----------------------- System Entry End -------------------------------
+
+
 	// Now enable maskable interrupts
 	{
 		LOG_INFO("Enabling Interrupts.");
