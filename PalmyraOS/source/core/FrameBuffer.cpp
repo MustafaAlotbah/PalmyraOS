@@ -23,24 +23,52 @@ uint32_t PalmyraOS::Color::getColorValue() const
 }
 
 // Define the static color constants
-const PalmyraOS::Color PalmyraOS::Color::Red        = Color(252, 3, 32);
-const PalmyraOS::Color PalmyraOS::Color::Green      = Color(90, 252, 3);
-const PalmyraOS::Color PalmyraOS::Color::Blue       = Color(3, 53, 252);
-const PalmyraOS::Color PalmyraOS::Color::Cyan       = Color(3, 173, 252);
-const PalmyraOS::Color PalmyraOS::Color::Magenta    = Color(252, 3, 198);
-const PalmyraOS::Color PalmyraOS::Color::Yellow     = Color(223, 252, 3);
+/* Gray Scale */
+const PalmyraOS::Color PalmyraOS::Color::White      = Color(255, 255, 255);
+const PalmyraOS::Color PalmyraOS::Color::Gray100    = Color(245, 245, 245);
+const PalmyraOS::Color PalmyraOS::Color::Gray200    = Color(238, 238, 238);
+const PalmyraOS::Color PalmyraOS::Color::Gray300    = Color(224, 224, 224);
+const PalmyraOS::Color PalmyraOS::Color::Gray400    = Color(189, 189, 189);
+const PalmyraOS::Color PalmyraOS::Color::Gray500    = Color(158, 158, 158);
+const PalmyraOS::Color PalmyraOS::Color::Gray600    = Color(117, 117, 117);
+const PalmyraOS::Color PalmyraOS::Color::Gray700    = Color(97, 97, 97);
+const PalmyraOS::Color PalmyraOS::Color::Gray800    = Color(66, 66, 66);
+const PalmyraOS::Color PalmyraOS::Color::DarkGray   = Color(33, 33, 33);
+const PalmyraOS::Color PalmyraOS::Color::DarkerGray = Color(18, 18, 18);
 const PalmyraOS::Color PalmyraOS::Color::Black      = Color(2, 2, 2);
-const PalmyraOS::Color PalmyraOS::Color::White      = Color(245, 245, 245);
-const PalmyraOS::Color PalmyraOS::Color::Gray       = Color(128, 128, 128);
-const PalmyraOS::Color PalmyraOS::Color::DarkGray = Color(32, 32, 32);
-const PalmyraOS::Color PalmyraOS::Color::DarkerGray = Color(16, 16, 16);
-const PalmyraOS::Color PalmyraOS::Color::DarkRed    = Color(145, 4, 21);
-const PalmyraOS::Color PalmyraOS::Color::DarkGreen  = Color(58, 122, 9);
-const PalmyraOS::Color PalmyraOS::Color::DarkBlue   = Color(10, 44, 145);
-const PalmyraOS::Color PalmyraOS::Color::LightRed   = Color(237, 116, 134);
-const PalmyraOS::Color PalmyraOS::Color::LightGreen = Color(144, 238, 144);
-const PalmyraOS::Color PalmyraOS::Color::LightBlue  = Color(173, 216, 230);
-const PalmyraOS::Color PalmyraOS::Color::Orange     = Color(252, 177, 3);
+
+/* Red Scale */
+const PalmyraOS::Color PalmyraOS::Color::Red       = Color(252, 3, 32);
+const PalmyraOS::Color PalmyraOS::Color::DarkRed   = Color(145, 4, 21);
+const PalmyraOS::Color PalmyraOS::Color::DarkerRed = Color(92, 6, 16);
+const PalmyraOS::Color PalmyraOS::Color::Red100    = Color(255, 205, 210);
+const PalmyraOS::Color PalmyraOS::Color::Red200    = Color(239, 154, 154);
+const PalmyraOS::Color PalmyraOS::Color::Red300    = Color(229, 115, 115);
+const PalmyraOS::Color PalmyraOS::Color::Red400    = Color(239, 83, 80);
+const PalmyraOS::Color PalmyraOS::Color::Red500    = Color(244, 67, 54);
+const PalmyraOS::Color PalmyraOS::Color::Red600    = Color(229, 57, 53);
+const PalmyraOS::Color PalmyraOS::Color::Red700    = Color(211, 47, 47);
+const PalmyraOS::Color PalmyraOS::Color::Red800    = Color(198, 40, 40);
+const PalmyraOS::Color PalmyraOS::Color::Red900    = Color(183, 28, 28);
+
+const PalmyraOS::Color PalmyraOS::Color::Green   = Color(90, 252, 3);
+const PalmyraOS::Color PalmyraOS::Color::Blue    = Color(12, 91, 237);
+const PalmyraOS::Color PalmyraOS::Color::Cyan    = Color(3, 173, 252);
+const PalmyraOS::Color PalmyraOS::Color::Magenta = Color(252, 3, 198);
+const PalmyraOS::Color PalmyraOS::Color::Yellow  = Color(223, 252, 3);
+
+const PalmyraOS::Color PalmyraOS::Color::DarkGreen   = Color(58, 122, 9);
+const PalmyraOS::Color PalmyraOS::Color::DarkBlue    = Color(18, 61, 148);
+const PalmyraOS::Color PalmyraOS::Color::LightRed    = Color(237, 116, 134);
+const PalmyraOS::Color PalmyraOS::Color::LightGreen  = Color(144, 238, 144);
+const PalmyraOS::Color PalmyraOS::Color::LightBlue   = Color(84, 144, 204);
+const PalmyraOS::Color PalmyraOS::Color::LighterBlue = Color(173, 216, 230);
+const PalmyraOS::Color PalmyraOS::Color::Orange      = Color(252, 177, 3);
+
+const PalmyraOS::Color PalmyraOS::Color::PrimaryDark  = Color(89, 97, 2);
+const PalmyraOS::Color PalmyraOS::Color::Primary      = Color(148, 177, 0);
+const PalmyraOS::Color PalmyraOS::Color::PrimaryLight = Color(196, 245, 68);
+const PalmyraOS::Color PalmyraOS::Color::Secondary    = Color(214, 189, 152);
 
 // PalmyraOS::kernel::FrameBuffer
 

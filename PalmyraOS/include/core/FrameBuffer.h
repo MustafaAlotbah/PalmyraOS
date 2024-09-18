@@ -45,24 +45,56 @@ namespace PalmyraOS
 	  [[nodiscard]] uint32_t getColorValue() const;
 
 	  // Predefined static colors
+
+	  /**
+	   * @reference material theme
+	   */
+	  /* Gray Scale*/
+	  static const Color White;
+	  static const Color Gray100;
+	  static const Color Gray200;
+	  static const Color Gray300;
+	  static const Color Gray400;
+	  static const Color Gray500;
+	  static const Color Gray600;
+	  static const Color Gray700;
+	  static const Color Gray800;
+	  static const Color DarkGray;
+	  static const Color DarkerGray;
+	  static const Color Black;
+
 	  static const Color Red;
+	  static const Color Red100;
+	  static const Color Red200;
+	  static const Color Red300;
+	  static const Color Red400;
+	  static const Color Red500;
+	  static const Color Red600;
+	  static const Color Red700;
+	  static const Color Red800;
+	  static const Color Red900;
+	  static const Color DarkRed;
+	  static const Color DarkerRed;
+
+
 	  static const Color Green;
 	  static const Color Blue;
 	  static const Color Cyan;
 	  static const Color Magenta;
 	  static const Color Yellow;
-	  static const Color Black;
-	  static const Color White;
-	  static const Color Gray;
-	  static const Color DarkGray;
-	  static const Color DarkerGray;
-	  static const Color DarkRed;
+
 	  static const Color DarkGreen;
 	  static const Color DarkBlue;
 	  static const Color LightRed;
 	  static const Color LightGreen;
 	  static const Color LightBlue;
+	  static const Color LighterBlue;
 	  static const Color Orange;
+
+	  static const Color PrimaryDark;    // 900
+	  static const Color Primary;        // 800
+	  static const Color PrimaryLight;    // 400
+	  static const Color Secondary;
   };
 
   namespace kernel
