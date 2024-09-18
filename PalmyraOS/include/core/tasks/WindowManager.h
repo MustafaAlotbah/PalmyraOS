@@ -48,6 +48,8 @@ namespace PalmyraOS::kernel
 	  MouseEvent popMouseEvent();
 
 	  void setPosition(uint32_t x, uint32_t y);
+	  std::pair<uint32_t, uint32_t> getPosition();
+	  std::pair<uint32_t, uint32_t> getSize();
 
 	  void setMovable(bool status);
 
@@ -113,7 +115,11 @@ namespace PalmyraOS::kernel
 
 	  static KeyboardEvent popKeyboardEvent(uint32_t id);
 
+	  static MouseEvent popMouseEvent(uint32_t id);
+
 	  static void setActiveWindow(uint32_t id);
+
+	  static uint32_t getActiveWindowId();
 
 	  static void composeWindow(FrameBuffer& buffer, const Window& window);
 
@@ -137,6 +143,10 @@ namespace PalmyraOS::kernel
 
 	  // Utility methods
 	  static Window* getWindowById(uint32_t id);
+	  static std::pair<int, int> getMousePosition();
+	  static bool isLeftButtonDown();
+
+	  static void doEraseWindows();
 
    private:
 	  static KVector<Window> windows_; ///< Vector of all windows managed by the WindowManager. // TODO  KMap
@@ -146,6 +156,7 @@ namespace PalmyraOS::kernel
 
 	  static KQueue<KeyboardEvent>* keyboardsEvents_;
 	  static KQueue<MouseEvent>   * mouseEvents_;
+	  static KQueue<uint32_t>     * deletedWindows_;
 
 	  // Mouse state tracking
 	  static int  mouseX_;
