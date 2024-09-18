@@ -271,6 +271,9 @@ void callConstructors()
 
 	kernel::Mouse::initialize();
 	textRenderer << "Mouse is initialized.\n" << SWAP_BUFF();
+	textRenderer << "Initializing Binaries.." << SWAP_BUFF();
+	kernel::initializeBinaries();
+	textRenderer << " Done.\n" << SWAP_BUFF();
 
 	// ---------------------------- Add Processes -----------------------------------
 
@@ -305,8 +308,8 @@ void callConstructors()
 		{
 			char* argv[] = {
 				const_cast<char*>("kernelTerminal.exe"),
-				const_cast<char*>("-count"),
-				const_cast<char*>("arg3"), nullptr
+				const_cast<char*>("uname"),
+				nullptr
 			};
 			kernel::TaskManager::newProcess(
 				PalmyraOS::Userland::builtin::KernelTerminal::main,

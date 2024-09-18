@@ -76,6 +76,7 @@ namespace PalmyraOS::kernel::vfs
 
   InodeBase* VirtualFileSystem::rootNode_    = nullptr;
   InodeBase* VirtualFileSystem::deviceInode_ = nullptr;
+  InodeBase* VirtualFileSystem::binaryInode_ = nullptr;
 
   InodeBase* VirtualFileSystem::traversePath(InodeBase& rootInode, const KVector<KString>& components)
   {
@@ -284,6 +285,15 @@ namespace PalmyraOS::kernel::vfs
 		  InodeBase::GroupID::ROOT
 	  );
 	  if (!deviceInode_ || !setInodeByPath(KString("/dev"), deviceInode_)) return false;
+
+	  // Allocate and set the "/bin" directory inode
+	  binaryInode_ = devSuperBlock->allocateInode(
+		  InodeBase::Type::Directory,
+		  Mode::USER_READ | Mode::USER_WRITE | Mode::GROUP_READ | Mode::OTHERS_READ,
+		  InodeBase::UserID::ROOT,
+		  InodeBase::GroupID::ROOT
+	  );
+	  if (!binaryInode_ || !setInodeByPath(KString("/bin"), binaryInode_)) return false;
 
 
 	  // Create a test inode with a lambda function for reading test string

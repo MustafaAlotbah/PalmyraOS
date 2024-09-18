@@ -198,6 +198,7 @@ namespace PalmyraOS::kernel::vfs
    private:
 	  static InodeBase* rootNode_;        ///< Root inode of the virtual file system.
 	  static InodeBase* deviceInode_;     ///< Inode for the /dev directory.
+	  static InodeBase* binaryInode_;     ///< Inode for the /bin directory.
 
   };
 

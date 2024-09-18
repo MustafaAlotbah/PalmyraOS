@@ -504,52 +504,17 @@ void PalmyraOS::kernel::initializePartitions()
 					}
 				}
 
-				// TODO: Test Appending to a file
-				if (false)
-				{
-					auto     f     = fat32.resolvePathToEntry(kernel::KString("/exp1.txt"));
-					auto     data5 = fat32.read(f, 0, 50);
-					for (int j     = 0; j < 50; ++j)
-					{
-						for (int k = 0; k < 1; ++k)
-						{
-							fat32.append(f, { 'w', 'h', 'a', 't', ' ', '\n' });
-						}
-						textRenderer << j << ", " << SWAP_BUFF();
-					}
-					auto     data6 = fat32.read(f, 0, 50);
-				}
+}
 
-				// TODO: Test Overriding a file
-				if (false)
-					for (int j = 0; j < 100; ++j)
-					{
-						auto f     = fat32.resolvePathToEntry(kernel::KString("/exp2.txt"));
-						auto data5 = fat32.read(f, 0, 50);
+void PalmyraOS::kernel::initializeBinaries()
+{
 
-						kernel::KVector<uint8_t> data;
-						for (int                 u = 0; u < 500; ++u)
-						{
-							data.push_back('w');
-							data.push_back('h');
-							data.push_back('a');
-							data.push_back('t');
-							data.push_back('\n');
-						}
+	// Create a test inode with a lambda function for reading test string
+	auto terminalNode = kernel::heapManager.createInstance<vfs::FunctionInode>(nullptr, nullptr, nullptr);
+	if (!terminalNode) return;
 
-						fat32.write(f, data);
-						textRenderer << j << ", " << SWAP_BUFF();
-
-						auto data6 = fat32.read(f, 0, 50);
-					}
-
-
-			}
-
-
-		}
-
-	}
+	// Set the test inode at "/bin/terminal"
+	vfs::VirtualFileSystem::setInodeByPath(KString("/bin/terminal.elf"), terminalNode);
 
 
 }

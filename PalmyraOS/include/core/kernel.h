@@ -108,6 +108,8 @@ namespace PalmyraOS::kernel
 
   void initializePartitions();
 
+  void initializeBinaries();
+
 }
 
 

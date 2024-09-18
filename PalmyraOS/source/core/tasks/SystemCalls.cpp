@@ -662,6 +662,47 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 		return;
 	}
 
+	// Count the number of arguments in argv
+	int argc = 0;
+	while (argv[argc] != nullptr)
+	{
+		argc++;
+	}
+
+	// check if file is internal TODO move out
+	if (strcmp(path, "/bin/terminal.elf") == 0)
+	{
+
+		LOG_INFO("EXEC TERMINAL");
+		Process* proc = kernel::TaskManager::newProcess(
+			PalmyraOS::Userland::builtin::KernelTerminal::main,
+			kernel::Process::Mode::User,
+			kernel::Process::Priority::Low,
+			argc,
+			argv,
+			true
+		);
+
+
+		if (!proc)
+		{
+			regs->eax = -ENOMEM; // Out of memory or failed to create the process
+			return;
+		}
+
+		// If pid is a valid pointer, store the process ID of the new process
+		if (isValidAddress(pid))
+		{
+			*pid = proc->getPid();
+		}
+
+		// Return success
+		regs->eax = 0;
+		return;
+
+	}
+
+
 	// Load the ELF file from the specified path
 	auto file = vfs::VirtualFileSystem::getInodeByPath(KString(path));
 	if (!file)
