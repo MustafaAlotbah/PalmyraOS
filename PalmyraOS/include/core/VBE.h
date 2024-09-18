@@ -185,10 +185,20 @@ namespace PalmyraOS::kernel
 	   */
 	  void reset();
 
-	  [[nodiscard]] inline uint32_t getCursorX() const
+	  [[nodiscard]] inline int getCursorX() const
 	  { return cursor_x; }
-	  [[nodiscard]] inline uint32_t getCursorY() const
+	  [[nodiscard]] inline int getCursorY() const
 	  { return cursor_y; }
+
+	  [[nodiscard]] inline uint32_t getPositionX() const
+	  { return position_x; }
+	  [[nodiscard]] inline uint32_t getPositionY() const
+	  { return position_y; }
+
+	  [[nodiscard]] inline uint32_t getWidth() const
+	  { return width; }
+	  [[nodiscard]] inline uint32_t getHeight() const
+	  { return height; }
 
 	  // Puts a character on the screen at the current x, y position
 	  void putChar(char ch);
@@ -197,13 +207,19 @@ namespace PalmyraOS::kernel
 	  void setPosition(uint32_t x, uint32_t y);
 
 	  // change the position of the cursor
-	  void setCursor(uint32_t x, uint32_t y);
+	  void setCursor(int x, int y);
 
 	  // change the width and height of the text rendering area
 	  void setSize(uint32_t w, uint32_t h);
 
+	  Color getCurrentColor();
+
 	  // Puts a string on the screen
 	  void putString(const char* str);
+
+	  uint32_t calculateWidth(const char* str);
+
+	  uint32_t calculateHeight();
 
 	  // Overload for << streaming operator for characters
 	  TextRenderer& operator<<(char ch);
@@ -251,8 +267,8 @@ namespace PalmyraOS::kernel
 	  NumeralSystem representation{ NumeralSystem::Dec };   // Current numeral system (default is decimal)
 	  uint8_t precision_{ 3 };                                // Current precision of floats(default is 3)
 
-	  uint32_t cursor_x{ 0 };                                // Current x-coordinate of the cursor
-	  uint32_t cursor_y{ 0 };                                // Current y-coordinate of the cursor
+	  int cursor_x{ 0 };                                // Current x-coordinate of the cursor
+	  int cursor_y{ 0 };                                // Current y-coordinate of the cursor
 
 	  uint32_t lineSpacing_{ 3 };                            // Line spacing between text lines
 	  uint32_t tabSize_ = 8;                                 // Represents 8 characters per tab stop

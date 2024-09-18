@@ -169,13 +169,20 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 		return;
 	}
 
-	// get the frame buffer address
-	uint32_t* backBuffer = frameBuffer_.getBackBuffer();
+	auto& glyph = font_.getGlyph(ch); // TODO implement more parsing e.g. \u05468
 
 	// get Glyph from font
-	auto& glyph = font_.getGlyph(ch); // TODO implement more parsing e.g. \u05468
-	size_t advance_x = glyph.width + 0;
-	size_t advance_y = font_.getGlyph('A').height + 3;
+	size_t advance_x = glyph.width;
+
+	// Handle line wrap
+	if (cursor_x + advance_x >= width)
+	{
+		cursor_x = 0;
+		cursor_y += font_.getGlyph('A').height + 3;
+	}
+
+	// get the frame buffer address
+	uint32_t* backBuffer = frameBuffer_.getBackBuffer();
 
 	for (size_t _x = 0; _x < glyph.width; _x += 1)
 	{
@@ -185,9 +192,13 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 			{
 
 				uint32_t x_ = position_x + cursor_x + _x;
+				if (x_ >= position_x + width) continue;
+				if (x_ < position_x) continue;
 				if (x_ >= frameBuffer_.getWidth()) continue;
 
 				uint32_t y_ = position_y + cursor_y + glyph.offsetY + glyph.height - _y;
+				if (y_ >= position_y + height) continue;
+				if (y_ < position_y) continue;
 				if (y_ >= frameBuffer_.getHeight()) continue;
 
 				uint32_t index = x_ + (y_ * frameBuffer_.getWidth());
@@ -199,15 +210,6 @@ void PalmyraOS::kernel::TextRenderer::putChar(char ch)
 	}
 
 	cursor_x += advance_x;
-
-	// Handle line wrap
-	if (cursor_x >= position_x + width)
-	{
-		cursor_x = 0;
-		cursor_y += advance_y;
-	}
-
-
 }
 
 void PalmyraOS::kernel::TextRenderer::putString(const char* str)
@@ -316,7 +318,7 @@ void PalmyraOS::kernel::TextRenderer::setSize(uint32_t w, uint32_t h)
 	height = h;
 }
 
-void PalmyraOS::kernel::TextRenderer::setCursor(uint32_t x, uint32_t y)
+void PalmyraOS::kernel::TextRenderer::setCursor(int x, int y)
 {
 	cursor_x = x;
 	cursor_y = y;
@@ -346,6 +348,48 @@ PalmyraOS::kernel::TextRenderer& PalmyraOS::kernel::TextRenderer::operator<<(dou
 void PalmyraOS::kernel::TextRenderer::setPrecision(uint8_t precision)
 {
 	precision_ = precision;
+}
+
+uint32_t PalmyraOS::kernel::TextRenderer::calculateWidth(const char* str)
+{
+	uint32_t totalWidth = 0;
+
+	for (size_t i = 0; str[i] != '\0'; ++i)
+	{
+		char ch = str[i];
+
+		// Handle control characters like '\t' or '\n'
+		if (ch == '\t')
+		{
+			const size_t characterWidth = font_.getGlyph(' ').width;
+			size_t       nextTabStop    =
+							 ((totalWidth / (tabSize_ * characterWidth)) + 1) * (tabSize_ * characterWidth);
+			totalWidth = nextTabStop;
+		}
+		else if (ch == '\n' || ch == '\r')
+		{
+			// Ignore line breaks when calculating width (they don't contribute to horizontal width)
+			continue;
+		}
+		else
+		{
+			// Get the width of the glyph for the current character
+			auto& glyph = font_.getGlyph(ch);
+			totalWidth += glyph.width;
+		}
+	}
+
+	return totalWidth;
+}
+
+PalmyraOS::Color PalmyraOS::kernel::TextRenderer::getCurrentColor()
+{
+	return textColor_;
+}
+
+uint32_t PalmyraOS::kernel::TextRenderer::calculateHeight()
+{
+	return font_.getGlyph('|').height;;
 }
 
 ///endregion
