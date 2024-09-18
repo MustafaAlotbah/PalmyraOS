@@ -270,10 +270,31 @@ void callConstructors()
 	textRenderer << "Keyboard is initialized.\n" << SWAP_BUFF();
 
 	kernel::Mouse::initialize();
-	textRenderer << "Mouse is initialized.\n" << SWAP_BUFF();
+	textRenderer << " Done.\n" << SWAP_BUFF();
+
 	textRenderer << "Initializing Binaries.." << SWAP_BUFF();
 	kernel::initializeBinaries();
 	textRenderer << " Done.\n" << SWAP_BUFF();
+
+	textRenderer << "Measuring CPU frequency.." << SWAP_BUFF();
+	{
+		PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
+		PalmyraOS::kernel::CPU::initialize();
+		PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+
+		textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
+		textRenderer << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz] " << SWAP_BUFF();
+		for (int i = 0; i < 5; ++i)
+		{
+			kernel::CPU::delay(SHORT_DELAY);
+		}
+	}
+	textRenderer << " Done.\n" << SWAP_BUFF();
+
+	textRenderer << "Initializing TaskManager..." << SWAP_BUFF();
+	kernel::TaskManager::initialize();
+	textRenderer << " Done.\n" << SWAP_BUFF();
+	kernel::CPU::delay(SHORT_DELAY);
 
 	// ---------------------------- Add Processes -----------------------------------
 
