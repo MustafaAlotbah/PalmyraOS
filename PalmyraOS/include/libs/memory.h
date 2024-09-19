@@ -31,7 +31,7 @@ int memcmp(const void* ptr1, const void* ptr2, size_t num);
  * @param num Number of bytes to copy.
  * @return A pointer to `destination`.
  */
-void* memcpy(void* destination, void* source, size_t num);
+void* memcpy(void* destination, const void* source, size_t num);
 
 /**
  * Copies `num` double words from the memory block pointed by `source` to the memory block pointed by `destination`.

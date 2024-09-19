@@ -36,36 +36,91 @@ namespace PalmyraOS::kernel
 	  size_t   i = 0;
 	  while (i < utf8_string.size())
 	  {
-		  unsigned char utf8_char = utf8_string[i];
-		  wchar_t       utf16_char;
-		  if (utf8_char < 0x80)
+		  auto     utf8_char   = static_cast<unsigned char>(utf8_string[i]);
+		  uint32_t codepoint   = 0;
+		  size_t   extra_bytes = 0;
+
+		  if (utf8_char <= 0x7F)
 		  {
 			  // 1-byte sequence
-			  utf16_char = utf8_char;
-			  ++i;
+			  codepoint   = utf8_char;
+			  extra_bytes = 0;
 		  }
 		  else if ((utf8_char & 0xE0) == 0xC0)
 		  {
 			  // 2-byte sequence
-			  utf16_char = (utf8_char & 0x1F) << 6;
-			  utf16_char |= (utf8_string[i + 1] & 0x3F);
-			  i += 2;
+			  codepoint   = utf8_char & 0x1F;
+			  extra_bytes = 1;
 		  }
 		  else if ((utf8_char & 0xF0) == 0xE0)
 		  {
 			  // 3-byte sequence
-			  utf16_char = (utf8_char & 0x0F) << 12;
-			  utf16_char |= (utf8_string[i + 1] & 0x3F) << 6;
-			  utf16_char |= (utf8_string[i + 2] & 0x3F);
-			  i += 3;
+			  codepoint   = utf8_char & 0x0F;
+			  extra_bytes = 2;
+		  }
+		  else if ((utf8_char & 0xF8) == 0xF0)
+		  {
+			  // 4-byte sequence
+			  codepoint   = utf8_char & 0x07;
+			  extra_bytes = 3;
 		  }
 		  else
 		  {
-			  // Invalid UTF-8 sequence
-			  // Handle error or throw exception
-			  // TODO throw std::runtime_error("Invalid UTF-8 sequence");
+			  // Invalid first byte
+			  // Handle error or skip
+			  ++i;
+			  continue;
 		  }
-		  utf16le_string += utf16_char;
+
+		  // Ensure there are enough bytes left
+		  if (i + extra_bytes >= utf8_string.size())
+		  {
+			  // Incomplete sequence
+			  // Handle error or skip
+			  break;
+		  }
+
+		  // Process continuation bytes
+		  for (size_t j = 1; j <= extra_bytes; ++j)
+		  {
+			  auto cc   = static_cast<unsigned char>(utf8_string[i + j]);
+			  if ((cc & 0xC0) != 0x80)
+			  {
+				  // Invalid continuation byte
+				  // Handle error or skip
+				  i += j;
+				  continue;
+			  }
+			  codepoint = (codepoint << 6) | (cc & 0x3F);
+		  }
+
+		  i += extra_bytes + 1;
+
+		  if (codepoint <= 0xFFFF)
+		  {
+			  if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+			  {
+				  // Reserved for surrogate pairs in UTF-16
+				  // Handle error or skip
+				  continue;
+			  }
+			  utf16le_string.push_back(static_cast<uint16_t>(codepoint));
+		  }
+		  else if (codepoint <= 0x10FFFF)
+		  {
+			  // Encode as surrogate pair
+			  codepoint -= 0x10000;
+			  uint16_t high_surrogate = 0xD800 | ((codepoint >> 10) & 0x3FF);
+			  uint16_t low_surrogate  = 0xDC00 | (codepoint & 0x3FF);
+			  utf16le_string.push_back(high_surrogate);
+			  utf16le_string.push_back(low_surrogate);
+		  }
+		  else
+		  {
+			  // Codepoint out of range
+			  // Handle error or skip
+			  continue;
+		  }
 	  }
 	  return utf16le_string;
   }

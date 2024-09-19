@@ -231,7 +231,7 @@ PalmyraOS/
 5. [x] `int open(const char *pathname, int flags, mode_t mode)`
 6. [x] `int close(int fd)`
 7. [x] `ssize_t read(int fd, void *buf, size_t count)`
-8. [ ] `off_t lseek(int fd, off_t offset, int whence)`
+8. [x] `off_t lseek(int fd, off_t offset, int whence)`
 9. [ ] `int fstat(int fd, struct stat *statbuf)`
 
 10. [ ] `int chdir(const char *path)`
@@ -261,12 +261,12 @@ PalmyraOS/
 31. [ ] `int gettimeofday(struct timeval *tv, struct timezone *tz)`
 32. [ ] `int nanosleep(const struct timespec *req, struct timespec *rem)`
 
-33. [ ] `uid_t getuid(void)`
-34. [ ] `uid_t geteuid(void)`
-35. [ ] `gid_t getgid(void)`
-36. [ ] `gid_t getegid(void)`
-37. [ ] `int setuid(uid_t uid)`
-38. [ ] `int setgid(gid_t gid)`
+33. [x] `uid_t getuid(void)`
+34. [x] `uid_t geteuid(void)`
+35. [x] `gid_t getgid(void)`
+36. [x] `gid_t getegid(void)`
+37. [x] `int setuid(uid_t uid)`
+38. [x] `int setgid(gid_t gid)`
 39. [ ] `char *getcwd(char *buf, size_t size)`
 40. [ ] `int uname(struct utsname *buf)`
 41. [ ] ``

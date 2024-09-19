@@ -475,6 +475,21 @@ void PalmyraOS::kernel::initializePartitions()
 				);
 				vfs::VirtualFileSystem::setInodeByPath(name, rootNode);
 
+				// TODO create a new file
+//				auto folder = fat32.resolvePathToEntry(KString("/exp/"));
+//				auto newfile = fat32.createFile(folder, KString("mynewfile2.txt"));
+//				auto newfile = fat32.resolvePathToEntry(KString("/exp/mynewfile2.txt"));
+
+
+//				LOG_WARN("File: size: %d, cluster: %d", newfile.getFileSize(), newfile.getFirstCluster());
+
+//				auto n = fat32.write(newfile, {'h', 'i', ' ', 'f', 'i', 'l', 'e', '\0'});
+//				LOG_WARN("Writing to file %s.", (n? "is successful" : "failed"));
+//				if (newfile.has_value()) {
+//					auto n = fat32.write(newfile.value(), {'h', 'i', ' ', 'f', 'i', 'l', 'e'/*, '\0'*/});
+//					LOG_WARN("Writing to file %s.", (n? "is successful" : "failed"));
+//				}
+
 			}
 			else if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::NTFS)
 			{

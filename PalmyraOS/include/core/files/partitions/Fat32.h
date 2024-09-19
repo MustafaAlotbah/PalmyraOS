@@ -142,7 +142,7 @@ namespace PalmyraOS::kernel::vfs
 
 	  // Directory methods TODO
 	  std::optional<DirectoryEntry> createFile(
-		  const DirectoryEntry& directoryEntry,
+		  DirectoryEntry& directoryEntry,
 		  const KString& fileName,
 		  EntryAttribute attributes = EntryAttribute::Archive
 	  );
@@ -170,6 +170,15 @@ namespace PalmyraOS::kernel::vfs
 	  // TODO directory methods
 	  [[nodiscard]] bool flushEntry(const DirectoryEntry& entry);
 
+	  static bool isValidSFNCharacter(char c);
+
+	  static KString generateUniqueShortName(const KString& longName, const KVector<KString>& existingShortNames);
+
+	  static uint8_t calculateShortNameChecksum(const char* shortName);
+
+	  static KVector<fat_dentry> createLFNEntries(const KString& longName, uint8_t checksum);
+
+	  static bool needsLFN(const KString& fileName);
 
    private:
 	  VirtualDisk<ATA>& diskDriver_;             // Reference to the ATA disk driver

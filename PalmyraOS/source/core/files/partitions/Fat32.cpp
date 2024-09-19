@@ -546,11 +546,11 @@ namespace PalmyraOS::kernel::vfs
 	  // adjust the next cluster of the current cluster
 	  if (type_ == Type::FAT32)
 	  {
-		  *((uint32_t*)(sectorData + entryOffset)) = nextCluster & 0x0FFF'FFFF;
+		  *((uint32_t * )(sectorData + entryOffset)) = nextCluster & 0x0FFF'FFFF;
 	  }
 	  else if (type_ == Type::FAT16)
 	  {
-		  *((uint16_t*)(sectorData + entryOffset)) = nextCluster & 0xFFFF;
+		  *((uint16_t * )(sectorData + entryOffset)) = nextCluster & 0xFFFF;
 	  }
 
 	  // write the sector to the FAT again
@@ -862,7 +862,7 @@ namespace PalmyraOS::kernel::vfs
 	  }
 
 	  // Step 1: Free existing cluster chain
-	  freeClusterChain(entry.getFirstCluster());
+	  if (entry.getFirstCluster() > 2) freeClusterChain(entry.getFirstCluster());
 
 	  // Step 2: Reset file size to zero before appending new data
 	  entry.setFileSize(0);
@@ -892,12 +892,223 @@ namespace PalmyraOS::kernel::vfs
 	  return true;
   }
 
+  FAT32Partition::Type FAT32Partition::getType()
+  {
+	  return type_;
+  }
+
+  bool FAT32Partition::isValidSFNCharacter(char c)
+  {
+	  static const char invalidChars[] = "\"*/:<>?\\|+,;=[]";
+	  return (isalnum(static_cast<unsigned char>(c)) || strchr("$%'-_@~`!(){}^#&", c)) && !strchr(invalidChars, c);
+  }
+
+  KString FAT32Partition::generateUniqueShortName(const KString& longName, const KVector<KString>& existingShortNames)
+  {
+	  KString upperName(longName.c_str());
+	  upperName.toUpper();
+
+	  // Remove invalid characters and replace with underscores
+	  for (char& c : upperName)
+	  {
+		  if (!isValidSFNCharacter(c))
+			  c = '_';
+	  }
+
+	  // Extract base name and extension
+	  size_t  dotPos    = upperName.find_last_of(".");
+	  KString baseName  = (dotPos == KString::npos) ? upperName : upperName.substr(0, dotPos);
+	  KString extension = (dotPos == KString::npos) ? KString("") : upperName.substr(dotPos + 1);
+
+	  // Remove spaces and invalid characters
+	  baseName.erase(
+		  std::remove_if(
+			  baseName.begin(), baseName.end(), [](char c)
+			  { return c == ' '; }
+		  ), baseName.end());
+	  extension.erase(
+		  std::remove_if(
+			  extension.begin(), extension.end(), [](char c)
+			  { return c == ' '; }
+		  ), extension.end());
+
+	  // Truncate base name and extension to 8 and 3 characters
+	  baseName  = baseName.substr(0, 8);
+	  extension = extension.substr(0, 3);
+
+	  KString sfn = baseName;
+	  if (!extension.empty())
+	  {
+		  sfn += '.';
+		  sfn += extension;
+	  }
+
+	  if (std::find(existingShortNames.begin(), existingShortNames.end(), sfn) == existingShortNames.end())
+	  {
+		  return sfn;
+	  }
+
+	  // Handle name collisions using tilde notation
+	  for (uint32_t num = 1; num <= 999999; ++num)
+	  {
+		  char buffer[10];
+		  snprintf(buffer, sizeof(buffer), "~%d", num);
+		  KString numStr(buffer);
+		  KString sfnBaseNum = baseName.substr(0, std::min<size_t>(8 - numStr.size(), baseName.size())) + numStr;
+		  KString sfnNum     = sfnBaseNum;
+		  if (!extension.empty())
+		  {
+			  sfnNum += '.';
+			  sfnNum += extension;
+		  }
+		  if (std::find(existingShortNames.begin(), existingShortNames.end(), sfnNum) == existingShortNames.end())
+		  {
+			  return sfnNum;
+		  }
+	  }
+
+	  // If all attempts fail, return an empty string
+	  return KString("");
+  }
+
+  uint8_t FAT32Partition::calculateShortNameChecksum(const char* shortName)
+  {
+	  uint8_t  sum = 0;
+	  for (int i   = 0; i < 11; ++i)
+	  {
+		  sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + static_cast<uint8_t>(shortName[i]);
+	  }
+	  return sum;
+  }
+
+  bool FAT32Partition::needsLFN(const KString& fileName)
+  {
+	  // Check if the fileName fits in 8.3 format and contains valid characters
+	  // Implement the logic to determine if LFN is needed
+	  // Return true if LFN is needed, false otherwise
+	  // For simplicity, we'll assume that any name that doesn't fit 8.3 or contains invalid characters needs LFN
+
+	  // Convert to uppercase
+	  KString upperName(fileName.c_str());
+	  upperName.toUpper();
+
+	  // Extract base name and extension
+	  size_t  dotPos    = upperName.find_last_of(".");
+	  KString baseName  = (dotPos == KString::npos) ? upperName : upperName.substr(0, dotPos);
+	  KString extension = (dotPos == KString::npos) ? KString("") : upperName.substr(dotPos + 1);
+
+	  // Check lengths
+	  if (baseName.size() > 8 || extension.size() > 3) return true;
+
+	  // Check for invalid characters
+	  for (char c : baseName)
+	  {
+		  if (!isValidSFNCharacter(c)) return true;
+	  }
+
+	  for (char c : extension)
+	  {
+		  if (!isValidSFNCharacter(c)) return true;
+	  }
+
+	  return false;
+  }
+
+  KVector<fat_dentry> FAT32Partition::createLFNEntries(const KString& longName, uint8_t checksum)
+  {
+	  // Break the longName into chunks of 13 UTF-16 characters
+	  KVector<fat_dentry> lfnEntries;
+	  KWString            unicodeName = utf8_to_utf16le(longName);
+
+	  // Calculate the number of LFN entries needed
+	  size_t totalEntries = (unicodeName.size() + 12) / 13; // Each LFN entry can hold 13 UTF-16 characters
+
+	  for (size_t i = 0; i < totalEntries; ++i)
+	  {
+		  fat_dentry lfnEntry{};
+		  memset(&lfnEntry, 0, sizeof(lfnEntry));
+
+		  // Set sequence number
+		  uint8_t seqNum = static_cast<uint8_t>(totalEntries - i);
+		  if (i == 0)
+			  seqNum |= 0x40; // Last LFN entry flag
+
+		  lfnEntry.shortName[0] = seqNum;
+
+		  // Set attribute
+		  lfnEntry.attribute = 0x0F;
+
+		  // Set checksum
+		  lfnEntry.ntRes             = 0x00;
+		  lfnEntry.creationTimeTenth = checksum;
+
+		  // Set name parts
+		  size_t charIndex = i * 13;
+
+		  // First 5 UTF-16 characters
+		  for (size_t j = 0; j < 5; ++j)
+		  {
+			  if (charIndex + j < unicodeName.size())
+			  {
+				  uint16_t wchar = unicodeName[charIndex + j];
+				  lfnEntry.shortName[1 + j * 2] = wchar & 0xFF;
+				  lfnEntry.shortName[2 + j * 2] = (wchar >> 8) & 0xFF;
+			  }
+			  else
+			  {
+				  lfnEntry.shortName[1 + j * 2] = 0xFF;
+				  lfnEntry.shortName[2 + j * 2] = 0xFF;
+			  }
+		  }
+
+		  // Next 6 UTF-16 characters
+		  for (size_t j = 0; j < 6; ++j)
+		  {
+			  if (charIndex + 5 + j < unicodeName.size())
+			  {
+				  uint16_t wchar = unicodeName[charIndex + 5 + j];
+				  lfnEntry.shortName[14 + j * 2] = wchar & 0xFF;
+				  lfnEntry.shortName[15 + j * 2] = (wchar >> 8) & 0xFF;
+			  }
+			  else
+			  {
+				  lfnEntry.shortName[14 + j * 2] = 0xFF;
+				  lfnEntry.shortName[15 + j * 2] = 0xFF;
+			  }
+		  }
+
+		  // Last 2 UTF-16 characters
+		  for (size_t j = 0; j < 2; ++j)
+		  {
+			  if (charIndex + 11 + j < unicodeName.size())
+			  {
+				  uint16_t wchar = unicodeName[charIndex + 11 + j];
+				  lfnEntry.shortName[28 + j * 2] = wchar & 0xFF;
+				  lfnEntry.shortName[29 + j * 2] = (wchar >> 8) & 0xFF;
+			  }
+			  else
+			  {
+				  lfnEntry.shortName[28 + j * 2] = 0xFF;
+				  lfnEntry.shortName[29 + j * 2] = 0xFF;
+			  }
+		  }
+
+		  // Set zero for reserved fields
+		  lfnEntry.firstClusterLow = 0x0000;
+
+		  lfnEntries.push_back(lfnEntry);
+	  }
+
+	  return lfnEntries;
+  }
+
   std::optional<DirectoryEntry> FAT32Partition::createFile(
-	  const DirectoryEntry& directoryEntry,
+	  DirectoryEntry& directoryEntry,
 	  const KString& fileName,
 	  EntryAttribute attributes
   )
   {
+
 	  // Check if the directory entry is indeed a directory
 	  if (!(uint8_t)(directoryEntry.getAttributes() & EntryAttribute::Directory))
 	  {
@@ -908,77 +1119,147 @@ namespace PalmyraOS::kernel::vfs
 	  // Read the directory entries in the specified directory
 	  KVector<DirectoryEntry> entries = getDirectoryEntries(directoryEntry.getFirstCluster());
 
-	  // Check for existing files with the same name
+	  // Collect existing short names and check for existing file
+	  KVector<KString> existingShortNames;
 	  for (const auto& entry : entries)
 	  {
-		  if (entry.getNameShort() == fileName || entry.getNameLong() == fileName)
+		  if (entry.getNameLong() == fileName)
 		  {
 			  LOG_ERROR("A file with the same name already exists in the directory.");
 			  return std::nullopt;
 		  }
+		  existingShortNames.push_back(entry.getNameShort());
 	  }
 
-	  // Allocate a cluster for the new file
-	  auto newClusterOpt = allocateCluster();
-	  if (!newClusterOpt)
+	  // Generate unique short name (SFN)
+	  KString sfn = generateUniqueShortName(fileName, existingShortNames);
+	  if (sfn.empty())
 	  {
-		  LOG_ERROR("Failed to allocate cluster for the new file.");
+		  LOG_ERROR("Failed to generate a unique short name for the file.");
 		  return std::nullopt;
 	  }
 
-	  uint32_t newCluster = newClusterOpt.value();
+	  // Calculate SFN checksum
+	  uint8_t checksum = calculateShortNameChecksum(sfn.c_str());
 
-	  // Create a new directory entry for the file
+	  // Prepare LFN entries if needed
+	  KVector<fat_dentry> lfnEntries;
+	  if (needsLFN(fileName))
+	  {
+		  lfnEntries = createLFNEntries(fileName, checksum);
+	  }
+
+	  // Create the main directory entry
 	  fat_dentry newDentry{};
-	  memset(newDentry.shortName, ' ', sizeof(newDentry.shortName));  // Initialize with spaces
+	  memset(&newDentry, ' ', sizeof(newDentry));  // Initialize with spaces
 
-	  // Set the short name (8.3 format)
-	  size_t  dotPos    = fileName.find_last_of(".");
-	  KString baseName  = (dotPos == KString::npos) ? fileName : fileName.substr(0, dotPos);
-	  KString extension = (dotPos == KString::npos) ? KString("") : fileName.substr(dotPos + 1);
+	  // Set the short name (8.3 format), pad with spaces
+	  size_t  dotPos    = sfn.find('.');
+	  KString baseName  = (dotPos == KString::npos) ? sfn : sfn.substr(0, dotPos);
+	  KString extension = (dotPos == KString::npos) ? KString("") : sfn.substr(dotPos + 1);
+
 	  baseName.toUpper();
 	  extension.toUpper();
 
-	  // Limit the base name and extension to 8 and 3 characters, respectively
-	  size_t baseNameLength  = std::min(baseName.size(), size_t(8));
-	  size_t extensionLength = std::min(extension.size(), size_t(3));
+	  // Pad baseName and extension with spaces to fit 8 and 3 characters
+	  char baseNamePadded[8];
+	  char extensionPadded[3];
 
-	  memcpy(newDentry.shortName, (void*)baseName.c_str(), baseNameLength);
-	  if (!extension.empty())
-	  {
-		  memcpy(newDentry.shortName + 8, (void*)extension.c_str(), extensionLength);
-	  }
+	  size_t baseNameLen  = std::min<size_t>(8, baseName.size());
+	  size_t extensionLen = std::min<size_t>(3, extension.size());
+
+	  // Initialize with spaces
+	  memset(baseNamePadded, ' ', 8);
+	  memset(extensionPadded, ' ', 3);
+
+	  // Copy the baseName and extension into the padded arrays
+	  memcpy(baseNamePadded, baseName.c_str(), baseNameLen);
+	  memcpy(extensionPadded, extension.c_str(), extensionLen);
+
+	  // Copy baseNamePadded and extensionPadded into shortName
+	  memcpy(newDentry.shortName, baseNamePadded, 8);
+	  memcpy(newDentry.shortName + 8, extensionPadded, 3);
 
 	  // Set attributes and initial values
 	  newDentry.attribute        = static_cast<uint8_t>(attributes);
-	  newDentry.firstClusterLow  = static_cast<uint16_t>(newCluster & 0xFFFF);
-	  newDentry.firstClusterHigh = static_cast<uint16_t>((newCluster >> 16) & 0xFFFF);
+	  newDentry.firstClusterLow  = 0; // Initially zero, allocate when writing data
+	  newDentry.firstClusterHigh = 0;
 	  newDentry.fileSize         = 0;
 
-	  // Append the new directory entry to the directory
+	  // Set time and date fields (could set to zero or get current time)
+	  newDentry.creationTimeTenth = 0;
+	  newDentry.creationTime      = 0;
+	  newDentry.creationDate      = 0;
+	  newDentry.lastAccessDate    = 0;
+	  newDentry.writeTime         = 0;
+	  newDentry.writeDate         = 0;
+
+	  // Now, find free entries in the directory data
+	  // Need totalEntries = lfnEntries.size() + 1
+
 	  KVector<uint8_t> dirData = readFile(directoryEntry.getFirstCluster(), std::numeric_limits<int32_t>::max());
 
+	  size_t totalEntriesNeeded = lfnEntries.size() + 1;
+	  size_t dirEntrySize       = sizeof(fat_dentry);
+	  size_t dirEntriesCount    = dirData.size() / dirEntrySize;
 
-	  // Find the first empty entry position (0x00 or 0xE5) to insert the new entry
-	  size_t      insertPos = 0;
-	  for (size_t i         = 0; i < dirData.size(); i += 32)
+	  // Find consecutive free entries
+	  size_t insertPos        = 0;
+	  bool   foundFreeEntries = false;
+
+	  for (size_t i = 0; i <= dirEntriesCount; ++i)
 	  {
-		  if (dirData[i] == 0x00 || dirData[i] == 0xE5)
+		  bool        entriesFree = true;
+		  for (size_t j           = 0; j < totalEntriesNeeded; ++j)
 		  {
-			  insertPos = i;
+			  size_t offset = (i + j) * dirEntrySize;
+			  if (offset >= dirData.size())
+			  {
+				  // Reached the end, need to extend dirData
+				  entriesFree = true;
+				  break;
+			  }
+			  uint8_t firstByte = dirData[offset];
+			  if (firstByte != 0x00 && firstByte != 0xE5)
+			  {
+				  entriesFree = false;
+				  break;
+			  }
+		  }
+		  if (entriesFree)
+		  {
+			  insertPos        = i * dirEntrySize;
+			  foundFreeEntries = true;
 			  break;
 		  }
 	  }
 
-	  // If no empty position is found, append to the end
-	  if (insertPos == 0)
+	  if (!foundFreeEntries)
 	  {
+		  // Need to extend dirData
 		  insertPos = dirData.size();
-		  dirData.resize(dirData.size() + 32, 0);
+		  dirData.resize(dirData.size() + totalEntriesNeeded * dirEntrySize, 0);
 	  }
 
-	  // Insert the new directory entry into the correct position
-	  memcpy(dirData.data() + insertPos, &newDentry, sizeof(fat_dentry));
+	  // Now, insert the LFN entries and main entry into dirData at insertPos
+
+	  // Copy LFN entries and main entry into dirData in order
+
+	  // LFN entries are inserted in reverse order (last one first)
+
+	  size_t entryOffset = insertPos;
+
+	  for (auto it = lfnEntries.rbegin(); it != lfnEntries.rend(); ++it)
+	  {
+		  memcpy(dirData.data() + entryOffset, &(*it), dirEntrySize);
+		  entryOffset += dirEntrySize;
+	  }
+
+	  // Copy the main directory entry
+	  memcpy(dirData.data() + entryOffset, &newDentry, dirEntrySize);
+	  entryOffset += dirEntrySize;
+
+	  // Now, update the directory clusters and write back to disk
 
 	  // Calculate the number of clusters needed to store the directory data
 	  size_t clusterSizeBytes = clusterSize_ * sectorSize_;
@@ -997,31 +1278,42 @@ namespace PalmyraOS::kernel::vfs
 			  return std::nullopt;
 		  }
 		  uint32_t additionalCluster = additionalClusterOpt.value();
-		  clusterChain.push_back(additionalCluster);
-		  if (clusterChain.size() > 1)
+		  if (!clusterChain.empty())
 		  {
-			  setNextCluster(clusterChain[clusterChain.size() - 2], additionalCluster);
+			  setNextCluster(clusterChain.back(), additionalCluster);
 		  }
+		  else
+		  {
+			  // This should not happen, but in case the directory has no clusters
+			  directoryEntry.setClusterChain(additionalCluster);
+			  flushEntry(directoryEntry);
+		  }
+		  clusterChain.push_back(additionalCluster);
+	  }
+
+	  // Mark the end of the cluster chain
+	  if (!clusterChain.empty())
+	  {
+		  setNextCluster(clusterChain.back(), 0x0FFFFFFF); // End of chain marker
 	  }
 
 	  // Write the updated directory data back to disk
 	  for (size_t i = 0; i < dirData.size(); i += clusterSizeBytes)
 	  {
-		  uint32_t cluster = clusterChain[i / clusterSizeBytes];
-		  bool     status  = writeCluster(
-			  cluster,
-			  KVector<uint8_t>(dirData.begin() + i, dirData.begin() + std::min(i + clusterSizeBytes, dirData.size())));
+		  uint32_t         cluster  = clusterChain[i / clusterSizeBytes];
+		  size_t           dataSize = std::min(clusterSizeBytes, dirData.size() - i);
+		  KVector<uint8_t> clusterData(dirData.begin() + i, dirData.begin() + i + dataSize);
+		  if (clusterData.size() < clusterSizeBytes)
+		  {
+			  // Pad with zeros
+			  clusterData.resize(clusterSizeBytes, 0);
+		  }
+		  bool status = writeCluster(cluster, clusterData);
 		  if (!status)
 		  {
 			  LOG_ERROR("Failed to write the updated directory data to disk.");
 			  return std::nullopt;
 		  }
-	  }
-
-	  // Update the directory cluster chain if new clusters were added
-	  if (clusterChain.size() > 1)
-	  {
-		  setNextCluster(clusterChain.back(), 0x0FFFFFFF); // End of chain marker
 	  }
 
 	  // Create the new DirectoryEntry object
@@ -1032,14 +1324,9 @@ namespace PalmyraOS::kernel::vfs
 		  newDentry
 	  );
 
+	  LOG_ERROR("worked.");
 	  return newEntry;
   }
-
-  FAT32Partition::Type FAT32Partition::getType()
-  {
-	  return type_;
-  }
-
 
 
 

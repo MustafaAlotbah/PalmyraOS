@@ -614,6 +614,7 @@ namespace PalmyraOS::types
 		  ensure_null_terminator();
 		  return *this;
 	  }
+
    private:
 
 	  void ensure_null_terminator()
