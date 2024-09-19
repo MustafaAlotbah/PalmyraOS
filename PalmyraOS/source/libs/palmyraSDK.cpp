@@ -98,13 +98,26 @@ void PalmyraOS::SDK::WindowGUI::render()
 	// Horizontal lines on bar
 	for (int y = 5; y <= 15; y += 5)
 	{
-		brush_.drawHLine(textRenderer_.getCursorX() + 10, currentWindowStatus_.width - 18, y, stripesColor);
+		brush_.drawHLine(textRenderer_.getCursorX() + 10, currentWindowStatus_.width - 20, y, stripesColor);
 	}
 
 	Color exitColor = Color::DarkRed;
 	Color exitHover = Color::Red;
 	Color exitDown  = Color::DarkerRed;
-	if (button("", currentWindowStatus_.width - 16, 3, 9, 15, 0, false, Color::Gray100, exitColor, exitHover, exitDown))
+	if (button(
+		"",
+		currentWindowStatus_.width - 20,
+		5,
+		10,
+		10,
+		0,
+		false,
+		Color::Gray100,
+		exitColor,
+		exitHover,
+		exitDown,
+		true
+	))
 	{
 		_exit(0);
 	}
@@ -154,7 +167,8 @@ bool PalmyraOS::SDK::WindowGUI::button(
 	Color textColor,
 	Color backColor,
 	Color colorHover,
-	Color colorDown
+	Color colorDown,
+	bool isCircle
 )
 {
 	// set up width and height
@@ -182,7 +196,21 @@ bool PalmyraOS::SDK::WindowGUI::button(
 	Color background = isHovering ? colorHover : backColor;
 	if (isClicked) background = colorDown;
 
-	brush_.fillRectangle(clipped.xMin, clipped.yMin, clipped.xMax, clipped.yMax, background);
+	if (isCircle)
+	{
+		// Radius = min (W, H) / 2
+		size_t cwidth = ((clipped.xMax - clipped.xMin) >> 1);
+		size_t cheight = ((clipped.yMax - clipped.yMin) >> 1);
+
+		size_t cx = clipped.xMin + cwidth;
+		size_t cy = clipped.yMin + cheight - 1;
+		size_t r  = std::min(cwidth, cheight);
+		brush_.fillCircle(cx, cy, r, background);
+	}
+	else
+	{
+		brush_.fillRectangle(clipped.xMin, clipped.yMin, clipped.xMax, clipped.yMax, background);
+	}
 
 	Color currentColor = textRenderer_.getCurrentColor();
 	textRenderer_.setCursor(x + margin, y);

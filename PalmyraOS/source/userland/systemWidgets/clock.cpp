@@ -32,6 +32,7 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 
 	while (true)
 	{
+		windowFrame.brush().fillCircle(centerX, centerY, 47, Color::DarkerGray);
 		// Render the numbers around the clock
 		windowFrame.text() << PalmyraOS::Color::Gray500;
 		for (int i = 1; i <= 12; ++i)

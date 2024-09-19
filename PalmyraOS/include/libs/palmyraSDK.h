@@ -72,7 +72,8 @@ namespace PalmyraOS::SDK
 		  Color textColor = Color::Black,
 		  Color backColor = Color::Primary,
 		  Color colorHover = Color::PrimaryLight,
-		  Color colorDown = Color::PrimaryDark
+		  Color colorDown = Color::PrimaryDark,
+		  bool isCircle = false
 	  );
 
 	  void fillRectangle(
