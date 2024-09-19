@@ -126,11 +126,11 @@ void PalmyraOS::kernel::clearScreen(bool drawLogo)
 	if (drawLogo)
 	{
 		// Draw the logo text
-		textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
-		textRenderer << Color::White << "v0.01\n";
+		textRenderer << Color::Orange << "Palmyra" << Color::LighterBlue << "OS ";
+		textRenderer << Color::Gray100 << "v0.01\n";
 
 		// Draw a horizontal line below the logo text
-		brush_ptr->drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::White);
+		brush_ptr->drawHLine(1, 150, textRenderer.getCursorY() + 2, Color::Gray100);
 	}
 
 	// Swap the buffers to update the display

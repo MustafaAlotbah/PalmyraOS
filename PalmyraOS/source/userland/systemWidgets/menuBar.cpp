@@ -73,7 +73,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 	PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
 
 	// Fill the initial background
-	brush.fill(PalmyraOS::Color::White);
+	brush.fill(PalmyraOS::Color::Gray100);
 
 
 	timespec time_spec{};
@@ -95,12 +95,12 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 		clock_gettime(CLOCK_MONOTONIC, &time_spec);
 
 		brush.fill(PalmyraOS::Color::Black);
-		brush.drawHLine(0, w.width, w.height - 1, PalmyraOS::Color::White);
-		brush.drawHLine(0, w.width, w.height - 2, PalmyraOS::Color::Gray);
+		brush.drawHLine(0, w.width, w.height - 1, PalmyraOS::Color::Gray100);
+		brush.drawHLine(0, w.width, w.height - 2, PalmyraOS::Color::Gray500);
 
 		// Render the logo and system information
-		textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
-		textRenderer << Color::White << "v0.01\t";
+		textRenderer << Color::Orange << "Palmyra" << Color::LighterBlue << "OS ";
+		textRenderer << Color::Gray100 << "v0.01\t";
 		textRenderer << "SysTime: " << time_spec.tv_sec << " s\t";
 		textRenderer << "ProCount: " << count << "\t";
 

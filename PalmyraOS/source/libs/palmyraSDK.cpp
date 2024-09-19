@@ -230,7 +230,7 @@ bool PalmyraOS::SDK::WindowGUI::link(
 
 	Color currentColor = textRenderer_.getCurrentColor();
 	textRenderer_ << textColor << text << ' ' << currentColor;
-	brush_.drawHLine(clipped.xMin, clipped.xMax, clipped.yMax - 3, textColor);
+	brush_.drawHLine(clipped.xMin, clipped.xMax, clipped.yMax - 4, textColor);
 
 	// Return true if the link was clicked and released
 	if (isActive && wasLeftDown_ && !currentMouseEvent_.isLeftDown && isHovering) return true;
@@ -305,7 +305,7 @@ PalmyraOS::SDK::Layout::Layout(WindowGUI& windowGui, int* scrollY, bool scrollab
 	:
 	windowGui_(windowGui),
 	scrollable_(scrollable),
-	scrollBarWidth_(scrollable_ ? 10 : 0),
+	scrollBarWidth_(scrollable_ ? 5 : 0),
 
 	prevPositionX_(windowGui_.text().getPositionX()),
 	prevPositionY_(windowGui_.text().getPositionY()),
@@ -337,16 +337,18 @@ PalmyraOS::SDK::Layout::Layout(WindowGUI& windowGui, int* scrollY, bool scrollab
 		Color::Gray500
 	);
 
+}
+
+PalmyraOS::SDK::Layout::~Layout()
+{
+
 	windowGui_.brush().drawHLine(
 		windowGui_.text().getPositionX(),
 		windowGui_.text().getPositionX() + windowGui_.text().getWidth(),
 		windowGui_.text().getPositionY() + windowGui_.text().getHeight(),
 		Color::Gray500
 	);
-}
 
-PalmyraOS::SDK::Layout::~Layout()
-{
 	// Calculate content height
 	int contentHeight = windowGui_.text().getCursorY() - currScrollY_;
 

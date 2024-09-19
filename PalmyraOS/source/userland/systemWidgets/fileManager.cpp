@@ -119,19 +119,12 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv)
 				if (contentIndex++ % 2 == 0)
 				{
 					windowGui.fillRectangle(
-						layout.getX(),
-						windowGui.text().getCursorY(),
+						0,
+						windowGui.text().getCursorY() + 1,
 						layout.getWidth(),
-						18,
+						16,
 						Color::DarkerGray
 					);
-//					windowGui.brush().fillRectangle(
-//						layout.getX(),
-//						windowGui.text().getPositionY() + windowGui.text().getCursorY(),
-//						layout.getX() + layout.getWidth(),
-//						windowGui.text().getPositionY() + windowGui.text().getCursorY() + 20,
-//						Color::DarkerGray
-//					);
 				}
 
 				if (type == EntryType::Directory)

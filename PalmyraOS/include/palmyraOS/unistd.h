@@ -81,9 +81,11 @@
 #define SEEK_END 2  // Seek from the end of the file
 
 /* Constants for Arch Prctl */
+// https://github.com/torvalds/linux/blob/master/arch/x86/include/uapi/asm/prctl.h
+#define ARCH_SET_GS    0x1001
 #define ARCH_SET_FS 0x1002  // Set FS segment base
 #define ARCH_GET_FS 0x1003  // Get FS segment base
-
+#define ARCH_GET_GS    0x1004
 
 typedef uint32_t fd_t;
 

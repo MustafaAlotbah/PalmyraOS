@@ -43,18 +43,18 @@ extern "C" void disable_paging();
 
 	// Window Background
 	brush.fillRectangle(window_offset, window_offset, window_x2, window_y2, Color::DarkerGray);
-	brush.drawHLine(window_offset, window_x2, window_offset, Color::White);
-	brush.drawHLine(window_offset, window_x2, window_y2, Color::White);
-	brush.drawVLine(window_offset, window_offset, window_y2, Color::White);
-	brush.drawVLine(window_x2, window_offset, window_y2, Color::White);
+	brush.drawHLine(window_offset, window_x2, window_offset, Color::Gray100);
+	brush.drawHLine(window_offset, window_x2, window_y2, Color::Gray100);
+	brush.drawVLine(window_offset, window_offset, window_y2, Color::Gray100);
+	brush.drawVLine(window_x2, window_offset, window_y2, Color::Gray100);
 
 	uint16_t window_bar_offset = window_offset + 2;
 	uint16_t window_bar_x2     = window_x2 - 2;
 	uint16_t window_bar_y2     = window_offset + 2 * extendWindow + 14;
 	brush.fillRectangle(window_bar_offset, window_bar_offset, window_bar_x2, window_bar_y2, Color::DarkRed);
 
-	textRenderer << Color::Orange << "Palmyra" << Color::LightBlue << "OS ";
-	textRenderer << Color::White << "Panic Screen\n";
+	textRenderer << Color::Orange << "Palmyra" << Color::LighterBlue << "OS ";
+	textRenderer << Color::Gray100 << "Panic Screen\n";
 	textRenderer.setCursor(0, textRenderer.getCursorY() + extendWindow);
 	textRenderer << message;
 

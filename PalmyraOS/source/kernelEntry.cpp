@@ -346,11 +346,12 @@ void callConstructors()
 				const_cast<char*>("uname"),
 				nullptr
 			};
+			// TODO new process must count argv, instead of hard coded -> error prone
 			kernel::TaskManager::newProcess(
 				PalmyraOS::Userland::builtin::KernelTerminal::main,
 				kernel::Process::Mode::User,
 				kernel::Process::Priority::Low,
-				3,
+				2,
 				argv, true
 			);
 		}

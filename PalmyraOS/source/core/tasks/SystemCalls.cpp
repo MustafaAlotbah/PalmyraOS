@@ -796,10 +796,44 @@ void PalmyraOS::kernel::SystemCallsManager::handleArchPrctl(PalmyraOS::kernel::i
 	uint32_t code = regs->ebx;        // The operation code (ARCH_SET_FS or ARCH_GET_FS)
 	uint32_t addr = regs->ecx;        // The address to set or the value to get
 
-	LOG_DEBUG("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
-//	kernelPanic("ArchPrctl was called!");
+	LOG_WARN("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
+	LOG_WARN("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
 
-	regs->eax = -1;
+	// Determine what operation is being requested
+	switch (code)
+	{
+		case ARCH_SET_FS:
+			// Set the FS base to addr
+			TaskManager::getCurrentProcess()->stack_.fs = addr;   // Store the FS base for this process
+			// Update the actual FS segment register if needed
+//			set_fs_base(addr);   // TODO This would be a function that writes to the MSR (Model Specific Register) for FS
+			regs->eax                                   = 0;       // Success
+			break;
+
+		case ARCH_GET_FS:
+			// Get the current FS base
+			regs->eax = TaskManager::getCurrentProcess()->stack_.fs;  // Retrieve the FS base for this process
+			break;
+
+		case ARCH_SET_GS:
+			// Set the GS base to addr
+			TaskManager::getCurrentProcess()->stack_.gs = addr;   // Store the GS base for this process
+			// Update the actual GS segment register if needed
+//			set_gs_base(addr);   // TODO This would be a function that writes to the MSR for GS
+			regs->eax                                   = 0;       // Success
+			break;
+
+		case ARCH_GET_GS:
+			// Get the current GS base
+			regs->eax = TaskManager::getCurrentProcess()->stack_.gs;  // Retrieve the GS base for this process
+			break;
+
+		default:
+			// Unsupported arch_prctl code
+			LOG_WARN("Unknown arch_prctl code: 0x%X", code);
+			regs->eax = -EINVAL;  // Set an error code (Invalid argument)
+			break;
+	}
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interrupts::CPURegisters* regs)
@@ -809,7 +843,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interru
 	// Get the requested new break address from the register
 	uint32_t requested_brk = regs->ebx;
 
-	LOG_DEBUG("SYSCALL brk(0x%X)", requested_brk);
+	LOG_WARN("SYSCALL brk(0x%X)", requested_brk);
 
 	// Get the current process
 	Process* currentProcess = TaskManager::getCurrentProcess();

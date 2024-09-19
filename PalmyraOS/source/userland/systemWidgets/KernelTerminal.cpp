@@ -8,16 +8,10 @@
 #include "palmyraOS/stdio.h"        // For standard input/output functions: printf, perror
 #include "palmyraOS/HeapAllocator.h"// C++ heap allocator for efficient memory management
 #include "palmyraOS/errono.h"
+
 #include "libs/circularBuffer.h"    // For efficient FIFO buffer implementation
-
 #include "libs/string.h"            // strlen
-
 #include "libs/palmyraSDK.h"        // Window, Window Frame
-
-// TODO: move these to libs (or put them in palmyraOS)
-#include "core/FrameBuffer.h"        // FrameBuffer
-#include "core/VBE.h"                // for Brush, TextRenderer
-#include "core/Font.h"               // For Fonts
 
 
 // Use the types namespace from PalmyraOS: CircularBuffer, UserHeapManager
@@ -28,8 +22,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 {
 
   // Typedefs for buffer types simplify declarations
-  using StdoutType = CircularBuffer<char, 512>;
-  using StdinType = CircularBuffer<char, 512>;
+  using StdoutType = CircularBuffer<char, 4096>;
+  using StdinType = CircularBuffer<char, 4096>;
 
   // Function declarations for command parsing and execution
   void parseCommand(UserHeapManager& heap, CircularBuffer<char>& input, types::UVector<types::UString<char>>& tokens);
@@ -41,8 +35,12 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  UserHeapManager heap;
 
 	  // Set initial window position and dimensions
-	  SDK::Window      window(240, 140, 640, 480, true, "Palmyra Terminal");
-	  SDK::WindowFrame windowFrame(window);
+	  SDK::Window    window(50, 100, 640, 480, true, "Palmyra Terminal");
+	  SDK::WindowGUI windowGui(window);
+	  windowGui.setBackground(Color::Black);
+
+	  // layout
+	  int scrollY_content = 0;
 
 	  // Setup terminal buffers and initial prompt
 	  auto stdoutBufferPtr = heap.createInstance<KernelTerminal::StdoutType>();
@@ -53,22 +51,51 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 	  uint64_t                             count = 0;
 	  types::UVector<types::UString<char>> tokens(heap);
 
+
 	  // TODO check for bad allocation
 	  stdoutBuffer.append("PalmyraOS$ ", 11);
+
+	  // If arguments are provided, treat them as a command to execute
+	  if (argc > 1)
+	  {
+		  // TODO reduce redundancy
+
+		  // Build the command string from arguments
+		  for (int i = 1; i < argc; ++i)
+		  {
+			  stdinBuffer.append(argv[i], strlen(argv[i]));
+			  if (i < argc - 1)
+			  {
+				  stdinBuffer.append(' '); // Add space between arguments
+			  }
+		  }
+		  stdinBuffer.append('\n'); // Append newline to simulate "Enter"
+
+		  // Echo the input to the output buffer for display
+		  stdoutBuffer.append(stdinBuffer.get(), stdinBuffer.size());
+
+		  // Execute the command with the input buffer
+		  executeCommand(heap, stdinBuffer, stdoutBuffer);
+
+		  // Clear the input buffer for the next command
+		  stdinBuffer.clear();
+
+		  // Prompt the user again
+		  stdoutBuffer.append("PalmyraOS$ ", 11);
+	  }
+
 	  while (true)
 	  {
 		  count++;
 
-		  // Render the prompt
-		  windowFrame.text() << PalmyraOS::Color::White;
-		  windowFrame.text() << stdoutBuffer.get();
 
 		  // Another loop to catch all keyboard events
 		  KeyboardEvent event;
 		  while (true)
 		  {
 			  event = nextKeyboardEvent(window.getID());        // Fetch the next event
-			  if (event.key == '\0') break;                             // If no key is pressed, break the loop
+			  if (!event.isValid || event.key == '\0') break;            // If no key is pressed, break the loop
+			  if (event.pressed) break; // only handle releases
 			  else if (event.key == 8) stdinBuffer.backspace();         // Handle backspace for corrections
 				  // Append any other key to our input buffer
 			  else
@@ -105,13 +132,22 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  }
 		  }
 
-		  // Display the current input and a blinking cursor for feedback
-		  windowFrame.text() << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::White;
-		  if ((count >> 5) % 2) windowFrame.text() << "_";
+
+		  {
+			  SDK::Layout layout(windowGui, &scrollY_content, true);
+
+			  // Render the prompt
+			  windowGui.text() << PalmyraOS::Color::Gray100;
+			  windowGui.text() << stdoutBuffer.get();
+
+			  // Display the current input and a blinking cursor for feedback
+			  windowGui.text() << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::Gray100;
+			  if ((count >> 5) % 2) windowGui.text() << "_";
+		  }
 
 
 		  // Refresh the display and yield control to other processes
-		  windowFrame.swapBuffers();
+		  windowGui.swapBuffers();
 
 		  // Be a good citizen and yield some CPU time to other processes
 		  sched_yield();
@@ -185,6 +221,13 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  return;
 	  }
 
+	  // UNAME
+	  if (tokens[0] == "uname")
+	  {
+		  output.append("PalmyraOS Prototype 0.1.0 (x86 32-Bit)\n", 40);
+		  return;
+	  }
+
 	  // CAT
 	  if (tokens[0] == "cat")
 	  {
@@ -198,7 +241,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 
 		  const char* filePath = tokens[1].c_str();
 		  int32_t offset = 0;  // Default offset
-		  size_t  length = 512;  // Default length
+		  size_t length = 4096;  // Default length
 
 		  // Check if offset is provided
 		  if (tokens.size() >= 3)
@@ -285,7 +328,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  }
 
 		  // Prepare a buffer to hold directory entries
-		  auto buffer = (char*)heap.alloc(1024 * sizeof(char));
+		  const size_t bufferSize = 4096;
+		  auto         buffer     = (char*)heap.alloc(bufferSize);
 		  if (!buffer)
 		  {
 			  // If directory cannot be opened, inform the user
@@ -298,7 +342,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  linux_dirent* DirectoryEntry;
 			  int  currentByteIndex;
 			  char DentryType;            // File, Directory, ...
-			  int bytesRead = getdents(fileDescriptor, (linux_dirent*)buffer, 1024);
+			  int bytesRead = getdents(fileDescriptor, (linux_dirent*)buffer, bufferSize);
 
 			  // Process each entry in the directory
 			  for (currentByteIndex = 0; currentByteIndex < bytesRead;)
@@ -388,6 +432,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  output.append("iself: ", 6);
 			  output.append(tokens[1].c_str(), tokens[1].size());
 			  output.append(": File is too small to be an ELF file.\n", 40);
+
+			  heap.free(e_ident);
 			  close(fileDescriptor);
 			  return;
 		  }
@@ -401,6 +447,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  output.append("iself: ", 6);
 			  output.append(tokens[1].c_str(), tokens[1].size());
 			  output.append(": Not an ELF file.\n", 20);
+
+			  heap.free(e_ident);
 			  close(fileDescriptor);
 			  return;
 		  }
@@ -424,6 +472,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  {
 				  output.append("iself: ", 6);
 				  output.append(": Could not seek.\n", 19);
+
+				  heap.free(e_ident);
 				  close(fileDescriptor);
 				  return;
 			  }
@@ -434,6 +484,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  {
 				  output.append("iself: ", 6);
 				  output.append(": Could not read.\n", 19);
+
+				  heap.free(e_ident);
 				  close(fileDescriptor);
 				  return;
 			  }
@@ -442,6 +494,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 			  {
 				  output.append("iself: ", 6);
 				  output.append(": Failed to read the full ELF header.\n", 39);
+
+				  heap.free(e_ident);
 				  close(fileDescriptor);
 				  return;
 			  }
@@ -610,13 +664,16 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal
 		  }
 
 		  // Process with PID 6 terminated with status 0.
-		  char statusBuffer[12];
-		  output.append("Process with PID ", 16);
-		  output.append(pidBuffer, strlen(pidBuffer));
-		  output.append(" terminated with status ", 25);
-		  snprintf(statusBuffer, sizeof(statusBuffer), "%d", wait_status);
-		  output.append(statusBuffer, strlen(statusBuffer));
-		  output.append(".\n", 2);
+		  if (wait_status != 0)
+		  {
+			  char statusBuffer[12];
+			  output.append("Process with PID ", 16);
+			  output.append(pidBuffer, strlen(pidBuffer));
+			  output.append(" terminated with status ", 25);
+			  snprintf(statusBuffer, sizeof(statusBuffer), "%d", wait_status);
+			  output.append(statusBuffer, strlen(statusBuffer));
+			  output.append(".\n", 2);
+		  }
 
 
 	  }

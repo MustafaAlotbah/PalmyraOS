@@ -11,8 +11,8 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 {
 
 	// Create and set up the main application window
-	SDK::Window window(10, 10, 100, 120, true, "Palmyra Clock");
-	SDK::WindowFrame windowFrame(window);
+	SDK::Window    window(914, 30, 100, 120, true, "Clock");
+	SDK::WindowGUI windowFrame(window);
 
 	// Initialize time structure
 	size_t   epochTime_fd = 0;
@@ -33,15 +33,16 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 	while (true)
 	{
 		// Render the numbers around the clock
-		windowFrame.text() << PalmyraOS::Color::Gray;
+		windowFrame.text() << PalmyraOS::Color::Gray500;
 		for (int i = 1; i <= 12; ++i)
 		{
 			int angle   = i * 30; // Each hour is 30 degrees apart
 			int numberX = centerX + static_cast<int>(clockRadius * math::sin(angle));
 			int numberY = centerY - static_cast<int>(clockRadius * math::cos(angle));
 
-			int xOffset = -8; // Adjust horizontally for better centering
-			int yOffset = -8; // Adjust vertically for better centering
+			// Adjust for better centering
+			int xOffset = -3 - windowFrame.text().getPositionX();
+			int yOffset = -8 - windowFrame.text().getPositionY();
 
 			// Set text position and render the number
 			windowFrame.text().setCursor(numberX + xOffset, numberY + yOffset);
@@ -75,18 +76,16 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv)
 			int hourX = centerX + static_cast<int>(hourHandLength * math::sin(hourAngle));
 			int hourY = centerY - static_cast<int>(hourHandLength * math::cos(hourAngle));
 
-			// Draw the clock hands
-			windowFrame.brush().drawLine(
-				centerX,
-				centerY,
-				secondX,
-				secondY,
-				PalmyraOS::Color::LightBlue
-			);     // Red second hand
-			windowFrame.brush()
-					   .drawLine(centerX, centerY, minuteX, minuteY, PalmyraOS::Color::White);   // White minute hand
-			windowFrame.brush()
-					   .drawLine(centerX, centerY, hourX, hourY, PalmyraOS::Color::Orange);        // Blue hour hand
+			// Clock hands
+
+			// Seconds
+			windowFrame.brush().drawLine(centerX, centerY, secondX, secondY, Color::Gray300);
+
+			// Minutes
+			windowFrame.brush().drawLine(centerX, centerY, minuteX, minuteY, Color::Orange);
+
+			// Hours
+			windowFrame.brush().drawLine(centerX, centerY, hourX, hourY, Color::PrimaryLight);
 
 		}
 

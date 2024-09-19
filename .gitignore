@@ -4,7 +4,9 @@
 *.json
 *.bin
 *.iso
+*.log
 bin/
 .vscode/
 .idea/
 cmake-build-debug/
+/PalmyraOS/cmake-build-debug-wsl/*

@@ -100,7 +100,7 @@ PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::getDe
 ///endregion
 
 
-///region FAT32Directory
+///region FAT32Archive
 
 PalmyraOS::kernel::vfs::FAT32Archive::FAT32Archive(
 	PalmyraOS::kernel::vfs::FAT32Partition& parentPartition,

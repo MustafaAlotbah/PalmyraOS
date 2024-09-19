@@ -540,7 +540,8 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 			"User Stack: 0x%X\n"
 			"Stack Overflow: %s\n"
 			"Process entry EIP: 0x%X\n"
-			"Process last EIP : 0x%X\n",
+			"Process last EIP : 0x%X\n"
+			"argvBlock        : 0x%X\n",
 			regs->intNo, regs->errorCode, faultingAddress,
 			currentPageDirectory_->getDirectory(), kernel::kernelPagingDirectory_ptr->getDirectory(),
 			(present ? "YES" : "NO"),
@@ -559,7 +560,8 @@ uint32_t* PalmyraOS::kernel::PagingManager::handlePageFault(interrupts::CPURegis
 			userStack,
 			(stackOverflow ? "YES" : "NO"),
 			currentProcess.debug_.entryEip,
-			currentProcess.debug_.lastWorkingEip
+			currentProcess.debug_.lastWorkingEip,
+			currentProcess.debug_.argvBlock
 		);
 	}
 

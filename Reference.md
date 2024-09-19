@@ -104,13 +104,16 @@ PalmyraOS/
 16. [x] SysCalls + (System API)
 17. [x] Virtual File System (VFS)
 18. [x] Keyboard driver
-19. [ ] Terminal
-20. [ ] Interprocess Communication (IPC) pipes
-21. [ ] FAT16
-22. [ ] Elf
-23. [ ] FAT32
-24. [ ] Terminal Commands
-25. [ ] Mouse driver
+19. [x] Terminal
+20. [ ] Fork
+21. [ ] Interprocess Communication (IPC) pipes
+22. [ ] FAT16
+23. [x] Elf
+24. [x] FAT32
+25. [x] Terminal Commands
+26. [x] Mouse driver
+27. [ ] Thread Local Storage (TLS)
+28. [ ] Model Specific Register (MSR)
 
 **Nice to haves**
 - User Authentication
@@ -271,15 +274,11 @@ PalmyraOS/
 43. [ ] ``
 44. [ ] ``
 
+## TODO URGENT
 
-
-
-
-
-
-
-
-
-
+- [ ] RAIIs
+    - [ ] File Descriptor
+    - [ ] Unique Pointer
+    - [ ] Shared Pointer
 
 
