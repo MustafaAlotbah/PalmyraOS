@@ -130,6 +130,71 @@ void PalmyraOS::kernel::Brush::drawLine(uint32_t x0, uint32_t y0, uint32_t x1, u
 	}
 }
 
+void PalmyraOS::kernel::Brush::drawCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color, bool filled)
+{
+	int x = 0;
+	int y = static_cast<int>(r);
+	int p = static_cast<int>(1 - r);
+
+	// Draw the initial points or lines
+	if (filled)
+		fillCircleSymmetricScanlines(cx, cy, x, y, color);
+	else
+		plotCirclePerimeterPoints(cx, cy, x, y, color);
+
+	// Use the Midpoint Circle Algorithm
+	while (x < y)
+	{
+		x++;
+		if (p < 0)
+		{
+			p += 2 * x + 1;
+		}
+		else
+		{
+			y--;
+			p += 2 * (x - y) + 1;
+		}
+
+		if (filled)
+			fillCircleSymmetricScanlines(cx, cy, x, y, color);
+		else
+			plotCirclePerimeterPoints(cx, cy, x, y, color);
+	}
+}
+
+void PalmyraOS::kernel::Brush::plotCirclePerimeterPoints(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color)
+{
+	frameBuffer_.drawPixel(cx + x, cy + y, color); // 1st octant
+	frameBuffer_.drawPixel(cx - x, cy + y, color); // 2nd octant
+	frameBuffer_.drawPixel(cx + x, cy - y, color); // 3rd octant
+	frameBuffer_.drawPixel(cx - x, cy - y, color); // 4th octant
+	frameBuffer_.drawPixel(cx + y, cy + x, color); // 5th octant
+	frameBuffer_.drawPixel(cx - y, cy + x, color); // 6th octant
+	frameBuffer_.drawPixel(cx + y, cy - x, color); // 7th octant
+	frameBuffer_.drawPixel(cx - y, cy - x, color); // 8th octant
+}
+
+void PalmyraOS::kernel::Brush::fillCircleSymmetricScanlines(
+	uint32_t cx,
+	uint32_t cy,
+	int x,
+	int y,
+	PalmyraOS::Color color
+)
+{
+	// Draw horizontal lines between symmetric points
+	drawHLine(cx - x, cx + x, cy + y, color); // Top symmetric line
+	drawHLine(cx - x, cx + x, cy - y, color); // Bottom symmetric line
+
+	drawHLine(cx - y, cx + y, cy + x, color); // Left symmetric line
+	drawHLine(cx - y, cx + y, cy - x, color); // Right symmetric line
+}
+
+void PalmyraOS::kernel::Brush::fillCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color)
+{
+	drawCircle(cx, cy, r, color, true);
+}
 ///endregion
 
 
@@ -399,8 +464,9 @@ uint32_t PalmyraOS::kernel::TextRenderer::calculateHeight()
 
 
 PalmyraOS::kernel::VBE::VBE(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer)
-	: frameBuffer_(mode_->width, mode_->height, (uint32_t*)(uintptr_t)mode_->framebuffer, backBuffer),
-	  vbe_mode_info_(*mode_), vbe_control_info_(*control_)
+	: frameBuffer_(mode_->width, mode_->height, (uint32_t * )(uintptr_t)
+mode_->framebuffer, backBuffer),
+vbe_mode_info_ (* mode_), vbe_control_info_(*control_)
 {
 	vbe_mode_info_t   & vbe_mode_info = *mode_;
 	vbe_control_info_t& control       = *control_;

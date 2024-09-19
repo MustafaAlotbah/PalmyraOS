@@ -111,6 +111,58 @@ namespace PalmyraOS::kernel
 	   */
 	  void drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
 
+	  /**
+	   * Draw a circle using the Midpoint Circle Algorithm.
+	   * This function draws a circle with a given radius (r) centered at (cx, cy).
+	   * It can either draw just the outline of the circle or a filled circle depending on the `filled` parameter.
+	   *
+	   * @param cx The x-coordinate of the circle's center.
+	   * @param cy The y-coordinate of the circle's center.
+	   * @param r The radius of the circle.
+	   * @param color The color of the circle.
+	   * @param filled Boolean flag that indicates whether to fill the circle or draw only its perimeter.
+	   *               If true, the circle is filled; otherwise, only the perimeter is drawn.
+	   */
+	  void drawCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color, bool filled = false);
+
+	  /**
+	   * Fill the entire circle with the specified color.
+	   * This function fills the circle by drawing symmetric horizontal scanlines within the bounds
+	   * of the circle using the Midpoint Circle Algorithm. It assumes the circle's center is at (cx, cy)
+	   * and uses the provided radius (r).
+	   *
+	   * @param cx The x-coordinate of the circle's center.
+	   * @param cy The y-coordinate of the circle's center.
+	   * @param r The radius of the circle.
+	   * @param color The color to fill the circle with.
+	   */
+	  void fillCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color);
+
+	  /**
+	   * Plot symmetric points on the circle's perimeter using 8-way symmetry.
+	   * This function draws the 8 points of symmetry on the circle defined by its center (cx, cy) and the current
+	   * coordinates (x, y) from the midpoint circle algorithm.
+	   *
+	   * @param cx The x-coordinate of the circle's center.
+	   * @param cy The y-coordinate of the circle's center.
+	   * @param x The current x-offset from the center.
+	   * @param y The current y-offset from the center.
+	   * @param color The color of the points to be drawn.
+	   */
+	  void plotCirclePerimeterPoints(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
+
+	  /**
+	   * Fill the circle using symmetric horizontal scanlines between the perimeter points.
+	   * This function draws horizontal lines (scanlines) between the symmetric points in the circle,
+	   * effectively filling the circle using 8-way symmetry.
+	   *
+	   * @param cx The x-coordinate of the circle's center.
+	   * @param cy The y-coordinate of the circle's center.
+	   * @param x The current x-offset from the center.
+	   * @param y The current y-offset from the center.
+	   * @param color The color of the scanlines to be drawn.
+	   */
+	  void fillCircleSymmetricScanlines(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
 
 	  /**
 	   * Draw a point (pixel) in the frame buffer.
