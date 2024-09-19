@@ -189,8 +189,17 @@ void PalmyraOS::kernel::Process::initializeCPUState()
 	// For user mode, initialize the user stack pointer (userEsp).
 	if (mode_ == Mode::User)
 	{
-		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE;
+		stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE - 512;
 		LOG_DEBUG("userEsp set at 0x%X.", stack_.userEsp);
+
+		// Fill the user stack memory range with 0 from `userEsp` to the top of the user stack
+		auto* userStackStart =
+				reinterpret_cast<uint32_t*>(reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE
+					- 512);
+		auto* userStackEnd   = reinterpret_cast<uint32_t*>(reinterpret_cast<uint32_t>(userStack_)
+			+ PAGE_SIZE * PROCESS_USER_STACK_SIZE);
+		std::fill(userStackStart, userStackEnd, 0);
+
 	}
 
 	// Set the CR3 register to point to the process's paging directory.
@@ -210,6 +219,8 @@ void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_
 	// Allocate a single block of memory for argv and the strings
 	size_t numPages = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
 	void* argv_block = allocatePages(numPages);
+	debug_.argvBlock = reinterpret_cast<uint32_t>(argv_block);
+
 	char** argv_copy = static_cast<char**>(argv_block);
 	char* str_copy   = reinterpret_cast<char*>(argv_block) + (argc + 1) * sizeof(char*);
 
@@ -773,12 +784,16 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 		if (!segmentAddress) return nullptr;
 
 		// Copy the segment into memory
-		memcpy(segmentAddress, elfFileContent.data() + ph.p_offset, ph.p_filesz);
+		memcpy(
+			reinterpret_cast<uint8_t*>(segmentAddress) + page_offset,
+			elfFileContent.data() + ph.p_offset,
+			ph.p_filesz
+		);
 
 		// Zero the remaining memory if p_memsz > p_filesz
 		if (ph.p_memsz > ph.p_filesz)
 		{
-			memset(reinterpret_cast<uint8_t*>(segmentAddress) + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
+			memset(reinterpret_cast<uint8_t*>(segmentAddress) + page_offset + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
 		}
 
 

@@ -18,8 +18,8 @@ namespace PalmyraOS::kernel
   {
 	  uint32_t entryEip       = 0;
 	  uint32_t lastWorkingEip = 0;
+	  uint32_t argvBlock = 0;
   };
-
 
   /**
    * @enum EFlags
@@ -98,7 +98,6 @@ namespace PalmyraOS::kernel
 				  return "Unknown";
 		  }
 	  }
-
 
 	  /**
 	   * @enum Priority
@@ -304,7 +303,7 @@ namespace PalmyraOS::kernel
 
 	  KVector<uint32_t> windows_;                        ///< List of windows allocated
 	  vfs::FileDescriptorTable fileTableDescriptor_;    ///< File descriptor table to do VFS operations
-	  ProcessDebug debug_;
+	  ProcessDebug      debug_;
 
 	  uint64_t upTime_{ 0 };
 
@@ -377,9 +376,9 @@ namespace PalmyraOS::kernel
 
    private:
 	  static KVector<Process> processes_;        ///< Vector of processes
-	  static uint32_t      currentProcessIndex_; ///< Index of the current process
-	  static uint32_t      atomicSectionLevel_;  ///< Level of atomic section nesting
-	  static uint32_t      pid_count;            ///< Counter for assigning PIDs
+	  static uint32_t currentProcessIndex_; ///< Index of the current process
+	  static uint32_t atomicSectionLevel_;  ///< Level of atomic section nesting
+	  static uint32_t pid_count;            ///< Counter for assigning PIDs
   };
 
 
