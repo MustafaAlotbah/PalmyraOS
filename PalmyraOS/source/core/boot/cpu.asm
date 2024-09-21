@@ -42,50 +42,109 @@ test_sse:
     movd eax, xmm0
     ret
 
+
+section .text
+align 16
 memcpy_sse:
     ; Prologue
-    push ebp           ; Save the base pointer
-    mov ebp, esp       ; Set the base pointer to the current stack pointer
-    push esi           ; Save the source index register
-    push edi           ; Save the destination index register
+    push ebp
+    mov ebp, esp
+    push esi
+    push edi
 
     ; Load arguments
-    mov edi, [ebp+8]    ; edi=dst
-    mov esi, [ebp+12]   ; esi=src
-    mov ecx, [ebp+16]   ; ecx=num
-                        ; eax = chunks
+    mov edi, [ebp + 8]      ; Destination address
+    mov esi, [ebp + 12]     ; Source address
+    mov ecx, [ebp + 16]     ; Number of bytes to copy (num)
 
-    ; Check if num is less than 16, use regular copy
-    cmp ecx, 16        ; Compare num with 16
-    jb .small_copy     ; if (num < 16) goto small_copy
+    ; Check for small copies
+    cmp ecx, 16
+    jb small_copy           ; If num < 16, jump to small_copy
 
-    ; uint32_t chunks = num / 16 bytes (128-bit)
-    mov eax, ecx       ; Copy num to eax
-    shr ecx, 4         ; chunks <- num / 16
+    ; Align destination
+    mov edx, edi
+    and edx, 15             ; edx = edi % 16
+    jz check_source_align   ; If destination is aligned, check source alignment
 
-align 16               ; Align the following loop to a 16-byte boundary
-.sse_copy:
-    movdqu xmm0, [esi]  ; Load 16 bytes from source into xmm0 (unaligned load)
-    movdqa [edi], xmm0  ; Store 16 bytes from xmm0 to destination (aligned store)
-    add esi, 16         ; src += 16
-    add edi, 16         ; dst += 16
-    dec ecx             ; chunks--
-    jnz .sse_copy       ; if (chunks != 0) goto sse_copy;
+    ; Align destination by copying bytes up to alignment boundary
+    mov eax, 16
+    sub eax, edx            ; eax = 16 - (edi % 16), bytes to align
+    sub ecx, eax            ; ecx -= bytes copied
+    cld                     ; Clear direction flag for forward copying
+    rep movsb               ; Copy bytes to align destination and advance esi, edi
+
+check_source_align:
+    ; Now edi is aligned
+    ; Check source alignment
+    mov edx, esi
+    and edx, 15             ; edx = esi % 16
+    jz aligned_copy         ; If source is aligned, proceed to aligned copy
+
+    ; Unaligned source, use unaligned loads
+    mov edx, ecx
+    shr edx, 4              ; edx = num / 16
+    cmp edx, 0
+    je remaining_bytes
+
+align 16
+unaligned_source_loop:
+    movdqu xmm0, [esi]      ; Unaligned load from source
+    movdqa [edi], xmm0      ; Aligned store to destination
+    add esi, 16
+    add edi, 16
+    dec edx
+    jnz unaligned_source_loop
+
+    ; Update ecx for remaining bytes
+    mov ecx, ecx
+    and ecx, 15             ; Remaining bytes after 16-byte chunks
+    jmp remaining_bytes
+
+align 16
+aligned_copy:
+    ; Both source and destination are aligned
+    mov edx, ecx
+    shr edx, 4              ; edx = num / 16
+    cmp edx, 0
+    je remaining_bytes
+
+align 16
+aligned_loop:
+    movdqa xmm0, [esi]      ; Aligned load
+    movdqa [edi], xmm0      ; Aligned store
+    add esi, 16
+    add edi, 16
+    dec edx
+    jnz aligned_loop
+
+    ; Update ecx for remaining bytes
+    mov ecx, ecx
+    and ecx, 15             ; Remaining bytes after 16-byte chunks
+
+remaining_bytes:
+    cmp ecx, 0
+    je done                 ; If no remaining bytes, finish
 
     ; Copy remaining bytes
-    mov ecx, eax        ; remaining = num
-    and ecx, 15         ; remaining %= 16
-    jz .done            ; if (remaining == 0) goto done;
+    rep movsb
 
-.small_copy:
-    ; Regular copy for remaining bytes
-    ; Repeat MOVSB (move byte from [esi] to [edi]) until ecx is 0
-    rep movsb           ;  while (remaining--) *dst++ = *src++
-
-.done:
+done:
     ; Epilogue
-    pop edi            ; Restore the destination index register
-    pop esi            ; Restore the source index register
-    mov esp, ebp       ; Restore the stack pointer
-    pop ebp            ; Restore the base pointer
-    ret                ; Return from the function
+    pop edi
+    pop esi
+    mov esp, ebp
+    pop ebp
+    ret
+
+align 16
+small_copy:
+    ; Handle small copies (num < 16)
+    cld                     ; Clear direction flag
+    rep movsb               ; Copy bytes
+
+    ; Epilogue
+    pop edi
+    pop esi
+    mov esp, ebp
+    pop ebp
+    ret

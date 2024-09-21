@@ -64,7 +64,7 @@ extern "C" uint32_t* primary_isr_handler(PalmyraOS::kernel::interrupts::CPURegis
 	using namespace PalmyraOS::kernel::interrupts;
 
 	// if there is a paging directory, switch to kernel directory
-	if (PagingManager::isEnabled())
+	if (PagingManager::isEnabled()) // TODO move to assembly interrupts.asm right after cli
 		PagingManager::switchPageDirectory(PalmyraOS::kernel::kernelPagingDirectory_ptr);
 
 

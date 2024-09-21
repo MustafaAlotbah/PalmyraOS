@@ -129,6 +129,7 @@ namespace PalmyraOS::kernel::vfs
 
 	  // Reading FAT Files from a cluster
 	  [[nodiscard]] KVector<uint8_t> readFile(uint32_t startCluster, uint32_t size) const;
+	  [[nodiscard]] KVector<uint8_t> readFile(uint32_t startCluster, uint32_t offset, uint32_t size) const;
 	  [[nodiscard]] KVector<uint8_t> readEntireFile(uint32_t startCluster) const;
 
 	  // Method to parse directory entries from raw data
@@ -157,6 +158,7 @@ namespace PalmyraOS::kernel::vfs
 	  [[nodiscard]] uint32_t getNextCluster(uint32_t cluster) const;
 	  [[nodiscard]] uint32_t getSectorFromCluster(uint32_t cluster) const;
 	  [[nodiscard]] KVector<uint32_t> readClusterChain(uint32_t startCluster) const;
+	  [[nodiscard]] KVector<uint32_t> readClusterChain(uint32_t startCluster, uint32_t offset, uint32_t size) const;
 	  [[nodiscard]] std::optional<uint32_t> allocateCluster();
 	  void freeClusterChain(uint32_t startCluster);
 	  [[nodiscard]] bool setNextCluster(uint32_t cluster, uint32_t nextCluster);

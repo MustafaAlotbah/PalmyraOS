@@ -123,15 +123,14 @@ size_t PalmyraOS::kernel::vfs::FAT32Archive::read(char* buffer, size_t size, siz
 	// If the offset is greater than or equal to the file size, return 0 as there's nothing to read
 	if (offset >= getSize()) return 0;
 
-
 	// Read the entire file data starting from the beginning
-	KVector<uint8_t> data4 = parentPartition_.readFile(directoryEntry_.getFirstCluster(), offset + size);
+	KVector<uint8_t> data = parentPartition_.readFile(directoryEntry_.getFirstCluster(), offset, size);
 
 	// Calculate the number of bytes to read
-	size_t bytesToRead = std::min(size, data4.size() - offset);
+	size_t bytesToRead = std::min(size, data.size());
 
 	// Copy the relevant data into the buffer
-	memcpy(buffer, data4.data() + offset, bytesToRead);
+	memcpy(buffer, data.data(), bytesToRead);
 
 	return bytesToRead;
 }

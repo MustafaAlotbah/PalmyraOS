@@ -310,9 +310,14 @@ void PalmyraOS::kernel::SystemCallsManager::handleRead(PalmyraOS::kernel::interr
 		return;
 	}
 
+	// Enable interrupts to allow the system to handle other tasks while sleeping // TODO way to block only FAT32
+	interrupts::InterruptController::enableInterrupts();
+
 	// Read data from the file and update the file offset
 	auto bytesRead = file->getInode()->read(bufferPointer, size, file->getOffset());
 	file->advanceOffset(bytesRead);
+
+	interrupts::InterruptController::disableInterrupts();
 
 	// Set eax to the number of bytes read
 	regs->eax = bytesRead;
@@ -797,7 +802,6 @@ void PalmyraOS::kernel::SystemCallsManager::handleArchPrctl(PalmyraOS::kernel::i
 	uint32_t addr = regs->ecx;        // The address to set or the value to get
 
 	LOG_WARN("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
-	LOG_WARN("SYSCALL archprctl (0x%X, 0x%X)", code, addr);
 
 	// Determine what operation is being requested
 	switch (code)
@@ -854,7 +858,6 @@ void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interru
 		regs->eax = currentProcess->current_brk;
 		return;
 	}
-
 
 	// Ensure the requested break is within the allowed range (between initial_brk and max_brk)
 	if (requested_brk >= currentProcess->initial_brk && requested_brk <= currentProcess->max_brk)

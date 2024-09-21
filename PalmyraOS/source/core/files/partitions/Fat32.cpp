@@ -271,6 +271,60 @@ namespace PalmyraOS::kernel::vfs
 	  return clusters;
   }
 
+  KVector<uint32_t> FAT32Partition::readClusterChain(uint32_t startCluster, uint32_t offset, uint32_t size) const
+  {
+	  /**
+	   * This function reads the cluster chain starting by a given cluster and looks for the offset.
+	   * It follows the chain of clusters that make up a file or directory by reading the FAT
+	   * to find each successive cluster in the chain.
+	   */
+
+	  if (startCluster >= countClusters_)
+		  kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+
+	  // Calculate how many clusters we need to skip based on the offset
+	  uint32_t clusterSizeBytes = clusterSize_ * sectorSize_;
+	  uint32_t skipClusters     = offset / clusterSizeBytes;  // Number of clusters to skip based on the offset
+
+	  // Calculate how many clusters we need based on the size
+	  uint32_t requiredClusters = (size + clusterSizeBytes - 1) / clusterSizeBytes;  // Round up to the next cluster
+
+	  KVector<uint32_t> clusters;
+	  uint32_t          currentCluster = startCluster;
+	  uint32_t          iterations     = 0;
+	  const uint32_t    maxIterations  = countClusters_;  // To avoid infinite loops in case of a corrupted FAT
+
+	  // Traverse the cluster chain, skipping unnecessary clusters and collecting only the required ones
+	  while (currentCluster < 0x0FFFFFF8 && iterations < maxIterations)
+	  {
+		  // If we've skipped enough clusters, start collecting them
+		  if (skipClusters == 0)
+		  {
+			  clusters.push_back(currentCluster);
+			  if (clusters.size() >= requiredClusters)
+				  break;  // Stop once we've collected enough clusters to satisfy the requested size
+		  }
+		  else
+		  {
+			  // Decrement the skip counter until we've skipped enough clusters
+			  skipClusters--;
+		  }
+
+		  // Move to the next cluster in the chain
+		  currentCluster = getNextCluster(currentCluster);
+		  iterations++;
+
+		  // Detect loops in the cluster chain (if the current cluster repeats)
+		  if (std::find(clusters.begin(), clusters.end(), currentCluster) != clusters.end())
+		  {
+			  LOG_ERROR("Detected loop in cluster chain at cluster %u.", currentCluster);
+			  break;
+		  }
+	  }
+
+	  return clusters;
+  }
+
   KVector<uint8_t> FAT32Partition::readFile(uint32_t startCluster, uint32_t size) const
   {
 	  /**
@@ -1326,6 +1380,55 @@ namespace PalmyraOS::kernel::vfs
 
 	  LOG_ERROR("worked.");
 	  return newEntry;
+  }
+
+  KVector<uint8_t> FAT32Partition::readFile(uint32_t startCluster, uint32_t offset, uint32_t size) const
+  {
+	  if (startCluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+
+	  // Calculate the starting cluster offset in the file and adjust accordingly
+	  uint32_t fileClusterSizeBytes = clusterSizeBytes_;  // Cluster size in bytes
+	  uint32_t skipBytes            = offset % fileClusterSizeBytes;  // Offset within the first cluster
+
+	  KVector<uint8_t>  data;
+	  KVector<uint32_t> clusters = readClusterChain(startCluster, offset, size);  // Only get relevant clusters
+
+	  uint32_t bytesToRead = size;
+
+	  // Skip the first `skipClusters` clusters and read only the remaining clusters
+	  for (size_t i = 0; i < clusters.size(); ++i)
+	  {
+		  if (bytesToRead == 0) break;
+
+		  // Get the current cluster and its corresponding sector on disk
+		  uint32_t cluster = clusters[i];
+		  uint32_t sector  = getSectorFromCluster(cluster);
+
+		  // Read the cluster data from disk into a buffer
+		  KVector<uint8_t> clusterData(clusterSizeBytes_);
+		  for (uint8_t     j = 0; j < clusterSize_; ++j)
+		  {
+			  bool diskStatus =
+					   diskDriver_.readSector(sector + j, clusterData.data() + j * sectorSize_, DEFAULT_TIMEOUT);
+			  if (!diskStatus)
+			  {
+				  LOG_ERROR("Failed to read sector %u from disk.", sector + j);
+				  return {};
+			  }
+		  }
+
+		  // If we are reading the first cluster, skip the initial bytes corresponding to the offset
+		  uint32_t readStart     = (i == 0) ? skipBytes : 0;
+		  uint32_t readableBytes = std::min(bytesToRead, clusterSizeBytes_ - readStart);
+
+		  // Append the required data to the result
+		  data.insert(data.end(), clusterData.begin() + readStart, clusterData.begin() + readStart + readableBytes);
+		  bytesToRead -= readableBytes;
+	  }
+
+	  return data;
+
+
   }
 
 
