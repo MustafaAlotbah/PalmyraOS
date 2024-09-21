@@ -810,8 +810,10 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(
 	// Initialize the program break to the end of the last loaded segment
 	// Set initial_brk and current_brk to just after the highest loaded segment
 	process->initial_brk = (highest_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);  // Align to next page boundary
-	process->current_brk = process->initial_brk;  // Initial and current brk set to the same value
-//	process->max_brk = process->initial_brk + MAX_HEAP_SIZE;  // Set an arbitrary limit for heap size (you can define MAX_HEAP_SIZE)
+
+	// Initial and current brk set to the same value
+	process->current_brk = process->initial_brk;
+	process->max_brk     = process->initial_brk;
 
 	LOG_DEBUG("Program break (brk) initialized at: 0x%X", process->initial_brk);
 

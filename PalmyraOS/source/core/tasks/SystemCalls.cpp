@@ -859,6 +859,14 @@ void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interru
 		return;
 	}
 
+	// Ensure requested_brk does not exceed the maximum addressable virtual memory TODO
+//	if (requested_brk > MAX_VIRTUAL_ADDRESS)
+//	{
+//		LOG_ERROR("SYSCALL brk(0x%X) -> invalid request (exceeds addressable memory)", requested_brk);
+//		regs->eax = (uint32_t)-1;
+//		return;
+//	}
+
 	// Ensure the requested break is within the allowed range (between initial_brk and max_brk)
 	if (requested_brk >= currentProcess->initial_brk && requested_brk <= currentProcess->max_brk)
 	{
@@ -879,6 +887,8 @@ void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interru
 
 		if (allocated_memory != nullptr)
 		{
+			LOG_WARN("SYSCALL brk(0x%X) -> pages: %d", requested_brk, additional_pages);
+
 			// Successfully allocated new pages
 			currentProcess->max_brk += additional_pages * PAGE_SIZE;
 			currentProcess->current_brk = requested_brk;
@@ -887,26 +897,17 @@ void PalmyraOS::kernel::SystemCallsManager::handleBrk(PalmyraOS::kernel::interru
 		else
 		{
 			// Memory allocation failed, return failure (-1)
+			LOG_ERROR("SYSCALL brk(0x%X) -> memory allocation failed", requested_brk);
 			regs->eax = (uint32_t)-1;
 		}
 	}
 	else
 	{
 		// Requested break is below the initial break or invalid, return failure (-1)
+		LOG_ERROR("SYSCALL brk(0x%X) -> invalid request (below initial_brk)", requested_brk);
 		regs->eax = (uint32_t)-1;
 	}
 
-}
-
-void PalmyraOS::kernel::SystemCallsManager::handleSetThreadArea(PalmyraOS::kernel::interrupts::CPURegisters* regs)
-{
-
-	// Extract the pointer to the user descriptor (TLS descriptor) from the registers
-//	auto* userDescriptor = reinterpret_cast<UserDescriptor*>(regs->ebx);
-
-	LOG_WARN("SYSCALL set_thread_area(0x%X)", regs->ebx);
-
-	regs->eax = (uint32_t)-1;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleGetUID(PalmyraOS::kernel::interrupts::CPURegisters* regs)
@@ -931,4 +932,16 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetEGID(PalmyraOS::kernel::int
 {
 	LOG_WARN("SYSCALL handleGetEGID");
 	regs->eax = 1000;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleSetThreadArea(PalmyraOS::kernel::interrupts::CPURegisters* regs)
+{
+
+	// Extract the pointer to the user descriptor (TLS descriptor) from the registers
+//	auto* userDescriptor = reinterpret_cast<UserDescriptor*>(regs->ebx);
+
+	LOG_WARN("SYSCALL set_thread_area(0x%X) ", regs->ebx);
+
+	// Make the process think it was successful TODO far-future implement TLS and threading inside processes
+	regs->eax = (uint32_t)0;
 }

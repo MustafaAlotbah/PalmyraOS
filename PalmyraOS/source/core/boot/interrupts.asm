@@ -56,7 +56,7 @@ flush_idt_table:
 %macro InterruptServiceRoutine_PushesErrorCode 1
 global InterruptServiceRoutine_%1       ; expose the function
 InterruptServiceRoutine_%1:
-    cli                                 ; clear the interrupts
+    cli                                 ; clear the interrupts TODO fetch kernel directory if available
                                         ; error code was pushed automatically
     push dword %1                       ; push interrupt number
     jmp _primary_isr_handler
