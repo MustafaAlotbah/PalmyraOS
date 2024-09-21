@@ -146,11 +146,12 @@ uint32_t* PalmyraOS::kernel::Keyboard::handleInterrupt(PalmyraOS::kernel::interr
 {
 
 	// Ensure the interrupt is for the keyboard (IRQ1 corresponds to interrupt vector 0x21)
-	if (regs->intNo != 0x21)
-	{
-		// Not a keyboard interrupt, ignore it
-		return (uint32_t*)regs;
-	}
+	uint8_t status = commandPort_.read();
+
+	// Check if the data is from the keyboard
+	if (status & 0x20) return (uint32_t*)regs;
+
+	counter_++;
 
 	uint8_t  keyIndex = dataPort_.read();
 	KeyState state    = KeyState::PRESSED;
@@ -179,7 +180,6 @@ uint32_t* PalmyraOS::kernel::Keyboard::handleInterrupt(PalmyraOS::kernel::interr
 		if (state == KeyState::PRESSED) toggleLockKeys(keyIndex);
 	}
 
-	counter_++;
 	buffer_last_index_++;
 	if (buffer_last_index_ >= bufferSize) buffer_last_index_ = 0;
 

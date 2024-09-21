@@ -14,6 +14,7 @@ uint8_t PalmyraOS::kernel::Mouse::offset_      = 0;
 
 uint64_t PalmyraOS::kernel::Mouse::count_ = 0;
 
+
 ///endregion
 
 
@@ -134,20 +135,11 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 {
 	// Check if data is available
 	uint8_t status = commandPort_.read();
-//	if (!(status & 0x01)) {
-//		// No data available
-//		return (uint32_t*)regs;
-//	}
 
 	// Check if the data is from the mouse
-	if (!(status & 0x20))
-	{
-		// Data is not from mouse
-		return (uint32_t*)regs;
-	}
+	if (!(status & 0x20)) return (uint32_t*)regs;
 
 	count_++;
-
 
 	uint8_t mouse_in = dataPort_.read();
 	// process mouse packet
@@ -181,6 +173,9 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 	// Early exist if TODO...
 	if (offset_ != 0) return (uint32_t*)regs;
 
+	// Handle overflow bits (Bit 6 and Bit 7 are the X and Y sign bits)
+	bool xOverflow = (buffer_[0] & (1 << 6));  // X overflow (bit 6)
+	bool yOverflow = (buffer_[0] & (1 << 7));  // Y overflow (bit 7)
 
 	bool isLeftDown   = (buffer_[0] & (1 << 0));
 	bool isRightDown  = (buffer_[0] & (1 << 1));
@@ -188,6 +183,10 @@ uint32_t* PalmyraOS::kernel::Mouse::handleInterrupt(PalmyraOS::kernel::interrupt
 
 	int deltaX = static_cast<int8_t>(buffer_[1]); // NOLINT
 	int deltaY = static_cast<int8_t>(buffer_[2]); // NOLINT
+
+	// Estimate velocity and apply smoothing
+	if (xOverflow) deltaX = static_cast<int>(deltaX * 2);
+	if (yOverflow) deltaY = static_cast<int>(deltaY * 2);
 
 	WindowManager::queueMouseEvent(
 		{
