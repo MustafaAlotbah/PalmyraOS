@@ -7,6 +7,7 @@
 
 #include <utility>
 #include "palmyraOS/unistd.h"
+#include "palmyraOS/shared/memory/HeapAllocator.h"
 
 // TODO: move these to libs (or put them in palmyraOS)
 #include "core/FrameBuffer.h"        // FrameBuffer
@@ -112,7 +113,7 @@ namespace PalmyraOS::SDK
 	  explicit Layout(WindowGUI& windowGui, int* scrollY, bool scrollable = false, size_t height = 0);
 	  ~Layout();
 
-	  [[maybe_unused]] inline uint32_t getX() const
+	  [[nodiscard]] inline uint32_t getX() const
 	  { return prevPositionX_ + currCursorX_ + 1; }
 	  [[nodiscard]] inline uint32_t getY() const
 	  { return prevPositionY_ + currCursorY_ + 1; }
@@ -144,5 +145,12 @@ namespace PalmyraOS::SDK
 	  int currScrollY_;
   };
 
+  int constructDirectoryPath(
+	  char* buffer,
+	  size_t bufferSize,
+	  const types::UVector<types::UString<char>>& currentDirectory
+  );
+
+  int isElf(types::UserHeapManager& heap, const types::UString<char>& absolutePath);
 
 }

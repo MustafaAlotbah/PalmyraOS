@@ -1,9 +1,138 @@
-
+#include <elf.h>
 #include "palmyraOS/palmyraSDK.h"
 #include "libs/string.h"
 #include "palmyraOS/stdio.h"
 #include "palmyraOS/stdlib.h"       // For dynamic memory management
 
+
+/**********************************************************/
+
+int PalmyraOS::SDK::constructDirectoryPath(
+	char* buffer,
+	size_t bufferSize,
+	const PalmyraOS::types::UVector<PalmyraOS::types::UString<char>>& currentDirectory
+)
+{
+	int offset = 0;
+	buffer[offset++] = '/';
+
+	// Build the full directory path by concatenating directories from currentDirectory.
+	// Each directory name is followed by a '/'.
+	for (const auto& directory : currentDirectory)
+	{
+		int dirLength = static_cast<int>(directory.size());
+
+		// Ensure there is enough space in the buffer for the directory name and a '/'.
+		if (offset + dirLength + 1 >= bufferSize) return -1; // Buffer overflow error
+
+		// Copy the directory name into the buffer at the current offset.
+		strcpy(buffer + offset, directory.c_str());
+		offset += dirLength;
+
+		// Append a '/' after the directory name.
+		buffer[offset - 1] = '/';
+	}
+
+	if (offset > 1)
+	{
+		// Replace the trailing '/' with a null terminator to complete the path string.
+		buffer[offset] = '\0';
+	}
+	else
+	{
+		// If currentDirectory is empty, set the path to root "/".
+		buffer[0] = '/';
+		buffer[1] = '\0';
+	}
+
+	return offset; // Success
+}
+
+int PalmyraOS::SDK::isElf(PalmyraOS::types::UserHeapManager& heap, const PalmyraOS::types::UString<char>& absolutePath)
+{
+	// path at least some characters
+	if (absolutePath.size() <= 1) return 0;
+
+	// Attempt to open the file specified by the user
+	int fileDescriptor = open(absolutePath.c_str(), 0);
+
+	// Inform if the file couldn't be opened, perhaps it doesn't exist
+	if (fileDescriptor < 0) return 0;
+
+	// Allocate a buffer to read the file content
+	auto e_ident = (char*)heap.alloc(EI_NIDENT);
+
+	// Read up to 512 characters from the file
+	int bytesRead = read(fileDescriptor, e_ident, EI_NIDENT);
+
+	// Check if the file is large enough to contain the ELF identifier
+	if (bytesRead < EI_NIDENT)
+	{
+		heap.free(e_ident);
+		close(fileDescriptor);
+		return 0;
+	}
+
+	// Check ELF magic number
+	if (e_ident[0] != ELFMAG0 ||
+		e_ident[1] != ELFMAG1 ||
+		e_ident[2] != ELFMAG2 ||
+		e_ident[3] != ELFMAG3)
+	{
+		heap.free(e_ident);
+		close(fileDescriptor);
+		return 0;
+	}
+
+	// 32 or 64
+	int architectureBits = 0;
+
+	if (e_ident[EI_CLASS] == ELFCLASS64) architectureBits = 64;
+	else if (e_ident[EI_CLASS] == ELFCLASS32)
+	{
+		architectureBits = 32;
+
+		// Move the file offset back to the start
+		if (lseek(fileDescriptor, 0, SEEK_SET) == -1)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		Elf32_Ehdr header32;
+		bytesRead = read(fileDescriptor, &header32, sizeof(header32));
+		if (bytesRead == -1)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		if (bytesRead < sizeof(header32))
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 0;
+		}
+
+		if (header32.e_type != ET_EXEC)
+		{
+			heap.free(e_ident);
+			close(fileDescriptor);
+			return 100;
+		}
+
+	}
+
+	// Clean up
+	close(fileDescriptor);
+	heap.free(e_ident);
+
+	return architectureBits;
+}
+
+/**********************************************************/
 
 PalmyraOS::SDK::Window::Window(
 	uint32_t x,
@@ -431,15 +560,4 @@ PalmyraOS::SDK::Layout::~Layout()
 		);
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
 
