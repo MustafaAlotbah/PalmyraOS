@@ -3,7 +3,7 @@
 
 #include "palmyraOS/unistd.h"       // Include PalmyraOS system calls
 #include "palmyraOS/time.h"         // For rtc_time truct
-#include "libs/palmyraSDK.h"        // Window, Window Frame
+#include "palmyraOS/palmyraSDK.h"        // Window, Window Frame
 #include "libs/pmath.h"                // sin, cos
 
 

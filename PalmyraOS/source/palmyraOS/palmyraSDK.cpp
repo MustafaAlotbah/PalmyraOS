@@ -1,5 +1,5 @@
 
-#include "libs/palmyraSDK.h"
+#include "palmyraOS/palmyraSDK.h"
 #include "libs/string.h"
 #include "palmyraOS/stdio.h"
 #include "palmyraOS/stdlib.h"       // For dynamic memory management

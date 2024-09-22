@@ -1,7 +1,7 @@
 
 #include "userland/tests/events.h"
 
-#include "libs/palmyraSDK.h"        // Window, Window Frame
+#include "palmyraOS/palmyraSDK.h"        // Window, Window Frame
 
 
 int PalmyraOS::Userland::Tests::events::main(uint32_t argc, char** argv)

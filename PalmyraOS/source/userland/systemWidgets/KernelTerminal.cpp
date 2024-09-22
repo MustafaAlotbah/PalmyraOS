@@ -6,12 +6,12 @@
 #include "palmyraOS/time.h"            // For sleeping
 #include "palmyraOS/stdlib.h"       // For dynamic memory management
 #include "palmyraOS/stdio.h"        // For standard input/output functions: printf, perror
-#include "palmyraOS/HeapAllocator.h"// C++ heap allocator for efficient memory management
+#include "palmyraOS/shared/memory/HeapAllocator.h"// C++ heap allocator for efficient memory management
 #include "palmyraOS/errono.h"
 
-#include "libs/circularBuffer.h"    // For efficient FIFO buffer implementation
+#include "palmyraOS/circularBuffer.h"    // For efficient FIFO buffer implementation
 #include "libs/string.h"            // strlen
-#include "libs/palmyraSDK.h"        // Window, Window Frame
+#include "palmyraOS/palmyraSDK.h"        // Window, Window Frame
 
 
 // Use the types namespace from PalmyraOS: CircularBuffer, UserHeapManager

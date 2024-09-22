@@ -3,8 +3,8 @@
 #include <algorithm>
 #include "userland/systemWidgets/fileManager.h"
 
-#include "libs/palmyraSDK.h"        // Window, Window Frame
-#include "palmyraOS/HeapAllocator.h"
+#include "palmyraOS/palmyraSDK.h"        // Window, Window Frame
+#include "palmyraOS/shared/memory/HeapAllocator.h"
 
 
 namespace PalmyraOS::Userland::builtin::fileManager

@@ -19,7 +19,7 @@
 
 #include "core/files/VirtualFileSystem.h"
 
-#include "libs/palmyraSDK.h"
+#include "palmyraOS/palmyraSDK.h"
 
 #include "userland/userland.h"
 

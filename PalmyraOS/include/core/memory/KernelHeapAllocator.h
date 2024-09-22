@@ -8,7 +8,7 @@
 #include <queue>
 
 #include "core/definitions.h"
-#include "libs/shared/memory/Heap.h"
+#include "palmyraOS/shared/memory/Heap.h"
 #include "core/kernel.h"
 #include "core/panic.h"
 

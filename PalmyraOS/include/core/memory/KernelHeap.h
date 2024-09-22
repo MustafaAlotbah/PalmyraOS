@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "libs/shared/memory/Heap.h"
+#include "palmyraOS/shared/memory/Heap.h"
 
 
 namespace PalmyraOS::kernel

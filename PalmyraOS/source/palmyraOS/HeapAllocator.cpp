@@ -1,5 +1,5 @@
 
-#include "palmyraOS/HeapAllocator.h"
+#include "palmyraOS/shared/memory/HeapAllocator.h"
 #include "palmyraOS/stdlib.h" // malloc / free
 
 void* PalmyraOS::types::UserHeapManager::allocateMemory(size_t size)

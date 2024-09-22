@@ -3,7 +3,7 @@
 
 
 #include "core/definitions.h"
-#include "libs/shared/memory/Heap.h"
+#include "palmyraOS/shared/memory/Heap.h"
 #include <vector>
 #include "libs/string.h"
 
