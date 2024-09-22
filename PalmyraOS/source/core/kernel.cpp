@@ -76,7 +76,7 @@ bool PalmyraOS::kernel::initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_c
 	}
 
 	// Initialize the font manager
-	fonts::FontManager::initialize();
+	FontManager::initialize();
 
 	// Initialize kernel's brush
 	{
@@ -95,10 +95,7 @@ bool PalmyraOS::kernel::initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_c
 		if (kernel::textRenderer_ptr == nullptr) return false;
 
 		// Construct the text renderer object in the allocated memory
-		new(kernel::textRenderer_ptr) TextRenderer(
-			kernel::vbe_ptr->getFrameBuffer(),
-			fonts::FontManager::getFont("Arial-12")
-		);
+		new(kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Arial12);
 	}
 
 	// Everything is initialized successfully

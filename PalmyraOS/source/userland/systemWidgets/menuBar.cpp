@@ -70,7 +70,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
 	PalmyraOS::kernel::Brush       brush(frameBuffer);
 
 	// Load the font for text rendering (requires kernel memory) TODO: only allowed at this stage, not anymore later
-	PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::fonts::FontManager::getFont("Arial-12"));
+	PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::Font::Arial12);
 
 	// Fill the initial background
 	brush.fill(PalmyraOS::Color::Gray100);

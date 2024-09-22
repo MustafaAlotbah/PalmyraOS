@@ -200,7 +200,7 @@ void PalmyraOS::kernel::Brush::fillCircle(uint32_t cx, uint32_t cy, uint32_t r, 
 
 ///region PalmyraOS::kernel::TextRenderer
 
-PalmyraOS::kernel::TextRenderer::TextRenderer(PalmyraOS::kernel::FrameBuffer& frameBuffer, PalmyraOS::fonts::Font& font)
+PalmyraOS::kernel::TextRenderer::TextRenderer(PalmyraOS::kernel::FrameBuffer& frameBuffer, PalmyraOS::Font& font)
 	: frameBuffer_(frameBuffer), font_(font)
 {
 	setSize(frameBuffer_.getWidth(), frameBuffer.getHeight());

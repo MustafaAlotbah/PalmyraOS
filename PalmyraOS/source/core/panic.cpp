@@ -25,7 +25,7 @@ extern "C" void disable_paging();
 
 	// render some information
 	kernel::Brush        brush(vbe.getFrameBuffer());
-	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), fonts::FontManager::getFont("Arial-12"));
+	kernel::TextRenderer textRenderer(vbe.getFrameBuffer(), Font::Arial12);
 
 	// define text area boundaries
 	uint16_t offset = 100;

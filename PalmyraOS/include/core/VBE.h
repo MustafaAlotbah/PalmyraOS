@@ -230,7 +230,7 @@ namespace PalmyraOS::kernel
 	   * @param frameBuffer Reference to the frame buffer.
 	   * @param font Reference to the font.
 	   */
-	  explicit TextRenderer(FrameBuffer& frameBuffer, fonts::Font& font);
+	  explicit TextRenderer(FrameBuffer& frameBuffer, Font& font);
 
 	  /**
 	   * Reset the text renderer's cursor position to the origin.
@@ -314,7 +314,7 @@ namespace PalmyraOS::kernel
 
    private:
 	  FrameBuffer& frameBuffer_;                            // Reference to the frame buffer
-	  fonts::Font& font_;                                   // Reference to the font
+	  Font& font_;                                   // Reference to the font
 	  Color         textColor_{ 255, 255, 255 };            // Current text color (default is white)
 	  NumeralSystem representation{ NumeralSystem::Dec };   // Current numeral system (default is decimal)
 	  uint8_t precision_{ 3 };                                // Current precision of floats(default is 3)
