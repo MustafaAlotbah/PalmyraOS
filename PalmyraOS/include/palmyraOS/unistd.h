@@ -80,6 +80,20 @@
 #define SEEK_CUR 1  // Seek from the current file offset
 #define SEEK_END 2  // Seek from the end of the file
 
+/* File open() flags - POSIX standard */
+/* Access modes: Only one of O_RDONLY, O_WRONLY, or O_RDWR should be used */
+#define O_RDONLY 0x00  // Open file for reading only (default, value 0) (TODO)
+#define O_WRONLY 0x01  // Open file for writing only (TODO)
+#define O_RDWR 0x02    // Open file for reading and writing (TODO)
+
+/* File creation and truncation flags */
+#define O_CREAT 0x40   // Create file if it doesn't exist. Requires mode parameter in open() call.
+#define O_EXCL 0x80    // When used with O_CREAT, fail if file already exists (atomic creation) (TODO)
+#define O_TRUNC 0x200  // If file exists and is opened for writing, truncate (erase) it to zero bytes
+
+/* File positioning flags */
+#define O_APPEND 0x400  // All write operations append to the end of the file, regardless of lseek() calls (TODO)
+
 /* Constants for Arch Prctl */
 // https://github.com/torvalds/linux/blob/master/arch/x86/include/uapi/asm/prctl.h
 #define ARCH_SET_GS 0x1001

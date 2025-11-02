@@ -360,6 +360,38 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             return;
         }
 
+        // TOUCH - Create an empty file or truncate existing file
+        if (tokens[0] == "touch") {
+            if (tokens.size() < 2) {
+                // Require a file path
+                output.append("Usage: touch <filename>\n", 24);
+                return;
+            }
+
+            const char* filePath = tokens[1].c_str();
+
+            // Open with creation only (no truncate) to mimic Linux touch behavior
+            // O_CREAT:  Create the file if it doesn't exist
+            // O_WRONLY: Open for writing only (any access mode is fine here)
+            // No O_TRUNC: Do not erase existing files
+            int flags            = O_CREAT | O_WRONLY;
+            int fd               = open(filePath, flags);
+            if (fd < 0) {
+                // Failed to create or open file
+                output.append("touch: ", 7);
+                output.append(filePath, strlen(filePath));
+                output.append(": Failed to create file\n", 24);
+                return;
+            }
+
+            // File created (or already existed) - close immediately
+            close(fd);
+            output.append("File touched: ", 14);
+            output.append(filePath, strlen(filePath));
+            output.append("\n", 1);
+            return;
+        }
+
         // check if elf
         if (tokens[0] == "iself") {
             if (tokens.size() <= 1) {

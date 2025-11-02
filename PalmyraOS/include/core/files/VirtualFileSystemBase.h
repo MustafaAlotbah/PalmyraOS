@@ -224,6 +224,33 @@ namespace PalmyraOS::kernel::vfs {
         virtual size_t write(const char* buffer, size_t size, size_t offset);
 
         /**
+         * @brief Create a file within this directory inode.
+         *
+         * Filesystems that represent directories should override this to support
+         * file creation. The default implementation returns nullptr to indicate
+         * that the operation is not supported by this inode.
+         *
+         * @param name The name of the file to create (no path separators).
+         * @param mode The permissions of the new file.
+         * @param userId The user ID for the new file.
+         * @param groupId The group ID for the new file.
+         * @return Pointer to the created inode on success, or nullptr if unsupported/failed.
+         */
+        virtual InodeBase* createFile(const KString& name, Mode mode, UserID userId, GroupID groupId);
+
+        /**
+         * @brief Truncate this file inode to a specified size.
+         *
+         * Filesystems that represent regular files should override this to support
+         * truncation semantics. The default implementation returns -1 to indicate
+         * the operation is not supported by this inode.
+         *
+         * @param newSize The new size for the file in bytes.
+         * @return 0 on success, or -1 if the operation is unsupported/failed.
+         */
+        virtual int truncate(size_t newSize);
+
+        /**
          * @brief Performs device-specific operations.
          *
          * This function manipulates the underlying parameters of devices. It is a system call

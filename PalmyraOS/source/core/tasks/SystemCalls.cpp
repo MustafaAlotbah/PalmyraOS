@@ -173,20 +173,68 @@ void PalmyraOS::kernel::SystemCallsManager::handleOpen(PalmyraOS::kernel::interr
     int flags      = static_cast<int>(regs->ecx);
 
     // Check if pathname is a valid pointer
-    if (!isValidAddress(pathname)) return;
-
-    // Get the inode associated with the given pathname
-    auto inode = vfs::VirtualFileSystem::getInodeByPath(KString(pathname));
-    if (!inode) {
-        // If the inode does not exist, set eax to -1 to indicate failure
-        regs->eax = -1;
+    if (!isValidAddress(pathname)) {
+        regs->eax = -EFAULT;
         return;
+    }
+
+    KString path(pathname);
+    auto inode = vfs::VirtualFileSystem::getInodeByPath(path);
+
+    // TODO: enhance code readability
+    if (inode) {
+        // O_CREAT | O_EXCL on existing file → EEXIST
+        if ((flags & O_CREAT) && (flags & O_EXCL)) {
+            regs->eax = -EEXIST;
+            return;
+        }
+
+        // O_TRUNC requires file type and write access
+        if (flags & O_TRUNC) {
+            if (inode->getType() != vfs::InodeBase::Type::File) {
+                regs->eax = -EISDIR;
+                return;
+            }
+            if (!((flags & O_WRONLY) || (flags & O_RDWR))) {
+                regs->eax = -EINVAL;
+                return;
+            }
+            if (inode->truncate(0) != 0) {
+                regs->eax = -1;
+                return;
+            }
+        }
+    }
+    else {
+        // Not found: create only if O_CREAT
+        if (!(flags & O_CREAT)) {
+            regs->eax = -ENOENT;
+            return;
+        }
+
+        // Resolve parent directory and final component
+        auto components = path.split('/', true);
+        if (components.empty()) {
+            regs->eax = -ENOENT;
+            return;
+        }
+
+        auto* parent = vfs::VirtualFileSystem::getParentDirectory(vfs::VirtualFileSystem::getRootInode(), components);
+        if (!parent || parent->getType() != vfs::InodeBase::Type::Directory) {
+            regs->eax = -ENOENT;
+            return;
+        }
+
+        KString finalName = components.back();
+        inode = parent->createFile(finalName, vfs::InodeBase::Mode::USER_READ | vfs::InodeBase::Mode::USER_WRITE, vfs::InodeBase::UserID::ROOT, vfs::InodeBase::GroupID::ROOT);
+        if (!inode) {
+            regs->eax = -1;
+            return;
+        }
     }
 
     // Allocate a file descriptor for the inode
     fd_t fileDescriptor = TaskManager::getCurrentProcess()->fileTableDescriptor_.allocate(inode, flags);
-
-    // Set eax to the allocated file descriptor
     regs->eax           = fileDescriptor;
 }
 
@@ -640,12 +688,8 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
     if (strcmp(path, "/bin/terminal.elf") == 0) {
 
         LOG_INFO("EXEC TERMINAL");
-        Process* proc = kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main,
-                                                        kernel::Process::Mode::User,
-                                                        kernel::Process::Priority::Low,
-                                                        argc,
-                                                        argv,
-                                                        true);
+        Process* proc =
+                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
 
 
         if (!proc) {

@@ -43,8 +43,7 @@ PalmyraOS::kernel::vfs::FAT32Directory::getDentries(size_t offset, size_t count)
 
             //			LOG_DEBUG("Entry '%s': %d", longName.c_str(), directoryStartCluster_);
             // Create a test inode with a lambda function for reading test string
-            auto rtcNode =
-                    kernel::heapManager.createInstance<vfs::FAT32Directory>(parentPartition_, entry.getFirstCluster(), getMode(), getUserId(), getGroupId());
+            auto rtcNode  = kernel::heapManager.createInstance<vfs::FAT32Directory>(parentPartition_, entry.getFirstCluster(), getMode(), getUserId(), getGroupId());
             if (!rtcNode) continue;
 
             InodeBase::addDentry(longName, rtcNode);
@@ -71,6 +70,33 @@ PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::getDe
 
     return InodeBase::getDentry(name);
 }
+
+
+PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::createFile(const PalmyraOS::kernel::KString& name,
+                                                                                      PalmyraOS::kernel::vfs::InodeBase::Mode mode,
+                                                                                      PalmyraOS::kernel::vfs::InodeBase::UserID userId,
+                                                                                      PalmyraOS::kernel::vfs::InodeBase::GroupID groupId) {
+
+    // Construct a minimal DirectoryEntry representing this directory (for FAT32Partition::createFile)
+    fat_dentry dirDentry{};
+    memset(&dirDentry, 0, sizeof(dirDentry));
+    dirDentry.attribute        = static_cast<uint8_t>(EntryAttribute::Directory);
+    dirDentry.firstClusterLow  = static_cast<uint16_t>(directoryStartCluster_ & 0xFFFF);
+    dirDentry.firstClusterHigh = static_cast<uint16_t>((directoryStartCluster_ >> 16) & 0xFFFF);
+    DirectoryEntry parentDirEntry(/*offset*/ 0, /*directoryStartCluster*/ directoryStartCluster_, KString("."), dirDentry);
+
+    auto created = parentPartition_.createFile(parentDirEntry, name, EntryAttribute::Archive);
+    if (!created.has_value()) return nullptr;
+
+    auto* fileInode = kernel::heapManager.createInstance<FAT32Archive>(parentPartition_, *created, mode, userId, groupId);
+    if (!fileInode) return nullptr;
+
+    // Register the new file under this directory's dentries
+    KString fileName = name;  // make a mutable copy
+    InodeBase::addDentry(fileName, fileInode);
+    return fileInode;
+}
+
 
 /// endregion
 
@@ -101,6 +127,21 @@ size_t PalmyraOS::kernel::vfs::FAT32Archive::read(char* buffer, size_t size, siz
     memcpy(buffer, data.data(), bytesToRead);
 
     return bytesToRead;
+}
+
+int PalmyraOS::kernel::vfs::FAT32Archive::truncate(size_t newSize) {
+    // For now support truncating to zero only
+    if (newSize != 0) return -1;
+
+    KVector<uint8_t> empty;
+    bool ok = parentPartition_.write(directoryEntry_, empty);
+    if (!ok) return -1;
+
+    // Update cached size and metadata locally
+    InodeBase::size_ = 0;
+    directoryEntry_.setFileSize(0);
+    directoryEntry_.setClusterChain(0);
+    return 0;
 }
 
 /// endregion

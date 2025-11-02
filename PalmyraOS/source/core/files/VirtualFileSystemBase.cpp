@@ -160,6 +160,21 @@ namespace PalmyraOS::kernel::vfs {
         return 0;
     }
 
+    InodeBase* InodeBase::createFile(const KString& name, Mode mode, UserID userId, GroupID groupId) {
+        // By default, file creation is not supported on this inode.
+        (void) name;
+        (void) mode;
+        (void) userId;
+        (void) groupId;
+        return nullptr;
+    }
+
+    int InodeBase::truncate(size_t newSize) {
+        // By default, truncation is not supported on this inode.
+        (void) newSize;
+        return -1;
+    }
+
     int InodeBase::open() {
         // By default, opening the inode returns a status code of 0.
         return 0;
