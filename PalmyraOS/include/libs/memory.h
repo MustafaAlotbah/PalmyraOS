@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/definitions.h"    // stdint + size_t
+#include "core/definitions.h"  // stdint + size_t
 
 
 extern "C" void* memcpy_sse(void* destination, const void* source, size_t num);

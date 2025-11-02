@@ -12,10 +12,10 @@
 
 #pragma once
 
-#include "userland/systemWidgets/menuBar.h"
 #include "userland/systemWidgets/KernelTerminal.h"
 #include "userland/systemWidgets/clock.h"
 #include "userland/systemWidgets/fileManager.h"
+#include "userland/systemWidgets/menuBar.h"
 
 
 #include "userland/tests/events.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/definitions.h"    // stdint + size_t
+#include "core/definitions.h"  // stdint + size_t
 #include <cstdarg>
 
 /**

@@ -5,12 +5,10 @@
 #include <cstdint>
 
 
-namespace PalmyraOS::Userland::builtin::fileManager
-{
+namespace PalmyraOS::Userland::builtin::fileManager {
 
 
-  [[noreturn]] int main(uint32_t argc, char* argv[]);
+    [[noreturn]] int main(uint32_t argc, char* argv[]);
 
 
 }
-

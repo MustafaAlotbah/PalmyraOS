@@ -7,30 +7,29 @@
 #pragma once
 
 #include <cstdint>
-//#include <sys/types.h>
+// #include <sys/types.h>
 
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 #define CLOCK_PROCESS_CPUTIME_ID 2
 #define CLOCK_THREAD_CPUTIME_ID 3
 
-struct timespec // TODO adjust time_t, long (i.e. uint32_t x2)
+struct timespec  // TODO adjust time_t, long (i.e. uint32_t x2)
 {
-	uint64_t tv_sec;  // Seconds
-	uint64_t tv_nsec; // Nanoseconds
+    uint64_t tv_sec;   // Seconds
+    uint64_t tv_nsec;  // Nanoseconds
 };
 
-struct rtc_time
-{
-	int tm_sec;
-	int tm_min;
-	int tm_hour;
-	int tm_mday;
-	int tm_mon;
-	int tm_year;
-	int tm_wday;
-	int tm_yday;
-	int tm_isdst;
+struct rtc_time {
+    int tm_sec;
+    int tm_min;
+    int tm_hour;
+    int tm_mday;
+    int tm_mon;
+    int tm_year;
+    int tm_wday;
+    int tm_yday;
+    int tm_isdst;
 };
 
 /**
@@ -61,8 +60,10 @@ int clock_gettime(uint32_t clk_id, timespec* tp);
  * @param flags The flags that modify the behavior of the function:
  * - 0: Sleep for a relative interval (the duration specified in req).
  * - TIMER_ABSTIME: Sleep until the absolute time specified in req.
- * @param req Pointer to a timespec structure that specifies the desired sleep interval (if flags is 0) or the absolute wake-up time (if flags is TIMER_ABSTIME).
- * @param rem Pointer to a timespec structure where the remaining time is stored if the sleep is interrupted by a signal. If rem is NULL, the remaining time is not returned.
+ * @param req Pointer to a timespec structure that specifies the desired sleep interval (if flags is 0) or the absolute wake-up time (if flags is
+ * TIMER_ABSTIME).
+ * @param rem Pointer to a timespec structure where the remaining time is stored if the sleep is interrupted by a signal. If rem is NULL, the remaining time is
+ * not returned.
  * @return int Returns 0 on success. On failure, returns -1 and sets errno to indicate the error:
  * - EINVAL: The value in the tv_nsec field of req is not in the range 0 to 999999999 or req is NULL.
  * - EINTR: The sleep was interrupted by a signal handler.

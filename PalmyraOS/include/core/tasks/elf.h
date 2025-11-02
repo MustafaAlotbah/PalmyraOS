@@ -6,10 +6,9 @@
 #include "core/memory/KernelHeapAllocator.h"
 
 
-namespace PalmyraOS::kernel
-{
+namespace PalmyraOS::kernel {
 
-  int loadElf(KVector<uint8_t>& elfFileContent);
+    int loadElf(KVector<uint8_t>& elfFileContent);
 
 
-} // namespace PalmyraOS::kernel
+}  // namespace PalmyraOS::kernel

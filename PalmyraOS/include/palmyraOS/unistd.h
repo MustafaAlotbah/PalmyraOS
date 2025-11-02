@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include <cstdint>
 #include "palmyraOS/input.h"
+#include <cstdint>
 
 /* File Descriptors */
 #define STDIN 0
@@ -28,7 +28,7 @@
 #define INT_GET_WINDOW_STATUS 9504
 
 // 96XX Processes
-#define POSIX_INT_POSIX_SPAWN 9600    // posix_spawn (in linux, it's not its own syscall)
+#define POSIX_INT_POSIX_SPAWN 9600  // posix_spawn (in linux, it's not its own syscall)
 
 
 /* POSIX Interrupts */
@@ -49,9 +49,9 @@
 #define POSIX_INT_GETEUID32 201
 #define POSIX_INT_GETEGID32 202
 
-#define POSIX_INT_GETTIME 228    // time.h (in linux, dependent on version)
+#define POSIX_INT_GETTIME 228  // time.h (in linux, dependent on version)
 #define POSIX_INT_SETTHREADAREA 243
-#define POSIX_INT_CLOCK_NANOSLEEP_32 267    // NOT SUPPORTED
+#define POSIX_INT_CLOCK_NANOSLEEP_32 267  // NOT SUPPORTED
 #define POSIX_INT_CLOCK_NANOSLEEP_64 407
 
 /* From Linux */
@@ -60,17 +60,17 @@
 
 
 /* mmap protection flags */
-#define PROT_READ  0x1
+#define PROT_READ 0x1
 #define PROT_WRITE 0x2
 
 /* mmap flags */
-#define MAP_SHARED    0x01
-#define MAP_PRIVATE   0x02
-#define MAP_FIXED     0x10
+#define MAP_SHARED 0x01
+#define MAP_PRIVATE 0x02
+#define MAP_FIXED 0x10
 #define MAP_ANONYMOUS 0x20
 
 /* Error constant */
-#define MAP_FAILED ((void*)-1)
+#define MAP_FAILED ((void*) -1)
 
 /* RTC ioctl commands */
 #define RTC_RD_TIME 0x80247009
@@ -82,10 +82,10 @@
 
 /* Constants for Arch Prctl */
 // https://github.com/torvalds/linux/blob/master/arch/x86/include/uapi/asm/prctl.h
-#define ARCH_SET_GS    0x1001
+#define ARCH_SET_GS 0x1001
 #define ARCH_SET_FS 0x1002  // Set FS segment base
 #define ARCH_GET_FS 0x1003  // Get FS segment base
-#define ARCH_GET_GS    0x1004
+#define ARCH_GET_GS 0x1004
 
 typedef uint32_t fd_t;
 
@@ -155,23 +155,21 @@ int32_t lseek(fd_t fd, int32_t offset, int whence);
 void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t offset);
 
 // PalmyraOS specific, returns id of the window
-struct palmyra_window
-{
-	uint32_t x;
-	uint32_t y;
-	uint32_t width;
-	uint32_t height;
-	bool     movable;
-	char     title[50];
+struct palmyra_window {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+    bool movable;
+    char title[50];
 };
 
-struct palmyra_window_status
-{
-	uint32_t x        = 0;
-	uint32_t y        = 0;
-	uint32_t width    = 0;
-	uint32_t height   = 0;
-	bool     isActive = false;
+struct palmyra_window_status {
+    uint32_t x      = 0;
+    uint32_t y      = 0;
+    uint32_t width  = 0;
+    uint32_t height = 0;
+    bool isActive   = false;
 };
 
 uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow);
@@ -227,21 +225,20 @@ int close(uint32_t fd);
  */
 int ioctl(uint32_t fd, uint32_t request, ...);
 
-struct linux_dirent
-{
-	long           d_ino;
-	size_t         d_off;
-	unsigned short d_reclen;
-	char           d_name[];
+struct linux_dirent {
+    long d_ino;
+    size_t d_off;
+    unsigned short d_reclen;
+    char d_name[];
 };
 
 // dirent.h
-# define DT_UNKNOWN    0
-# define DT_FIFO    1
-# define DT_CHR        2
-# define DT_DIR        4
-# define DT_BLK        6
-# define DT_REG        8 // file
+#define DT_UNKNOWN 0
+#define DT_FIFO 1
+#define DT_CHR 2
+#define DT_DIR 4
+#define DT_BLK 6
+#define DT_REG 8  // file
 
 
 int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count);
@@ -263,14 +260,7 @@ int getdents(unsigned int fd, linux_dirent* dirp, unsigned int count);
  * @param envp A null-terminated array of environment variables passed to the new program.
  * @return 0 on success, or a negative error code on failure.
  */
-int posix_spawn(
-	uint32_t* pid,
-	const char* path,
-	void* file_actions,
-	void* attrp,
-	char* const argv[],
-	char* const envp[]
-);
+int posix_spawn(uint32_t* pid, const char* path, void* file_actions, void* attrp, char* const argv[], char* const envp[]);
 
 /**
  * @brief Waits for a specific process to change state.

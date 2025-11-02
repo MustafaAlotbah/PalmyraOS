@@ -1,9 +1,9 @@
 #pragma once
 
 #include "boot/multiboot.h"
-#include "core/definitions.h"
-#include "core/FrameBuffer.h"
 #include "core/Font.h"
+#include "core/FrameBuffer.h"
+#include "core/definitions.h"
 
 
 /**
@@ -15,323 +15,307 @@
 #define SWAP_BUFF() kernel::TextRenderer::Command::SwapBuffers
 
 
-namespace PalmyraOS::kernel
-{
+namespace PalmyraOS::kernel {
 
-  /**
-   * Class representing the VBE (VESA BIOS Extensions) interface for graphics.
-   */
-  class VBE
-  {
-   public:
+    /**
+     * Class representing the VBE (VESA BIOS Extensions) interface for graphics.
+     */
+    class VBE {
+    public:
+        /**
+         * Constructor to initialize VBE with mode and control information, and a back buffer.
+         * @param mode Pointer to the VBE mode information.
+         * @param control Pointer to the VBE control information.
+         * @param backBuffer Pointer to the back buffer.
+         */
+        VBE(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer);
 
-	  /**
-	   * Constructor to initialize VBE with mode and control information, and a back buffer.
-	   * @param mode Pointer to the VBE mode information.
-	   * @param control Pointer to the VBE control information.
-	   * @param backBuffer Pointer to the back buffer.
-	   */
-	  VBE(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer);
+        /**
+         * Swap the front and back buffers.
+         */
+        void swapBuffers();
 
-	  /**
-	   * Swap the front and back buffers.
-	   */
-	  void swapBuffers();
+        [[nodiscard]] size_t getWidth() const;
+        [[nodiscard]] size_t getHeight() const;
 
-	  [[nodiscard]] size_t getWidth() const;
-	  [[nodiscard]] size_t getHeight() const;
+        /**
+         * Get the size of the video memory provided by hardware.
+         * @return The video memory size.
+         */
+        [[nodiscard]] size_t getVideoMemorySize() const;
 
-	  /**
-	   * Get the size of the video memory provided by hardware.
-	   * @return The video memory size.
-	   */
-	  [[nodiscard]] size_t getVideoMemorySize() const;
+        /**
+         * Get the color depth (bits per pixel).
+         * @return The color depth.
+         */
+        [[nodiscard]] size_t getColorDepth() const;
+        [[nodiscard]] uint16_t getWindowAttributes() const;
+        [[nodiscard]] uint8_t getMemoryModel() const;
+        [[nodiscard]] const char* listVideoModes() const;
 
-	  /**
-	   * Get the color depth (bits per pixel).
-	   * @return The color depth.
-	   */
-	  [[nodiscard]] size_t getColorDepth() const;
-	  [[nodiscard]] uint16_t getWindowAttributes() const;
-	  [[nodiscard]] uint8_t getMemoryModel() const;
-	  [[nodiscard]] const char* listVideoModes() const;
+        // Individual attribute checks
+        [[nodiscard]] bool isModeSupported() const;
+        [[nodiscard]] bool isOptionalHardwareSupported() const;
+        [[nodiscard]] bool isBiosOutputSupported() const;
+        [[nodiscard]] bool isColorMode() const;
+        [[nodiscard]] bool isGraphicsMode() const;
+        [[nodiscard]] bool isVGACompatibleWindowedMemoryPagingSupported() const;
 
-	  // Individual attribute checks
-	  [[nodiscard]] bool isModeSupported() const;
-	  [[nodiscard]] bool isOptionalHardwareSupported() const;
-	  [[nodiscard]] bool isBiosOutputSupported() const;
-	  [[nodiscard]] bool isColorMode() const;
-	  [[nodiscard]] bool isGraphicsMode() const;
-	  [[nodiscard]] bool isVGACompatibleWindowedMemoryPagingSupported() const;
+        FrameBuffer& getFrameBuffer();
 
-	  FrameBuffer& getFrameBuffer();
+        REMOVE_COPY(VBE);
 
-	  REMOVE_COPY(VBE);
-   private:
-	  FrameBuffer frameBuffer_;                 // Frame buffer object
-	  vbe_mode_info_t   & vbe_mode_info_;       // VBE mode information reference
-	  vbe_control_info_t& vbe_control_info_;    // VBE control information reference
-  };
+    private:
+        FrameBuffer frameBuffer_;               // Frame buffer object
+        vbe_mode_info_t& vbe_mode_info_;        // VBE mode information reference
+        vbe_control_info_t& vbe_control_info_;  // VBE control information reference
+    };
 
-  /**
-   * Class representing a brush for drawing operations on the frame buffer.
-   */
-  class Brush
-  {
-   public:
-	  /**
-	   * Constructor to initialize the brush with a frame buffer.
-	   * @param frameBuffer Reference to the frame buffer.
-	   */
-	  explicit Brush(FrameBuffer& frameBuffer);
+    /**
+     * Class representing a brush for drawing operations on the frame buffer.
+     */
+    class Brush {
+    public:
+        /**
+         * Constructor to initialize the brush with a frame buffer.
+         * @param frameBuffer Reference to the frame buffer.
+         */
+        explicit Brush(FrameBuffer& frameBuffer);
 
-	  /**
-	   * Fill the entire frame buffer with a single color.
-	   * @param color The color to fill the frame buffer with.
-	   */
-	  void fill(Color color);
+        /**
+         * Fill the entire frame buffer with a single color.
+         * @param color The color to fill the frame buffer with.
+         */
+        void fill(Color color);
 
-	  /**
-	   * Fill a rectangle in the frame buffer with a specific color.
-	   * @param x1 The x-coordinate of the top-left corner.
-	   * @param y1 The y-coordinate of the top-left corner.
-	   * @param x2 The x-coordinate of the bottom-right corner.
-	   * @param y2 The y-coordinate of the bottom-right corner.
-	   * @param color The color to fill the rectangle with.
-	   */
-	  void fillRectangle(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
+        /**
+         * Fill a rectangle in the frame buffer with a specific color.
+         * @param x1 The x-coordinate of the top-left corner.
+         * @param y1 The y-coordinate of the top-left corner.
+         * @param x2 The x-coordinate of the bottom-right corner.
+         * @param y2 The y-coordinate of the bottom-right corner.
+         * @param color The color to fill the rectangle with.
+         */
+        void fillRectangle(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
 
-	  /**
-	   * Draw a rectangle in the frame buffer with a specific color.
-	   * @param x1 The x-coordinate of the top-left corner.
-	   * @param y1 The y-coordinate of the top-left corner.
-	   * @param x2 The x-coordinate of the bottom-right corner.
-	   * @param y2 The y-coordinate of the bottom-right corner.
-	   * @param color The color to fill the rectangle with.
-	   */
-	  void drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
+        /**
+         * Draw a rectangle in the frame buffer with a specific color.
+         * @param x1 The x-coordinate of the top-left corner.
+         * @param y1 The y-coordinate of the top-left corner.
+         * @param x2 The x-coordinate of the bottom-right corner.
+         * @param y2 The y-coordinate of the bottom-right corner.
+         * @param color The color to fill the rectangle with.
+         */
+        void drawFrame(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
 
-	  /**
-	   * Draw a circle using the Midpoint Circle Algorithm.
-	   * This function draws a circle with a given radius (r) centered at (cx, cy).
-	   * It can either draw just the outline of the circle or a filled circle depending on the `filled` parameter.
-	   *
-	   * @param cx The x-coordinate of the circle's center.
-	   * @param cy The y-coordinate of the circle's center.
-	   * @param r The radius of the circle.
-	   * @param color The color of the circle.
-	   * @param filled Boolean flag that indicates whether to fill the circle or draw only its perimeter.
-	   *               If true, the circle is filled; otherwise, only the perimeter is drawn.
-	   */
-	  void drawCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color, bool filled = false);
+        /**
+         * Draw a circle using the Midpoint Circle Algorithm.
+         * This function draws a circle with a given radius (r) centered at (cx, cy).
+         * It can either draw just the outline of the circle or a filled circle depending on the `filled` parameter.
+         *
+         * @param cx The x-coordinate of the circle's center.
+         * @param cy The y-coordinate of the circle's center.
+         * @param r The radius of the circle.
+         * @param color The color of the circle.
+         * @param filled Boolean flag that indicates whether to fill the circle or draw only its perimeter.
+         *               If true, the circle is filled; otherwise, only the perimeter is drawn.
+         */
+        void drawCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color, bool filled = false);
 
-	  /**
-	   * Fill the entire circle with the specified color.
-	   * This function fills the circle by drawing symmetric horizontal scanlines within the bounds
-	   * of the circle using the Midpoint Circle Algorithm. It assumes the circle's center is at (cx, cy)
-	   * and uses the provided radius (r).
-	   *
-	   * @param cx The x-coordinate of the circle's center.
-	   * @param cy The y-coordinate of the circle's center.
-	   * @param r The radius of the circle.
-	   * @param color The color to fill the circle with.
-	   */
-	  void fillCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color);
+        /**
+         * Fill the entire circle with the specified color.
+         * This function fills the circle by drawing symmetric horizontal scanlines within the bounds
+         * of the circle using the Midpoint Circle Algorithm. It assumes the circle's center is at (cx, cy)
+         * and uses the provided radius (r).
+         *
+         * @param cx The x-coordinate of the circle's center.
+         * @param cy The y-coordinate of the circle's center.
+         * @param r The radius of the circle.
+         * @param color The color to fill the circle with.
+         */
+        void fillCircle(uint32_t cx, uint32_t cy, uint32_t r, PalmyraOS::Color color);
 
-	  /**
-	   * Plot symmetric points on the circle's perimeter using 8-way symmetry.
-	   * This function draws the 8 points of symmetry on the circle defined by its center (cx, cy) and the current
-	   * coordinates (x, y) from the midpoint circle algorithm.
-	   *
-	   * @param cx The x-coordinate of the circle's center.
-	   * @param cy The y-coordinate of the circle's center.
-	   * @param x The current x-offset from the center.
-	   * @param y The current y-offset from the center.
-	   * @param color The color of the points to be drawn.
-	   */
-	  void plotCirclePerimeterPoints(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
+        /**
+         * Plot symmetric points on the circle's perimeter using 8-way symmetry.
+         * This function draws the 8 points of symmetry on the circle defined by its center (cx, cy) and the current
+         * coordinates (x, y) from the midpoint circle algorithm.
+         *
+         * @param cx The x-coordinate of the circle's center.
+         * @param cy The y-coordinate of the circle's center.
+         * @param x The current x-offset from the center.
+         * @param y The current y-offset from the center.
+         * @param color The color of the points to be drawn.
+         */
+        void plotCirclePerimeterPoints(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
 
-	  /**
-	   * Fill the circle using symmetric horizontal scanlines between the perimeter points.
-	   * This function draws horizontal lines (scanlines) between the symmetric points in the circle,
-	   * effectively filling the circle using 8-way symmetry.
-	   *
-	   * @param cx The x-coordinate of the circle's center.
-	   * @param cy The y-coordinate of the circle's center.
-	   * @param x The current x-offset from the center.
-	   * @param y The current y-offset from the center.
-	   * @param color The color of the scanlines to be drawn.
-	   */
-	  void fillCircleSymmetricScanlines(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
+        /**
+         * Fill the circle using symmetric horizontal scanlines between the perimeter points.
+         * This function draws horizontal lines (scanlines) between the symmetric points in the circle,
+         * effectively filling the circle using 8-way symmetry.
+         *
+         * @param cx The x-coordinate of the circle's center.
+         * @param cy The y-coordinate of the circle's center.
+         * @param x The current x-offset from the center.
+         * @param y The current y-offset from the center.
+         * @param color The color of the scanlines to be drawn.
+         */
+        void fillCircleSymmetricScanlines(uint32_t cx, uint32_t cy, int x, int y, PalmyraOS::Color color);
 
-	  /**
-	   * Draw a point (pixel) in the frame buffer.
-	   * @param x The x-coordinate of the point.
-	   * @param y The y-coordinate of the point.
-	   * @param color The color of the point.
-	   */
-	  void drawPoint(uint32_t x, uint32_t y, Color color);
+        /**
+         * Draw a point (pixel) in the frame buffer.
+         * @param x The x-coordinate of the point.
+         * @param y The y-coordinate of the point.
+         * @param color The color of the point.
+         */
+        void drawPoint(uint32_t x, uint32_t y, Color color);
 
-	  /**
-	   * Draw a vertical line in the frame buffer.
-	   * @param x The x-coordinate of the line.
-	   * @param y1 The y-coordinate of the starting point.
-	   * @param y2 The y-coordinate of the ending point.
-	   * @param color The color of the line.
-	   */
-	  void drawVLine(uint32_t x, uint32_t y1, uint32_t y2, Color color);
+        /**
+         * Draw a vertical line in the frame buffer.
+         * @param x The x-coordinate of the line.
+         * @param y1 The y-coordinate of the starting point.
+         * @param y2 The y-coordinate of the ending point.
+         * @param color The color of the line.
+         */
+        void drawVLine(uint32_t x, uint32_t y1, uint32_t y2, Color color);
 
-	  /**
-	   * Draw a horizontal line in the frame buffer.
-	   * @param x1 The x-coordinate of the starting point.
-	   * @param x2 The x-coordinate of the ending point.
-	   * @param y The y-coordinate of the line.
-	   * @param color The color of the line.
-	   */
-	  void drawHLine(uint32_t x1, uint32_t x2, uint32_t y, Color color);
+        /**
+         * Draw a horizontal line in the frame buffer.
+         * @param x1 The x-coordinate of the starting point.
+         * @param x2 The x-coordinate of the ending point.
+         * @param y The y-coordinate of the line.
+         * @param color The color of the line.
+         */
+        void drawHLine(uint32_t x1, uint32_t x2, uint32_t y, Color color);
 
-	  /**
-	   * Draw a line between two points using Bresenham's algorithm.
-	   * @param x1 The x-coordinate of the starting point.
-	   * @param y1 The y-coordinate of the starting point.
-	   * @param x2 The x-coordinate of the ending point.
-	   * @param y2 The y-coordinate of the ending point.
-	   * @param color The color of the line.
-	   */
-	  void drawLine(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
+        /**
+         * Draw a line between two points using Bresenham's algorithm.
+         * @param x1 The x-coordinate of the starting point.
+         * @param y1 The y-coordinate of the starting point.
+         * @param x2 The x-coordinate of the ending point.
+         * @param y2 The y-coordinate of the ending point.
+         * @param color The color of the line.
+         */
+        void drawLine(uint32_t x1, uint32_t y1, uint32_t x2, uint32_t y2, Color color);
 
-	  REMOVE_COPY(Brush);
-	  // TODO: Circles, Bresenham lines, Curves
-   private:
-	  FrameBuffer& frameBuffer_; // Reference to the frame buffer
-  };
+        REMOVE_COPY(Brush);
+        // TODO: Circles, Bresenham lines, Curves
+    private:
+        FrameBuffer& frameBuffer_;  // Reference to the frame buffer
+    };
 
-  /**
-   * Class for rendering text on the frame buffer.
-   */
-  class TextRenderer
-  {
-   public:
-	  /**
-	   * Enumeration for different numeral systems.
-	   */
-	  enum class NumeralSystem
-	  {
-		  Hex, Dec, Bin
-	  };
-	  enum class Command
-	  {
-		  SwapBuffers
-	  };
+    /**
+     * Class for rendering text on the frame buffer.
+     */
+    class TextRenderer {
+    public:
+        /**
+         * Enumeration for different numeral systems.
+         */
+        enum class NumeralSystem { Hex, Dec, Bin };
+        enum class Command { SwapBuffers };
 
-   public:
-	  /**
-	   * Constructor to initialize the text renderer with a frame buffer and font.
-	   * @param frameBuffer Reference to the frame buffer.
-	   * @param font Reference to the font.
-	   */
-	  explicit TextRenderer(FrameBuffer& frameBuffer, Font& font);
+    public:
+        /**
+         * Constructor to initialize the text renderer with a frame buffer and font.
+         * @param frameBuffer Reference to the frame buffer.
+         * @param font Reference to the font.
+         */
+        explicit TextRenderer(FrameBuffer& frameBuffer, Font& font);
 
-	  /**
-	   * Reset the text renderer's cursor position to the origin.
-	   */
-	  void reset();
+        /**
+         * Reset the text renderer's cursor position to the origin.
+         */
+        void reset();
 
-	  [[nodiscard]] inline int getCursorX() const
-	  { return cursor_x; }
-	  [[nodiscard]] inline int getCursorY() const
-	  { return cursor_y; }
+        [[nodiscard]] inline int getCursorX() const { return cursor_x; }
+        [[nodiscard]] inline int getCursorY() const { return cursor_y; }
 
-	  [[nodiscard]] inline uint32_t getPositionX() const
-	  { return position_x; }
-	  [[nodiscard]] inline uint32_t getPositionY() const
-	  { return position_y; }
+        [[nodiscard]] inline uint32_t getPositionX() const { return position_x; }
+        [[nodiscard]] inline uint32_t getPositionY() const { return position_y; }
 
-	  [[nodiscard]] inline uint32_t getWidth() const
-	  { return width; }
-	  [[nodiscard]] inline uint32_t getHeight() const
-	  { return height; }
+        [[nodiscard]] inline uint32_t getWidth() const { return width; }
+        [[nodiscard]] inline uint32_t getHeight() const { return height; }
 
-	  // Puts a character on the screen at the current x, y position
-	  void putChar(char ch);
+        // Puts a character on the screen at the current x, y position
+        void putChar(char ch);
 
-	  // change the position of the text rendering area
-	  void setPosition(uint32_t x, uint32_t y);
+        // change the position of the text rendering area
+        void setPosition(uint32_t x, uint32_t y);
 
-	  // change the position of the cursor
-	  void setCursor(int x, int y);
+        // change the position of the cursor
+        void setCursor(int x, int y);
 
-	  // change the width and height of the text rendering area
-	  void setSize(uint32_t w, uint32_t h);
+        // change the width and height of the text rendering area
+        void setSize(uint32_t w, uint32_t h);
 
-	  Color getCurrentColor();
+        Color getCurrentColor();
 
-	  // Puts a string on the screen
-	  void putString(const char* str);
+        // Puts a string on the screen
+        void putString(const char* str);
 
-	  uint32_t calculateWidth(const char* str);
+        uint32_t calculateWidth(const char* str);
 
-	  uint32_t calculateHeight();
+        uint32_t calculateHeight();
 
-	  // Overload for << streaming operator for characters
-	  TextRenderer& operator<<(char ch);
+        // Overload for << streaming operator for characters
+        TextRenderer& operator<<(char ch);
 
-	  // Overload for << streaming operator for C-style strings
-	  TextRenderer& operator<<(const char* str);
+        // Overload for << streaming operator for C-style strings
+        TextRenderer& operator<<(const char* str);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(Color color);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(Color color);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(uint64_t num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(uint64_t num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(int64_t num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(int64_t num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(uint32_t num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(uint32_t num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(int num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(int num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(uint16_t num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(uint16_t num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(double num);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(double num);
 
-	  // Overload for << streaming operator for color commands
-	  TextRenderer& operator<<(NumeralSystem system);
+        // Overload for << streaming operator for color commands
+        TextRenderer& operator<<(NumeralSystem system);
 
-	  // Overload for << streaming operator for some commands
-	  TextRenderer& operator<<(Command command);
+        // Overload for << streaming operator for some commands
+        TextRenderer& operator<<(Command command);
 
-	  void setPrecision(uint8_t precision);
+        void setPrecision(uint8_t precision);
 
-	  REMOVE_COPY(TextRenderer);
-   private:
-	  char getFormat();
+        REMOVE_COPY(TextRenderer);
 
-   private:
-	  FrameBuffer& frameBuffer_;                            // Reference to the frame buffer
-	  Font& font_;                                   // Reference to the font
-	  Color         textColor_{ 255, 255, 255 };            // Current text color (default is white)
-	  NumeralSystem representation{ NumeralSystem::Dec };   // Current numeral system (default is decimal)
-	  uint8_t precision_{ 3 };                                // Current precision of floats(default is 3)
+    private:
+        char getFormat();
 
-	  int cursor_x{ 0 };                                // Current x-coordinate of the cursor
-	  int cursor_y{ 0 };                                // Current y-coordinate of the cursor
+    private:
+        FrameBuffer& frameBuffer_;                         // Reference to the frame buffer
+        Font& font_;                                       // Reference to the font
+        Color textColor_{255, 255, 255};                   // Current text color (default is white)
+        NumeralSystem representation{NumeralSystem::Dec};  // Current numeral system (default is decimal)
+        uint8_t precision_{3};                             // Current precision of floats(default is 3)
 
-	  uint32_t lineSpacing_{ 3 };                            // Line spacing between text lines
-	  uint32_t tabSize_ = 8;                                 // Represents 8 characters per tab stop
+        int cursor_x{0};  // Current x-coordinate of the cursor
+        int cursor_y{0};  // Current y-coordinate of the cursor
 
-	  size_t position_x = 0;                                 // Current x-coordinate of the text area
-	  size_t position_y = 0;                                 // Current y-coordinate of the text area
-	  size_t width      = 640;                               // Width of the text area
-	  size_t height     = 480;                               // Height of the text area
-	  // TODO take care of this later (Scroll for example)
+        uint32_t lineSpacing_{3};  // Line spacing between text lines
+        uint32_t tabSize_ = 8;     // Represents 8 characters per tab stop
 
-  };
+        size_t position_x = 0;    // Current x-coordinate of the text area
+        size_t position_y = 0;    // Current y-coordinate of the text area
+        size_t width      = 640;  // Width of the text area
+        size_t height     = 480;  // Height of the text area
+                                  // TODO take care of this later (Scroll for example)
+    };
 
 
-}
+}  // namespace PalmyraOS::kernel

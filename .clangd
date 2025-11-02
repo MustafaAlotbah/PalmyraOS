@@ -1,0 +1,4 @@
+CompileFlags:
+  CompilationDatabase: PalmyraOS/cmake-build-debug-wsl
+  Add:
+    - "-I${ProjRoot}/PalmyraOS/include"
