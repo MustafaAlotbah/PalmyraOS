@@ -145,6 +145,14 @@ void callConstructors()
 	// ----------------------- Enable Protected Mode --------------------------
 	// enter protected mode (32-bit)
 	enable_protected_mode();
+
+	// ----------------------- Initialize Serial Port for Logging ---------------
+	// Initialize the serial port (COM1) for kernel logging output.
+	// MUST be called before any LOG_* macros to ensure logs are transmitted correctly.
+	// This configures the UART hardware, sets baud rate, enables FIFO buffering,
+	// and enables status checking for reliable character transmission.
+	kernel::initializeSerialPort(115200);
+
 	LOG_INFO("Entered protected mode.");
 	LOG_INFO("Memory Lower: %d KiB", x86_multiboot_info->mem_lower);
 	LOG_INFO("Memory Upper: %d KiB", x86_multiboot_info->mem_upper);

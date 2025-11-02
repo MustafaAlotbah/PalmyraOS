@@ -38,7 +38,7 @@ objects:
 # Compile .cpp files into .o files
 bin/%.o: source/%.cpp
 	@mkdir -p $(@D)
-	g++ $(GPP_PARAMS) -Iinclude -o $@ -c $<
+	g++-12 $(GPP_PARAMS) -Iinclude -o $@ -c $<
 
 # Compile .asm files into .o files
 bin/%.o: source/%.asm

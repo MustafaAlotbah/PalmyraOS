@@ -20,9 +20,29 @@ Currently, it looks as follows:
 ## Tools
 
 - GCC Compiler
+
+```shell
+sudo apt install build-essential g++-12 g++-12-multilib
+```
+
+Note: GCC 13 prohibits the usage of containers such as map, vector and queue in a freestanding environment.
+
 - NASM (Netwide Assembler)
+
+```shell
+sudo apt install nasm
+```
+
 - Xorriso 1.5.4
+
+```shell
+sudo apt install xorriso
+```
 - grub-mkrescue
+
+```shell
+sudo apt install grub-pc-bin grub-common grub2-common
+```
 - VirtualBox (optional)
 - Qemu (optional)
 
