@@ -32,6 +32,8 @@ namespace PalmyraOS::kernel::vfs {
 
         InodeBase* createDirectory(const KString& name, InodeBase::Mode mode, InodeBase::UserID userId, InodeBase::GroupID groupId) override;
 
+        bool deleteFile(const KString& name) override;
+
     private:
         FAT32Partition& parentPartition_;
         uint32_t directoryStartCluster_;

@@ -178,6 +178,12 @@ namespace PalmyraOS::kernel::vfs {
         return nullptr;
     }
 
+    bool InodeBase::deleteFile(const KString& name) {
+        // By default, file deletion is not supported on this inode.
+        (void) name;
+        return false;  // Error code indicating unsupported operation
+    }
+
     int InodeBase::truncate(size_t newSize) {
         // By default, truncation is not supported on this inode.
         (void) newSize;

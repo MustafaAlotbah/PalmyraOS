@@ -702,7 +702,7 @@ namespace PalmyraOS::kernel::vfs {
 
     bool FAT32Partition::flushEntry(const DirectoryEntry& entry) {
 
-        if (entry.getAttributes() == EntryAttribute::Invalid) return false;
+        if ((uint8_t) (entry.getAttributes() & EntryAttribute::Invalid)) return false;
 
         // Get the FAT directory entry structure from the DirectoryEntry object
         fat_dentry dentry = entry.getFatDentry();
@@ -1628,7 +1628,7 @@ namespace PalmyraOS::kernel::vfs {
             if (entry.getNameLong() == dirName) {
                 LOG_ERROR("[createDirectory] An entry with name '%s' already exists in this directory (is %s)",
                           dirName.c_str(),
-                          (entry.getAttributes() == EntryAttribute::Directory) ? "directory" : "file");
+                          ((uint8_t) (entry.getAttributes() & EntryAttribute::Directory)) ? "directory" : "file");
                 return std::nullopt;
             }
         }
@@ -1754,6 +1754,136 @@ namespace PalmyraOS::kernel::vfs {
         return dirEntry;
     }
 
+    bool FAT32Partition::deleteFile(DirectoryEntry& parentDirEntry, const KString& fileName) {
+        LOG_INFO("[deleteFile] Deleting file '%s' from parent cluster %u", fileName.c_str(), parentDirEntry.getFirstCluster());
+
+        // STEP 1: Read & Parse parent directory
+        KVector<DirectoryEntry> entries = getDirectoryEntries(parentDirEntry.getFirstCluster());
+
+        // STEP 2: Find target entry by name
+        DirectoryEntry* targetEntry     = nullptr;
+        for (auto& entry: entries) {
+            if (entry.getNameLong() == fileName) {
+                targetEntry = &entry;
+                break;
+            }
+        }
+
+        if (!targetEntry) {
+            LOG_ERROR("[deleteFile] File '%s' not found in parent directory", fileName.c_str());
+            return false;
+        }
+
+        // STEP 3: Validation - must be a regular file, not a directory
+        if ((uint8_t) (targetEntry->getAttributes() & EntryAttribute::Directory)) {
+            LOG_ERROR("[deleteFile] '%s' is a directory, not a file. Use deleteDirectory instead.", fileName.c_str());
+            return false;
+        }
+
+        // STEP 4: Get target entry offset and first cluster
+        uint32_t targetOffset = targetEntry->getOffset();
+        uint32_t firstCluster = targetEntry->getFirstCluster();
+
+        LOG_DEBUG("[deleteFile] Target entry at offset %u, first cluster %u", targetOffset, firstCluster);
+
+        // STEP 5: Free the data cluster chain (if any)
+        if (firstCluster > 2) {
+            LOG_DEBUG("[deleteFile] Freeing cluster chain starting at %u", firstCluster);
+            freeClusterChain(firstCluster);
+        }
+
+        // STEP 6: Read parent directory raw data (all bytes, including LFN entries)
+        KVector<uint8_t> dirData = readEntireFile(parentDirEntry.getFirstCluster());
+        if (dirData.empty()) {
+            LOG_ERROR("[deleteFile] Failed to read parent directory data");
+            return false;
+        }
+
+        LOG_DEBUG("[deleteFile] Parent directory data size: %u bytes", dirData.size());
+
+        // STEP 7: Mark target entry as deleted (0xE5)
+        if (targetOffset >= dirData.size()) {
+            LOG_ERROR("[deleteFile] Target offset %u exceeds directory size %u", targetOffset, dirData.size());
+            return false;
+        }
+
+        dirData[targetOffset] = 0xE5;
+        LOG_DEBUG("[deleteFile] Marked main entry at offset %u as deleted (0xE5)", targetOffset);
+
+        // STEP 8: Find and mark LFN entries as deleted
+        // LFN entries come BEFORE the main entry in directory, each is 32 bytes
+        // Go backwards from targetOffset checking if entries are LFN (attribute byte at offset 11 == 0x0F)
+
+        uint32_t lfnCount = 0;
+
+        if (targetOffset >= 32) {
+            for (int32_t offset = static_cast<int32_t>(targetOffset) - 32; offset >= 0; offset -= 32) {
+                uint8_t* entry    = dirData.data() + offset;
+                uint8_t firstByte = entry[0];
+                uint8_t attrByte  = entry[11];
+
+                // Check if this is an LFN entry: attribute byte (offset 11) must be 0x0F
+                // Per FAT32 spec line 1351, LFN entries have ATTR_LONG_NAME = 0x0F
+                bool isLFN        = (attrByte & 0x3F) == 0x0F;
+
+                if (!isLFN) {
+                    // Not an LFN, stop searching backwards
+                    LOG_DEBUG("[deleteFile] Reached non-LFN entry at offset %u, stopping LFN search", offset);
+                    break;
+                }
+
+                // This is an LFN entry, mark it as deleted
+                entry[0] = 0xE5;
+                lfnCount++;
+                LOG_DEBUG("[deleteFile] Marked LFN entry at offset %u as deleted (was seq=0x%02X)", offset, firstByte);
+
+                // Check if this was the LAST (first written) LFN entry - marked with 0x40 bit in sequence number
+                // If so, we found them all, so stop
+                if ((firstByte & 0x40) != 0) {
+                    LOG_DEBUG("[deleteFile] Found last LFN entry at offset %u (has 0x40 bit set)", offset);
+                    break;
+                }
+            }
+        }
+
+        if (lfnCount > 0) { LOG_DEBUG("[deleteFile] Deleted %u LFN entries before main entry", lfnCount); }
+
+        // STEP 9: Write modified directory data back to disk
+        KVector<uint32_t> clusterChain = readClusterChain(parentDirEntry.getFirstCluster());
+        if (clusterChain.empty()) {
+            LOG_ERROR("[deleteFile] Parent directory has no clusters");
+            return false;
+        }
+
+        size_t clusterSizeBytes = clusterSize_ * sectorSize_;
+
+        // Write back all clusters (we modified the directory data)
+        for (size_t i = 0; i < clusterChain.size(); ++i) {
+            size_t dataOffset = i * clusterSizeBytes;
+
+            // Don't read past end of dirData
+            if (dataOffset >= dirData.size()) break;
+
+            size_t dataSize = std::min(clusterSizeBytes, dirData.size() - dataOffset);
+
+            KVector<uint8_t> clusterData(dirData.begin() + static_cast<KVector<uint8_t>::difference_type>(dataOffset),
+                                         dirData.begin() + static_cast<KVector<uint8_t>::difference_type>(dataOffset + dataSize));
+
+            // Pad with zeros if this is not a full cluster
+            if (clusterData.size() < clusterSizeBytes) { clusterData.resize(clusterSizeBytes, 0); }
+
+            bool writeSuccess = writeCluster(clusterChain[i], clusterData);
+            if (!writeSuccess) {
+                LOG_ERROR("[deleteFile] Failed to write directory cluster %u", clusterChain[i]);
+                return false;
+            }
+
+            LOG_DEBUG("[deleteFile] Wrote directory cluster %u", clusterChain[i]);
+        }
+
+        LOG_WARN("[deleteFile] Successfully deleted file '%s' (%u LFN entries marked deleted)", fileName.c_str(), lfnCount);
+        return true;
+    }
 
     /// endregion
 

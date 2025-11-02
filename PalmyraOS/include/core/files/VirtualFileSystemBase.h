@@ -254,6 +254,18 @@ namespace PalmyraOS::kernel::vfs {
         virtual InodeBase* createDirectory(const KString& name, Mode mode, UserID userId, GroupID groupId);
 
         /**
+         * @brief Delete a file within this directory inode.
+         *
+         * Filesystems that represent directories should override this to support
+         * file deletion. The default implementation returns nullptr to indicate
+         * that the operation is not supported by this inode.
+         *
+         * @param name The name of the file to delete (no path separators).
+         * @return Pointer to the deleted inode on success, or nullptr if unsupported/failed.
+         */
+        virtual bool deleteFile(const KString& name);
+
+        /**
          * @brief Truncate this file inode to a specified size.
          *
          * Filesystems that represent regular files should override this to support

@@ -403,25 +403,45 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             const char* dirPath = tokens[1].c_str();
 
             // Call mkdir() syscall with default permissions (0755)
-            int result = mkdir(dirPath, 0755);
+            int result          = mkdir(dirPath, 0755);
             if (result < 0) {
                 // Failed to create directory
                 output.append("mkdir: ", 7);
                 output.append(dirPath, strlen(dirPath));
-                if (result == -EEXIST) {
-                    output.append(": File exists\n", 14);
-                } else if (result == -ENOENT) {
-                    output.append(": No such file or directory\n", 28);
-                } else if (result == -EFAULT) {
-                    output.append(": Bad address\n", 14);
-                } else {
-                    output.append(": Failed to create directory\n", 29);
-                }
+                if (result == -EEXIST) { output.append(": File exists\n", 14); }
+                else if (result == -ENOENT) { output.append(": No such file or directory\n", 28); }
+                else if (result == -EFAULT) { output.append(": Bad address\n", 14); }
+                else { output.append(": Failed to create directory\n", 29); }
                 return;
             }
 
             output.append("Directory created: ", 19);
             output.append(dirPath, strlen(dirPath));
+            output.append("\n", 1);
+            return;
+        }
+
+        if (tokens[0] == "rm") {
+            if (tokens.size() < 2) {
+                output.append("Usage: rm <file>\n", 17);
+                return;
+            }
+
+            const char* filePath = tokens[1].c_str();
+
+            int result           = unlink(filePath);
+            if (result < 0) {
+                output.append("rm: ", 4);
+                output.append(filePath, strlen(filePath));
+                if (result == -ENOENT) { output.append(": No such file or directory\n", 28); }
+                else if (result == -EISDIR) { output.append(": Is a directory\n", 17); }
+                else if (result == -EFAULT) { output.append(": Bad address\n", 14); }
+                else { output.append(": Failed to remove file\n", 24); }
+                return;
+            }
+
+            output.append("Removed: ", 9);
+            output.append(filePath, strlen(filePath));
             output.append("\n", 1);
             return;
         }

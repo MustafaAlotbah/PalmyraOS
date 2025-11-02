@@ -50,6 +50,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize() {
     systemCallHandlers_[POSIX_INT_IOCTL]              = &SystemCallsManager::handleIoctl;
     systemCallHandlers_[POSIX_INT_LSEEK]              = &SystemCallsManager::handleLongSeek;
     systemCallHandlers_[POSIX_INT_MKDIR]              = &SystemCallsManager::handleMkdir;
+    systemCallHandlers_[POSIX_INT_UNLINK]             = &SystemCallsManager::handleUnlink;
 
     // Interprocess
     systemCallHandlers_[POSIX_INT_WAITPID]            = &SystemCallsManager::handleWaitPID;
@@ -261,8 +262,6 @@ void PalmyraOS::kernel::SystemCallsManager::handleMkdir(PalmyraOS::kernel::inter
         return;
     }
 
-    interrupts::InterruptController::enableInterrupts();
-
     // Get parent directory
     auto* parent = vfs::VirtualFileSystem::getParentDirectory(vfs::VirtualFileSystem::getRootInode(), components);
     if (!parent || parent->getType() != vfs::InodeBase::Type::Directory) {
@@ -274,7 +273,8 @@ void PalmyraOS::kernel::SystemCallsManager::handleMkdir(PalmyraOS::kernel::inter
     KString dirName = components.back();
 
     // Create the directory
-    auto* newDir    = parent->createDirectory(dirName,
+    interrupts::InterruptController::enableInterrupts();
+    auto* newDir = parent->createDirectory(dirName,
                                            vfs::InodeBase::Mode::USER_READ | vfs::InodeBase::Mode::USER_WRITE | vfs::InodeBase::Mode::USER_EXECUTE,
                                            vfs::InodeBase::UserID::ROOT,
                                            vfs::InodeBase::GroupID::ROOT);
@@ -287,6 +287,54 @@ void PalmyraOS::kernel::SystemCallsManager::handleMkdir(PalmyraOS::kernel::inter
     }
 
     regs->eax = 0;  // Success
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleUnlink(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int unlink(const char *pathname)  (remove file)
+    char* pathname = (char*) regs->ebx;
+    if (!isValidAddress(pathname)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    KString path(pathname);
+
+    // POSIX semantics: unlink() must fail with EISDIR if target is a directory.
+    // First, resolve the full path to the inode. If not found -> ENOENT.
+    {
+        auto target = vfs::VirtualFileSystem::getInodeByPath(path);
+        if (!target) {
+            regs->eax = -ENOENT;
+            return;
+        }
+        if (target->getType() == vfs::InodeBase::Type::Directory) {
+            regs->eax = -EISDIR;
+            return;
+        }
+    }
+
+    auto components = path.split('/', true);
+    if (components.empty()) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    auto* parent = vfs::VirtualFileSystem::getParentDirectory(vfs::VirtualFileSystem::getRootInode(), components);
+    if (!parent || parent->getType() != vfs::InodeBase::Type::Directory) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    KString fileName = components.back();
+    interrupts::InterruptController::enableInterrupts();
+    bool success = parent->deleteFile(fileName);
+    interrupts::InterruptController::disableInterrupts();
+
+    if (!success) {
+        regs->eax = -ENOENT;
+        return;
+    }
+    regs->eax = 0;
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleClose(PalmyraOS::kernel::interrupts::CPURegisters* regs) {

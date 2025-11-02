@@ -154,6 +154,21 @@ namespace PalmyraOS::kernel::vfs {
          */
         std::optional<DirectoryEntry> createDirectory(DirectoryEntry& parentDirEntry, const KString& dirName);
 
+        /**
+         * @brief Delete a file from the FAT32 partition
+         *
+         * Deletes a file by:
+         * 1. Finding the file's directory entry
+         * 2. Freeing the cluster chain associated with the file
+         * 3. Marking the directory entry as deleted (e.g., by setting attribute)
+         * 4. Writing the directory back to disk
+         *
+         * @param parentDirEntry The parent directory entry
+         * @param fileName The name of the file to delete
+         * @return true on success, false on failure
+         */
+        bool deleteFile(DirectoryEntry& parentDirEntry, const KString& fileName);
+
     private:
         // Helper methods for parsing the BIOS Parameter Block (BPB) and initializing fields
         [[nodiscard]] bool parseBIOSParameterBlock();

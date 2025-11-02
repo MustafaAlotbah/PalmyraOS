@@ -39,6 +39,7 @@
 #define POSIX_INT_OPEN 5
 #define POSIX_INT_CLOSE 6
 #define POSIX_INT_WAITPID 7
+#define POSIX_INT_UNLINK 10
 #define POSIX_INT_LSEEK 19
 #define POSIX_INT_GET_PID 20
 #define POSIX_INT_BRK 45
@@ -307,3 +308,11 @@ uint32_t getegid32();
  * @return 0 on success, or -1 if an error occurred.
  */
 int mkdir(const char* pathname, unsigned short mode);
+
+/**
+ * @brief Unlinks a file.
+ *
+ * @param pathname The pathname of the file to unlink.
+ * @return 0 on success, or -1 if an error occurred.
+ */
+int unlink(const char* pathname);
