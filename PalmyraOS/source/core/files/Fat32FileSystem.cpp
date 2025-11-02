@@ -98,6 +98,31 @@ PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::creat
 }
 
 
+PalmyraOS::kernel::vfs::InodeBase* PalmyraOS::kernel::vfs::FAT32Directory::createDirectory(const PalmyraOS::kernel::KString& name,
+                                                                                           PalmyraOS::kernel::vfs::InodeBase::Mode mode,
+                                                                                           PalmyraOS::kernel::vfs::InodeBase::UserID userId,
+                                                                                           PalmyraOS::kernel::vfs::InodeBase::GroupID groupId) {
+
+    // Construct a minimal DirectoryEntry representing this directory (for FAT32Partition::createDirectory)
+    fat_dentry dirDentry{};
+    memset(&dirDentry, 0, sizeof(dirDentry));
+    dirDentry.attribute        = static_cast<uint8_t>(EntryAttribute::Directory);
+    dirDentry.firstClusterLow  = static_cast<uint16_t>(directoryStartCluster_ & 0xFFFF);
+    dirDentry.firstClusterHigh = static_cast<uint16_t>((directoryStartCluster_ >> 16) & 0xFFFF);
+    DirectoryEntry parentDirEntry(/*offset*/ 0, /*directoryStartCluster*/ directoryStartCluster_, KString("."), dirDentry);
+
+    auto created = parentPartition_.createDirectory(parentDirEntry, name);
+    if (!created.has_value()) return nullptr;
+
+    auto* dirInode = kernel::heapManager.createInstance<FAT32Directory>(parentPartition_, created->getFirstCluster(), mode, userId, groupId);
+    if (!dirInode) return nullptr;
+
+    // Register the new directory under this directory's dentries
+    KString dirName = name;  // make a mutable copy
+    InodeBase::addDentry(dirName, dirInode);
+    return dirInode;
+}
+
 /// endregion
 
 

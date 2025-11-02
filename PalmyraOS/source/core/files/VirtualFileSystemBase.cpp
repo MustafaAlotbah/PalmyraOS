@@ -169,6 +169,15 @@ namespace PalmyraOS::kernel::vfs {
         return nullptr;
     }
 
+    InodeBase* InodeBase::createDirectory(const KString& name, Mode mode, UserID userId, GroupID groupId) {
+        // By default, directory creation is not supported on this inode.
+        (void) name;
+        (void) mode;
+        (void) userId;
+        (void) groupId;
+        return nullptr;
+    }
+
     int InodeBase::truncate(size_t newSize) {
         // By default, truncation is not supported on this inode.
         (void) newSize;

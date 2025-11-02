@@ -49,6 +49,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize() {
     systemCallHandlers_[POSIX_INT_READ]               = &SystemCallsManager::handleRead;
     systemCallHandlers_[POSIX_INT_IOCTL]              = &SystemCallsManager::handleIoctl;
     systemCallHandlers_[POSIX_INT_LSEEK]              = &SystemCallsManager::handleLongSeek;
+    systemCallHandlers_[POSIX_INT_MKDIR]              = &SystemCallsManager::handleMkdir;
 
     // Interprocess
     systemCallHandlers_[POSIX_INT_WAITPID]            = &SystemCallsManager::handleWaitPID;
@@ -236,6 +237,56 @@ void PalmyraOS::kernel::SystemCallsManager::handleOpen(PalmyraOS::kernel::interr
     // Allocate a file descriptor for the inode
     fd_t fileDescriptor = TaskManager::getCurrentProcess()->fileTableDescriptor_.allocate(inode, flags);
     regs->eax           = fileDescriptor;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleMkdir(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int mkdir(const char *pathname, mode_t mode)
+
+    // Extract arguments from registers
+    char* pathname = (char*) regs->ebx;
+    uint32_t mode  = regs->ecx;
+
+    // Check if pathname is a valid pointer
+    if (!isValidAddress(pathname)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    KString path(pathname);
+
+    // Resolve parent directory and final component
+    auto components = path.split('/', true);
+    if (components.empty()) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    interrupts::InterruptController::enableInterrupts();
+
+    // Get parent directory
+    auto* parent = vfs::VirtualFileSystem::getParentDirectory(vfs::VirtualFileSystem::getRootInode(), components);
+    if (!parent || parent->getType() != vfs::InodeBase::Type::Directory) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    // Get the final component (directory name)
+    KString dirName = components.back();
+
+    // Create the directory
+    auto* newDir    = parent->createDirectory(dirName,
+                                           vfs::InodeBase::Mode::USER_READ | vfs::InodeBase::Mode::USER_WRITE | vfs::InodeBase::Mode::USER_EXECUTE,
+                                           vfs::InodeBase::UserID::ROOT,
+                                           vfs::InodeBase::GroupID::ROOT);
+
+    interrupts::InterruptController::disableInterrupts();
+
+    if (!newDir) {
+        regs->eax = -EEXIST;  // Directory already exists or creation failed
+        return;
+    }
+
+    regs->eax = 0;  // Success
 }
 
 void PalmyraOS::kernel::SystemCallsManager::handleClose(PalmyraOS::kernel::interrupts::CPURegisters* regs) {

@@ -55,10 +55,7 @@ void* mmap(void* addr, uint32_t length, int prot, int flags, int fd, uint32_t of
     register int flags_reg asm("esi")     = flags;
     register int fd_reg asm("edi")        = fd;
 
-    asm volatile("int $0x80"
-                 : "=a"(result)
-                 : "r"(syscall_no), "r"(addr_reg), "r"(length_reg), "r"(prot_reg), "r"(flags_reg), "r"(fd_reg), "m"(offset)
-                 : "memory");
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(addr_reg), "r"(length_reg), "r"(prot_reg), "r"(flags_reg), "r"(fd_reg), "m"(offset) : "memory");
 
     return result;
 }
@@ -365,4 +362,14 @@ uint32_t initializeWindow(uint32_t** buffer, palmyra_window* palmyraWindow) {
     );
 
     return result;  // Return the result of the system call (window ID)
+}
+
+int mkdir(const char* pathname, uint16_t mode) {
+    int result;
+    register uint32_t syscall_no asm("eax")  = POSIX_INT_MKDIR;
+    register const char* path_reg asm("ebx") = pathname;
+    register uint16_t mode_reg asm("ecx")    = mode;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(path_reg), "r"(mode_reg) : "memory");
+    return result;
 }

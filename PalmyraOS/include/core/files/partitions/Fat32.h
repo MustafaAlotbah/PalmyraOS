@@ -139,6 +139,21 @@ namespace PalmyraOS::kernel::vfs {
         // Directory methods TODO
         std::optional<DirectoryEntry> createFile(DirectoryEntry& directoryEntry, const KString& fileName, EntryAttribute attributes = EntryAttribute::Archive);
 
+        /**
+         * @brief Create a new directory within a parent directory
+         *
+         * Creates a new directory by:
+         * 1. Creating a directory entry in the parent
+         * 2. Allocating a cluster for the directory
+         * 3. Initializing with "." and ".." entries (FAT32 spec compliant)
+         * 4. Writing the directory to disk
+         *
+         * @param parentDirEntry The parent directory entry where the new directory will be created
+         * @param dirName The name of the new directory (without path separators)
+         * @return DirectoryEntry of the newly created directory on success, std::nullopt on failure
+         */
+        std::optional<DirectoryEntry> createDirectory(DirectoryEntry& parentDirEntry, const KString& dirName);
+
     private:
         // Helper methods for parsing the BIOS Parameter Block (BPB) and initializing fields
         [[nodiscard]] bool parseBIOSParameterBlock();

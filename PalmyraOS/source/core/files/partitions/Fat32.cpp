@@ -1619,6 +1619,142 @@ namespace PalmyraOS::kernel::vfs {
     }
 
 
+    std::optional<DirectoryEntry> FAT32Partition::createDirectory(DirectoryEntry& parentDirEntry, const KString& dirName) {
+        LOG_INFO("[createDirectory] Creating directory '%s' in parent cluster %u", dirName.c_str(), parentDirEntry.getFirstCluster());
+
+        // Step 0: Pre-check - ensure no file/directory with this name already exists
+        KVector<DirectoryEntry> existingEntries = getDirectoryEntries(parentDirEntry.getFirstCluster());
+        for (const auto& entry: existingEntries) {
+            if (entry.getNameLong() == dirName) {
+                LOG_ERROR("[createDirectory] An entry with name '%s' already exists in this directory (is %s)",
+                          dirName.c_str(),
+                          (entry.getAttributes() == EntryAttribute::Directory) ? "directory" : "file");
+                return std::nullopt;
+            }
+        }
+
+        // Step 1: Create the directory entry in the parent directory
+        // This creates the entry but with firstCluster = 0 initially
+        auto newDirEntry = createFile(parentDirEntry, dirName, EntryAttribute::Directory);
+        if (!newDirEntry.has_value()) {
+            LOG_ERROR("[createDirectory] Failed to create directory entry for '%s'", dirName.c_str());
+            return std::nullopt;
+        }
+
+        DirectoryEntry& dirEntry = newDirEntry.value();
+        LOG_DEBUG("[createDirectory] Directory entry created, now allocating cluster");
+
+        // Step 2: Allocate a cluster for the directory
+        auto clusterOpt = allocateCluster();
+        if (!clusterOpt.has_value()) {
+            LOG_ERROR("[createDirectory] Failed to allocate cluster for directory '%s'", dirName.c_str());
+            // TODO: Cleanup - mark the directory entry as deleted since allocation failed
+            return std::nullopt;
+        }
+
+        uint32_t dirCluster = clusterOpt.value();
+        LOG_DEBUG("[createDirectory] Allocated cluster %u for directory '%s'", dirCluster, dirName.c_str());
+
+        // Step 3: Get parent cluster number for ".." entry
+        uint32_t parentCluster = parentDirEntry.getFirstCluster();
+
+        // Step 4: Create "." entry (points to itself)
+        fat_dentry dotEntry{};
+        memset(&dotEntry, 0, sizeof(dotEntry));
+        memset(dotEntry.shortName, ' ', 11);
+        dotEntry.shortName[0]      = '.';
+
+        // Set attributes and cluster info
+        dotEntry.attribute         = static_cast<uint8_t>(EntryAttribute::Directory);
+        dotEntry.firstClusterLow   = static_cast<uint16_t>(dirCluster & 0xFFFF);
+        dotEntry.firstClusterHigh  = static_cast<uint16_t>((dirCluster >> 16) & 0xFFFF);
+        dotEntry.fileSize          = 0;
+
+        // Use same default timestamps as createFile (2020-01-01 12:00:00)
+        uint16_t defaultDate       = (40 << 9) | (1 << 5) | 1;   // 2020-01-01
+        uint16_t defaultTime       = (12 << 11) | (0 << 5) | 0;  // 12:00:00
+        dotEntry.creationTimeTenth = 0;
+        dotEntry.creationTime      = defaultTime;
+        dotEntry.creationDate      = defaultDate;
+        dotEntry.lastAccessDate    = defaultDate;
+        dotEntry.writeTime         = defaultTime;
+        dotEntry.writeDate         = defaultDate;
+        dotEntry.ntRes             = 0x00;
+
+        LOG_DEBUG("[createDirectory] Created '.' entry: cluster=%u", dirCluster);
+
+        // Step 5: Create ".." entry (points to parent)
+        fat_dentry dotdotEntry{};
+        memset(&dotdotEntry, 0, sizeof(dotdotEntry));
+        memset(dotdotEntry.shortName, ' ', 11);
+        dotdotEntry.shortName[0]      = '.';
+        dotdotEntry.shortName[1]      = '.';
+
+        // Set attributes and cluster info
+        dotdotEntry.attribute         = static_cast<uint8_t>(EntryAttribute::Directory);
+        dotdotEntry.firstClusterLow   = static_cast<uint16_t>(parentCluster & 0xFFFF);
+        dotdotEntry.firstClusterHigh  = static_cast<uint16_t>((parentCluster >> 16) & 0xFFFF);
+        dotdotEntry.fileSize          = 0;
+
+        // Use same timestamps
+        dotdotEntry.creationTimeTenth = 0;
+        dotdotEntry.creationTime      = defaultTime;
+        dotdotEntry.creationDate      = defaultDate;
+        dotdotEntry.lastAccessDate    = defaultDate;
+        dotdotEntry.writeTime         = defaultTime;
+        dotdotEntry.writeDate         = defaultDate;
+        dotdotEntry.ntRes             = 0x00;
+
+        LOG_DEBUG("[createDirectory] Created '..' entry: cluster=%u", parentCluster);
+
+        // Step 6: Write both entries to the allocated cluster
+        KVector<uint8_t> dirClusterData(clusterSizeBytes_, 0);
+
+        // Copy "." entry at offset 0
+        memcpy(dirClusterData.data(), &dotEntry, sizeof(fat_dentry));
+
+        // Copy ".." entry at offset 32
+        memcpy(dirClusterData.data() + 32, &dotdotEntry, sizeof(fat_dentry));
+
+        // Rest of cluster is already zeroed (0x00 = end of directory marker)
+
+        LOG_DEBUG("[createDirectory] Writing directory cluster %u with '.' and '..' entries", dirCluster);
+
+        bool writeSuccess = writeCluster(dirCluster, dirClusterData);
+        if (!writeSuccess) {
+            LOG_ERROR("[createDirectory] Failed to write directory cluster %u to disk", dirCluster);
+            freeClusterChain(dirCluster);
+            // TODO: Cleanup - mark the directory entry as deleted
+            return std::nullopt;
+        }
+
+        // Step 7: Mark cluster chain end in FAT (single cluster directory ends here)
+        bool setChainSuccess = setNextCluster(dirCluster, 0x0FFFFFFF);
+        if (!setChainSuccess) {
+            LOG_ERROR("[createDirectory] Failed to set cluster chain end for cluster %u", dirCluster);
+            freeClusterChain(dirCluster);
+            // TODO: Cleanup - mark the directory entry as deleted
+            return std::nullopt;
+        }
+
+        LOG_DEBUG("[createDirectory] Marked cluster %u as end-of-chain", dirCluster);
+
+        // Step 8: Update the directory entry with the actual cluster
+        dirEntry.setClusterChain(dirCluster);
+
+        // Step 9: Flush the updated entry back to the parent directory on disk
+        bool flushSuccess = flushEntry(dirEntry);
+        if (!flushSuccess) {
+            LOG_ERROR("[createDirectory] Failed to flush directory entry for '%s'", dirName.c_str());
+            freeClusterChain(dirCluster);
+            return std::nullopt;
+        }
+
+        LOG_WARN("[createDirectory] Successfully created directory '%s' at cluster %u", dirName.c_str(), dirCluster);
+        return dirEntry;
+    }
+
+
     /// endregion
 
 

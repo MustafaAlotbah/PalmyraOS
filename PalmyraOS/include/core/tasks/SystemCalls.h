@@ -32,6 +32,7 @@ namespace PalmyraOS::kernel {
         static void handleRead(interrupts::CPURegisters* regs);
         static void handleLongSeek(interrupts::CPURegisters* regs);
         static void handleIoctl(interrupts::CPURegisters* regs);
+        static void handleMkdir(interrupts::CPURegisters* regs);
 
         /* From Linux */
         static void handleGetdents(interrupts::CPURegisters* regs);

@@ -33,6 +33,7 @@
 
 /* POSIX Interrupts */
 #define POSIX_INT_EXIT 1
+// FORK (syscall 2) is not supported yet
 #define POSIX_INT_READ 3
 #define POSIX_INT_WRITE 4
 #define POSIX_INT_OPEN 5
@@ -42,6 +43,7 @@
 #define POSIX_INT_GET_PID 20
 #define POSIX_INT_BRK 45
 #define POSIX_INT_IOCTL 54
+#define POSIX_INT_MKDIR 39
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
 #define POSIX_INT_GETUID 199
@@ -296,3 +298,12 @@ uint32_t getuid();
 uint32_t getgid();
 uint32_t geteuid32();
 uint32_t getegid32();
+
+/**
+ * @brief Creates a new directory.
+ *
+ * @param pathname The pathname of the directory to create.
+ * @param mode The mode of the directory to create.
+ * @return 0 on success, or -1 if an error occurred.
+ */
+int mkdir(const char* pathname, unsigned short mode);

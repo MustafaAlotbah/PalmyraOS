@@ -239,6 +239,21 @@ namespace PalmyraOS::kernel::vfs {
         virtual InodeBase* createFile(const KString& name, Mode mode, UserID userId, GroupID groupId);
 
         /**
+         * @brief Create a directory within this directory inode.
+         *
+         * Filesystems that represent directories should override this to support
+         * directory creation. The default implementation returns nullptr to indicate
+         * that the operation is not supported by this inode.
+         *
+         * @param name The name of the directory to create (no path separators).
+         * @param mode The permissions of the new directory.
+         * @param userId The user ID for the new directory.
+         * @param groupId The group ID for the new directory.
+         * @return Pointer to the created inode on success, or nullptr if unsupported/failed.
+         */
+        virtual InodeBase* createDirectory(const KString& name, Mode mode, UserID userId, GroupID groupId);
+
+        /**
          * @brief Truncate this file inode to a specified size.
          *
          * Filesystems that represent regular files should override this to support
