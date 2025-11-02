@@ -21,8 +21,88 @@ using namespace PalmyraOS::types;
 namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
     // Typedefs for buffer types simplify declarations
-    using StdoutType = CircularBuffer<char, 4096>;
-    using StdinType  = CircularBuffer<char, 4096>;
+    using StdoutType            = CircularBuffer<char, 4096>;
+    using StdinType             = CircularBuffer<char, 4096>;
+
+    // Current working directory (global state)
+    constexpr size_t kPathMax   = 512;  // single place to tune path buffer size
+    static char g_cwd[kPathMax] = "/";
+
+    // Helper: Render colored prompt "PalmyraOS:<cwd>$ "
+    void appendColoredPrompt(StdoutType& output) {
+        output.append("PalmyraOS", 9);
+        output.append(":", 1);
+        output.append(g_cwd, strlen(g_cwd));
+        output.append("$ ", 2);
+    }
+
+    // Helper: Resolve path relative to cwd into out buffer
+    static void resolvePathToBuffer(const char* pathStr, char* out, size_t outSize) {
+        if (outSize == 0) return;
+        // Initialize base: absolute -> '/', relative -> current cwd
+        if (pathStr && pathStr[0] == '/') {
+            out[0] = '/';
+            out[1] = '\0';
+        }
+        else {
+            strncpy(out, g_cwd, outSize - 1);
+            out[outSize - 1] = '\0';
+            if (out[0] == '\0') {
+                out[0] = '/';
+                out[1] = '\0';
+            }
+        }
+
+        const char* p = pathStr ? pathStr : "";
+        if (p[0] == '/') p++;  // skip leading '/'
+
+        // Normalize segments
+        size_t len = strlen(out);
+        while (*p) {
+            // skip redundant '/'
+            while (*p == '/') p++;
+            const char* seg = p;
+            while (*p && *p != '/') p++;
+            size_t segLen = (size_t) (p - seg);
+            if (segLen == 0) break;
+
+            // Handle '.' and '..'
+            if (segLen == 1 && seg[0] == '.') continue;
+            if (segLen == 2 && seg[0] == '.' && seg[1] == '.') {
+                // pop last segment
+                if (len > 1) {
+                    if (out[len - 1] == '/' && len > 1) len--;
+                    while (len > 1 && out[len - 1] != '/') len--;
+                    out[len] = '\0';
+                }
+                continue;
+            }
+
+            // append '/' if needed
+            if (len == 0 || out[len - 1] != '/') {
+                if (len + 1 < outSize) {
+                    out[len++] = '/';
+                    out[len]   = '\0';
+                }
+            }
+            // append segment
+            size_t avail  = (len < outSize) ? (outSize - 1 - len) : 0;
+            size_t toCopy = segLen > avail ? avail : segLen;
+            if (toCopy > 0) {
+                strncpy(out + len, seg, toCopy);
+                len += toCopy;
+                out[len] = '\0';
+            }
+            // if truncated, stop processing further
+            if (toCopy < segLen) break;
+        }
+
+        if (len == 0) {
+            out[0] = '/';
+            out[1] = '\0';
+        }
+        // Remove trailing '/.' or '/..' should already be normalized by logic above
+    }
 
     // Function declarations for command parsing and execution
     void parseCommand(UserHeapManager& heap, CircularBuffer<char>& input, types::UVector<types::UString<char>>& tokens);
@@ -51,7 +131,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
 
         // TODO check for bad allocation
-        stdoutBuffer.append("PalmyraOS$ ", 11);
+        appendColoredPrompt(stdoutBuffer);
 
         // If arguments are provided, treat them as a command to execute
         if (argc > 1) {
@@ -76,7 +156,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             stdinBuffer.clear();
 
             // Prompt the user again
-            stdoutBuffer.append("PalmyraOS$ ", 11);
+            appendColoredPrompt(stdoutBuffer);
         }
 
         while (true) {
@@ -114,7 +194,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                     stdinBuffer.clear();
 
                     // Prompt the user again
-                    stdoutBuffer.append("PalmyraOS$ ", 11);
+                    appendColoredPrompt(stdoutBuffer);
                 }
             }
 
@@ -122,9 +202,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             {
                 SDK::Layout layout(windowGui, &scrollY_content, true);
 
-                // Render the prompt
-                windowGui.text() << PalmyraOS::Color::Gray100;
-                windowGui.text() << stdoutBuffer.get();
+                // Render the prompt with colors
+                windowGui.text() << PalmyraOS::Color::Gray100 << stdoutBuffer.get();
 
                 // Display the current input and a blinking cursor for feedback
                 windowGui.text() << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::Gray100;
@@ -138,9 +217,6 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             // Be a good citizen and yield some CPU time to other processes
             sched_yield();
         }
-
-
-        return 0;
     }
 
     void parseCommand(UserHeapManager& heap, StdinType& input, types::UVector<types::UString<char>>& tokens) {
@@ -215,7 +291,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 return;
             }
 
-            const char* filePath = tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* filePath = resolvedPath;
             int32_t offset       = 0;     // Default offset
             size_t length        = 4096;  // Default length
 
@@ -276,20 +354,18 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
         // LS
         if (tokens[0] == "ls") {
-
-            if (tokens.size() <= 1) {
-                // Users need to provide a directory path
-                output.append("No path was provided\n", 22);
-                return;
-            }
+            // Use cwd as default, or resolve provided path
+            const char* pathArg = (tokens.size() <= 1) ? g_cwd : tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(pathArg, resolvedPath, sizeof(resolvedPath));
 
             // Try opening the directory specified
-            int fileDescriptor = open(tokens[1].c_str(), 0);
+            int fileDescriptor = open(resolvedPath, 0);
             if (fileDescriptor < 0) {
                 // If directory cannot be opened, inform the user
-                output.append("ls: ", 6);
-                output.append(tokens[1].c_str(), tokens[1].size());
-                output.append(": No such file or directory\n", 29);
+                output.append("ls: ", 4);
+                output.append(resolvedPath, strlen(resolvedPath));
+                output.append(": No such file or directory\n", 28);
                 return;
             }
 
@@ -368,7 +444,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 return;
             }
 
-            const char* filePath = tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* filePath = resolvedPath;
 
             // Open with creation only (no truncate) to mimic Linux touch behavior
             // O_CREAT:  Create the file if it doesn't exist
@@ -400,7 +478,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 return;
             }
 
-            const char* dirPath = tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* dirPath = resolvedPath;
 
             // Call mkdir() syscall with default permissions (0755)
             int result          = mkdir(dirPath, 0755);
@@ -427,7 +507,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 return;
             }
 
-            const char* filePath = tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* filePath = resolvedPath;
 
             int result           = unlink(filePath);
             if (result < 0) {
@@ -446,6 +528,35 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             return;
         }
 
+        if (tokens[0] == "cd") {
+            const char* arg = (tokens.size() < 2) ? "/" : tokens[1].c_str();
+            char resolved[kPathMax];
+            resolvePathToBuffer(arg, resolved, sizeof(resolved));
+
+            // Validate the target exists and is a directory: open + getdents
+            int fd = open(resolved, 0);
+            if (fd < 0) {
+                output.append("cd: ", 4);
+                output.append(resolved, strlen(resolved));
+                output.append(": No such file or directory\n", 28);
+                return;
+            }
+            // Probe directory by getdents
+            char tmpBuf[64];
+            int dentBytes = getdents(fd, (linux_dirent*) tmpBuf, sizeof(tmpBuf));
+            close(fd);
+            if (dentBytes < 0) {
+                output.append("cd: ", 4);
+                output.append(resolved, strlen(resolved));
+                output.append(": Not a directory\n", 18);
+                return;
+            }
+            // Accept change
+            strncpy(g_cwd, resolved, sizeof(g_cwd) - 1);
+            g_cwd[sizeof(g_cwd) - 1] = '\0';
+            return;
+        }
+
         // check if elf
         if (tokens[0] == "iself") {
             if (tokens.size() <= 1) {
@@ -455,12 +566,14 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             }
 
             // Attempt to open the file specified by the user
-            int fileDescriptor = open(tokens[1].c_str(), 0);
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            int fileDescriptor = open(resolvedPath, 0);
             if (fileDescriptor < 0) {
                 // Inform if the file couldn't be opened, perhaps it doesn't exist
-                output.append("iself: ", 6);
-                output.append(tokens[1].c_str(), tokens[1].size());
-                output.append(": No such file or directory\n", 29);
+                output.append("iself: ", 7);
+                output.append(resolvedPath, strlen(resolvedPath));
+                output.append(": No such file or directory\n", 28);
                 return;
             }
 
@@ -615,7 +728,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             }
 
             // Convert the tokens to a format suitable for posix_spawn
-            const char* path = tokens[1].c_str();
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* path = resolvedPath;
             size_t argc      = tokens.size() - 1;
 
             // Prepare argv array for the new process
@@ -669,7 +784,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 }
 
                 // Read the file content
-                char buffer[512];
+                char buffer[kPathMax];
                 int bytesRead = 0;
                 while ((bytesRead = read(fd, buffer, sizeof(buffer))) > 0) { output.append(buffer, bytesRead); }
 
