@@ -1,5 +1,3 @@
-
-
 #include <utility>
 #include <algorithm>
 #include <limits>
@@ -75,6 +73,15 @@ namespace PalmyraOS::kernel::vfs
 	  volumeID_             = get_uint32_t(bootSector, 67);
 	  memcpy(volumeLabel_, bootSector + 71, 11);
 	  memcpy(fileSystemType_, bootSector + 82, 8);
+	  
+	  // Log critical boot sector fields for VFAT debugging
+	  char oemName[9] = {0};
+	  memcpy(oemName, bootSector + 3, 8);
+	  LOG_WARN("[FAT32] Boot Sector OEM Name: '%.8s'", oemName);
+	  LOG_WARN("[FAT32] Boot Sector FS Type: '%.8s'", fileSystemType_);
+	  LOG_WARN("[FAT32] Boot Sector Volume Label: '%.11s'", volumeLabel_);
+	  LOG_WARN("[FAT32] Drive Number: 0x%02X", driveNumber_);
+	  LOG_WARN("[FAT32] Boot Signature: 0x%02X", bootSignature_);
 
 	  // some assertions
 	  if (sectorSize_ == 0 || clusterSize_ == 0)
@@ -418,6 +425,7 @@ namespace PalmyraOS::kernel::vfs
 	  KVector<uint8_t>                      data = readEntireFile(directoryStartCluster);
 	  KVector<DirectoryEntry>               entries;
 	  KVector<std::pair<uint8_t, KWString>> longNameParts;
+	  uint8_t                               lfnChecksum = 0;  // Checksum from LFN entries
 
 	  for (size_t i = 0; i < data.size(); i += 32)
 	  {
@@ -425,15 +433,24 @@ namespace PalmyraOS::kernel::vfs
 		  const uint8_t* entry = data.data() + i;
 
 		  if (entry[0] == 0x00) break;        // End of the directory
-		  if (entry[0] == 0xE5) continue;     // Deleted entry, skip it
+		  if (entry[0] == 0xE5) 
+		  {
+			  // Deleted entry - reset LFN collection since sequence is broken
+			  longNameParts.clear();
+			  lfnChecksum = 0;
+			  continue;
+		  }
 
 		  // Long name entry (part of a long name).
-		  if (entry[11] == 0x0F)
+		  // Per FAT32 spec line 1351: Use proper attribute mask check and verify not deleted
+		  // ATTR_LONG_NAME_MASK = 0x3F (ReadOnly|Hidden|System|VolumeID|Directory|Archive)
+		  // ATTR_LONG_NAME      = 0x0F (ReadOnly|Hidden|System|VolumeID)
+		  if ((entry[0] != 0xE5 && entry[0] != 0x00) && ((entry[11] & 0x3F) == 0x0F))
 		  {
-			  // Check if this is the last LFN entry.
+			  // Check if this is the last LFN entry (marked with 0x40 bit).
 			  bool is_last_lfn = (entry[0] & 0x40) == 0x40;
 
-			  // Order of this LFN part.
+			  // Order of this LFN part (bits 0-4, mask out 0x40 flag).
 			  uint8_t order = entry[0] & 0x1F;
 
 			  // Extract the LFN part from the entry.
@@ -464,7 +481,8 @@ namespace PalmyraOS::kernel::vfs
 			  longNameParts.insert(longNameParts.begin(), std::make_pair(order, part));
 
 			  // Start a new sequence if this is the last LFN part.
-			  if (is_last_lfn) longNameParts = { std::make_pair(order, part) };
+			  // if (is_last_lfn) longNameParts = { std::make_pair(order, part) };
+			  lfnChecksum = entry[13];
 		  }
 
 		  else
@@ -474,20 +492,39 @@ namespace PalmyraOS::kernel::vfs
 			  fat_dentry dentry = *(fat_dentry*)entry;
 
 			  // Combine all Long File Name (LFN) parts to form the complete long name.
+			  bool useLFN = false;
 			  KString longName;
 			  if (!longNameParts.empty())
 			  {
-				  // Sort the LFN parts based on their order.
-				  std::sort(
-					  longNameParts.begin(), longNameParts.end(), [](const auto& a, const auto& b)
-					  {
-						return a.first < b.first;  // Compare based on the first element (order).
-					  }
-				  );
-				  KWString longNameUtf16;
-				  for (const auto& part : longNameParts) longNameUtf16 += part.second;
-				  longName = utf16le_to_utf8(longNameUtf16);
-				  longNameParts.clear();
+				// Calculate checksum of the short name
+				uint8_t shortNameChecksum = calculateShortNameChecksum(reinterpret_cast<const char*>(dentry.shortName));
+				
+				// Validate checksum matches
+				bool checksumValid = (lfnChecksum == shortNameChecksum);
+				
+				if (checksumValid)
+				{
+					// Checksum matches - use the LFN entries
+					useLFN = true;
+					// Sort the LFN parts based on their order.
+					std::sort(
+						longNameParts.begin(), longNameParts.end(), [](const auto& a, const auto& b)
+						{
+						  return a.first < b.first;  // Compare based on the first element (order).
+						}
+					);
+					KWString longNameUtf16;
+					for (const auto& part : longNameParts) longNameUtf16 += part.second;
+					longName = utf16le_to_utf8(longNameUtf16);
+				}
+				else
+				{
+					// Checksum mismatch - ignore LFN entries, use short name only
+					LOG_WARN("LFN checksum mismatch for entry at offset %zu (LFN: 0x%02X, SFN: 0x%02X), ignoring LFN", i, lfnChecksum, shortNameChecksum);
+				}
+				
+				longNameParts.clear();
+				lfnChecksum = 0;  // Reset for next entry
 			  }
 
 
@@ -606,13 +643,31 @@ namespace PalmyraOS::kernel::vfs
 	  {
 		  *((uint16_t * )(sectorData + entryOffset)) = nextCluster & 0xFFFF;
 	  }
+	  else if (type_ == Type::FAT12)
+	  {
+		  // IMPORTANT: Add FAT12 support
+		  // FAT12 uses 12-bit entries, which require special handling because they are not byte-aligned
+		  // This is a complex operation involving bit manipulation and should be implemented
+		  // For now, we log an error to prevent silent failures
+		  LOG_ERROR("FAT12 setNextCluster() is not yet implemented. Cluster chain update will fail.");
+		  return false;
+	  }
+	  else
+	  {
+		  // IMPORTANT: Add error handling for invalid FAT types
+		  // This should never happen if initialization is correct, but we should handle it gracefully
+		  LOG_ERROR("Invalid FAT type: %d in setNextCluster()", static_cast<int>(type_));
+		  return false;
+	  }
 
 	  // write the sector to the FAT again
+	  for (uint8_t fatNum = 0; fatNum < countFATs_; ++fatNum)
 	  {
-		  bool diskStatus = diskDriver_.writeSector(fatSector, sectorData, DEFAULT_TIMEOUT);
+		  uint32_t targetSector = fatSector + (fatNum * fatSize_);
+		  bool diskStatus = diskDriver_.writeSector(targetSector, sectorData, DEFAULT_TIMEOUT);
 		  if (!diskStatus)
 		  {
-			  LOG_ERROR("Failed to write sector: %u to disk.", fatSector);
+			  LOG_ERROR("Failed to write FAT #%u sector: %u to disk.", fatNum, targetSector);
 			  return false;
 		  }
 	  }
@@ -688,9 +743,28 @@ namespace PalmyraOS::kernel::vfs
 	  }
 
 	  uint32_t sector = getSectorFromCluster(cluster);
+	  
+	  LOG_DEBUG("[writeCluster] Writing cluster %u (sector %u), data.size()=%u, clusterSizeBytes_=%u, clusterSize_=%u sectors",
+		  cluster, sector, data.size(), clusterSizeBytes_, clusterSize_);
+	  
+	  // Show first 32 bytes being written
+	  if (data.size() >= 32)
+	  {
+		LOG_DEBUG("[writeCluster] First 32 bytes: %02X %02X %02X %02X %02X %02X %02X %02X | %02X %02X %02X %02X [attr=%02X]",
+			  data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+			  data[8], data[9], data[10], data[11], data[11]);
+	  }
 
 	  for (uint8_t i = 0; i < clusterSize_; ++i)
 	  {
+		  uint32_t offset = i * sectorSize_;
+		  const uint8_t* sectorData = (offset < data.size()) ? (data.data() + offset) : nullptr;
+		  
+		  if (offset >= data.size())
+		  {
+			  LOG_ERROR("[writeCluster] ERROR: Trying to write sector %u but offset %u >= data.size() %u - READING GARBAGE!", i, offset, data.size());
+		  }
+		  
 		  bool status = diskDriver_.writeSector(sector + i, data.data() + i * sectorSize_, DEFAULT_TIMEOUT);
 		  if (!status)
 		  {
@@ -735,6 +809,7 @@ namespace PalmyraOS::kernel::vfs
 
 	  // Get the FAT directory entry structure from the DirectoryEntry object
 	  fat_dentry dentry = entry.getFatDentry();
+	  LOG_WARN("[flushEntry] Writing entry with cluster %u, size %u at offset %u", (dentry.firstClusterHigh << 16) | dentry.firstClusterLow, dentry.fileSize, entry.getOffset());
 
 	  // Calculate the sector and offset in the directory where this entry is located
 	  uint32_t directoryCluster  = entry.getDirectoryCluster();
@@ -799,8 +874,15 @@ namespace PalmyraOS::kernel::vfs
 	  KVector<uint32_t> clusterChain = readClusterChain(entry.getFirstCluster());
 	  uint32_t          lastCluster  = clusterChain.empty() ? 0 : clusterChain.back();
 
-	  // Write to existing space in the last cluster
-	  if ((fileSize == 0 || lastClusterOffset != 0) && !clusterChain.empty())
+	  // IMPORTANT: Only write to existing space in the last cluster if:
+	  // 1. File is NOT empty (fileSize > 0) - empty files have no existing space
+	  // 2. AND the last cluster is not full (lastClusterOffset != 0) - can fit more data
+	  // 3. AND there is an existing cluster chain - must have at least one cluster
+	  //
+	  // The original condition was: (fileSize == 0 || lastClusterOffset != 0) && !clusterChain.empty()
+	  // This was WRONG because if fileSize == 0, the cluster chain should be empty,
+	  // making the condition contradictory and causing logic errors.
+	  if (fileSize > 0 && lastClusterOffset != 0 && !clusterChain.empty())
 	  {
 		  uint32_t         bytesToWrite = std::min(clusterSizeBytes_ - lastClusterOffset, remainingBytes);
 		  KVector<uint8_t> clusterData  = readFile(lastCluster, clusterSizeBytes_);
@@ -843,16 +925,19 @@ namespace PalmyraOS::kernel::vfs
 			  lastCluster = newCluster;
 			  if (entry.getFirstCluster() == 0)
 			  {
-				  // Update the first cluster in the directory entry if it was previously empty
-				  entry.setClusterChain(newCluster);
+					// Update the first cluster in the directory entry if it was previously empty
+					LOG_DEBUG("[append] Setting first cluster from %u to %u", entry.getFirstCluster(), newCluster);
+					entry.setClusterChain(newCluster);
 
-				  // Flush changes back to the directory
-				  bool status = flushEntry(entry);
-				  if (!status)
-				  {
-					  LOG_ERROR("Failed to flush entry after setting first cluster to %u", newCluster);
-					  return false;
-				  }
+					// Flush changes back to the directory
+					LOG_DEBUG("[append] Flushing entry at offset %u in directory cluster %u", entry.getOffset(), entry.getDirectoryCluster());
+					bool status = flushEntry(entry);
+					if (!status)
+					{
+						LOG_ERROR("Failed to flush entry after setting first cluster to %u", newCluster);
+						return false;
+					}
+					LOG_DEBUG("[append] Entry flushed successfully, cluster is now %u", entry.getFirstCluster());
 			  }
 		  }
 		  else
@@ -902,28 +987,23 @@ namespace PalmyraOS::kernel::vfs
 
   bool FAT32Partition::write(DirectoryEntry& entry, const KVector<uint8_t>& bytes)
   {
+	  // IMPORTANT: Do NOT allocate a cluster here. Let append() allocate the first cluster.
+	  // Reason: If we allocate here and append() also allocates, we waste a cluster (disk space leak).
+	  // This was causing disk fragmentation and wasted sectors.
 
-	  // TODO set as 0 and let append allocate
-
-	  // Allocate the first cluster for the file
-	  auto firstClusterOpt = allocateCluster();
-
-	  // Unable to allocate first cluster during write operation.
-	  if (!firstClusterOpt)
-	  {
-		  LOG_ERROR("Failed to allocate first cluster during write operation.");
-		  return false;
-	  }
-
-	  // Step 1: Free existing cluster chain
+	  // Step 1: Free existing cluster chain (if any)
+	  // This ensures no orphaned clusters are left behind from previous writes
 	  if (entry.getFirstCluster() > 2) freeClusterChain(entry.getFirstCluster());
 
-	  // Step 2: Reset file size to zero before appending new data
+	  // Step 2: Reset file metadata to prepare for new write
+	  // Set file size to zero to indicate empty file
 	  entry.setFileSize(0);
+	  
+	  // Clear the cluster chain pointer (set to 0) so append() will allocate the first cluster
+	  // This prevents the double-allocation bug
+	  entry.setClusterChain(0);
 
-	  entry.setClusterChain(firstClusterOpt.value());
-
-	  // Step 3: Append new data
+	  // Step 3: Append new data (append() will handle first cluster allocation)
 	  {
 		  bool status = append(entry, bytes);
 		  if (!status)
@@ -933,7 +1013,7 @@ namespace PalmyraOS::kernel::vfs
 		  }
 	  }
 
-	  // Step 4: Update the directory entry to reflect changes
+	  // Step 4: Update the directory entry to reflect all changes made
 	  {
 		  bool status = flushEntry(entry);
 		  if (!status)
@@ -962,59 +1042,77 @@ namespace PalmyraOS::kernel::vfs
 	  KString upperName(longName.c_str());
 	  upperName.toUpper();
 
-	  // Remove invalid characters and replace with underscores
-	  for (char& c : upperName)
-	  {
-		  if (!isValidSFNCharacter(c))
-			  c = '_';
-	  }
+	// Remove invalid characters and replace with underscores
+	// CRITICAL: Do NOT replace the dot (.) as it's the extension separator!
+	for (char& c : upperName)
+	{
+		if (c != '.' && !isValidSFNCharacter(c)) c = '_';
+	}
 
-	  // Extract base name and extension
-	  size_t  dotPos    = upperName.find_last_of(".");
-	  KString baseName  = (dotPos == KString::npos) ? upperName : upperName.substr(0, dotPos);
-	  KString extension = (dotPos == KString::npos) ? KString("") : upperName.substr(dotPos + 1);
+	// Strip leading periods per FAT32 spec line 1257
+	while (!upperName.empty() && upperName[0] == '.')
+	{
+		upperName = upperName.substr(1);
+	}
+
+	// Extract base name and extension
+	size_t  dotPos    = upperName.find_last_of(".");
+	KString baseName  = (dotPos == KString::npos) ? upperName : upperName.substr(0, dotPos);
+	KString extension = (dotPos == KString::npos) ? KString("") : upperName.substr(dotPos + 1);
 
 	  // Remove spaces and invalid characters
-	  baseName.erase(
-		  std::remove_if(
-			  baseName.begin(), baseName.end(), [](char c)
-			  { return c == ' '; }
-		  ), baseName.end());
-	  extension.erase(
-		  std::remove_if(
-			  extension.begin(), extension.end(), [](char c)
-			  { return c == ' '; }
-		  ), extension.end());
+	  baseName.erase(  std::remove_if( baseName.begin(),  baseName.end(),  [](char c) { return c == ' '; } ), baseName.end());
+	  extension.erase( std::remove_if( extension.begin(), extension.end(), [](char c) { return c == ' '; } ), extension.end());
 
-	  // Truncate base name and extension to 8 and 3 characters
-	  baseName  = baseName.substr(0, 8);
+	// Truncate extension to 3 characters
 	  extension = extension.substr(0, 3);
 
-	  KString sfn = baseName;
-	  if (!extension.empty())
+	  // Per FAT32 spec line 1275-1281: If truncation/lossy conversion occurs, add numeric tail
+	  // Check if baseName needs truncation (> 8 chars) - if so, MUST add numeric tail
+	  bool needsTail = (baseName.size() > 8);
+	  
+	  // If no tail needed, try the plain truncated name first
+	  if (!needsTail)
 	  {
-		  sfn += '.';
-		  sfn += extension;
-	  }
-
-	  if (std::find(existingShortNames.begin(), existingShortNames.end(), sfn) == existingShortNames.end())
-	  {
-		  return sfn;
+		  baseName = baseName.substr(0, 8);
+		  KString sfn = baseName;
+		  if (!extension.empty())
+		  {
+			  sfn += '.';
+			  sfn += extension;
+		  }
+		  
+		  if (std::find(existingShortNames.begin(), existingShortNames.end(), sfn) == existingShortNames.end())
+		  {
+			  return sfn;
+		  }
 	  }
 
 	  // Handle name collisions using tilde notation
 	  for (uint32_t num = 1; num <= 999999; ++num)
 	  {
-		  char buffer[10];
-		  snprintf(buffer, sizeof(buffer), "~%d", num);
-		  KString numStr(buffer);
-		  KString sfnBaseNum = baseName.substr(0, std::min<size_t>(8 - numStr.size(), baseName.size())) + numStr;
-		  KString sfnNum     = sfnBaseNum;
-		  if (!extension.empty())
-		  {
-			  sfnNum += '.';
-			  sfnNum += extension;
-		  }
+		  // Build decimal digits for num
+		  char digits[10];
+		  size_t digitCount = 0;
+		  uint32_t temp = num;
+		  do { digits[digitCount++] = (char)('0' + (temp % 10)); temp /= 10; } while (temp > 0 && digitCount < 9);
+
+		  // Compute tail length: '~' + digits
+		  const size_t tailLen = 1 + digitCount;
+		  size_t baseLen = 8 > tailLen ? (8 - tailLen) : 0; // ensure total base+tail <= 8
+
+		  // Slice base according to remaining space (Windows uses 6 when tailLen=2)
+		  if (baseLen > baseName.size()) baseLen = baseName.size();
+
+		  // Build SFN base: first baseLen chars + '~' + digits in correct order
+		  KString sfnBaseNum = baseName.substr(0, baseLen);
+		  sfnBaseNum += '~';
+		  for (size_t i = 0; i < digitCount; ++i) sfnBaseNum += digits[digitCount - 1 - i];
+
+		  // Compose full SFN with extension
+		  KString sfnNum = sfnBaseNum;
+		  if (!extension.empty()) { sfnNum += '.'; sfnNum += extension; }
+
 		  if (std::find(existingShortNames.begin(), existingShortNames.end(), sfnNum) == existingShortNames.end())
 		  {
 			  return sfnNum;
@@ -1037,131 +1135,254 @@ namespace PalmyraOS::kernel::vfs
 
   bool FAT32Partition::needsLFN(const KString& fileName)
   {
-	  // Check if the fileName fits in 8.3 format and contains valid characters
-	  // Implement the logic to determine if LFN is needed
-	  // Return true if LFN is needed, false otherwise
-	  // For simplicity, we'll assume that any name that doesn't fit 8.3 or contains invalid characters needs LFN
+	// Per FAT32 spec: LFN needed if name doesn't fit 8.3, has special chars, or HAS LOWERCASE
+	// Spec line 1197: "Long names... are not converted to upper case and their original case value is preserved"
+	// If original name has any lowercase, we MUST use LFN to preserve it
 
-	  // Convert to uppercase
-	  KString upperName(fileName.c_str());
-	  upperName.toUpper();
+	// Extract base name and extension from ORIGINAL (case-preserved) fileName
+	size_t  dotPos    = fileName.find_last_of(".");
+	KString baseName  = (dotPos == KString::npos) ? fileName : fileName.substr(0, dotPos);
+	KString extension = (dotPos == KString::npos) ? KString("") : fileName.substr(dotPos + 1);
 
-	  // Extract base name and extension
-	  size_t  dotPos    = upperName.find_last_of(".");
-	  KString baseName  = (dotPos == KString::npos) ? upperName : upperName.substr(0, dotPos);
-	  KString extension = (dotPos == KString::npos) ? KString("") : upperName.substr(dotPos + 1);
+	// Check lengths - if too long, need LFN
+	if (baseName.size() > 8 || extension.size() > 3) return true;
 
-	  // Check lengths
-	  if (baseName.size() > 8 || extension.size() > 3) return true;
+	// Check for lowercase - if ANY lowercase exists, need LFN to preserve case
+	for (char c : baseName)
+	{
+		if (islower(static_cast<unsigned char>(c))) return true;
+	}
+	for (char c : extension)
+	{
+		if (islower(static_cast<unsigned char>(c))) return true;
+	}
 
-	  // Check for invalid characters
-	  for (char c : baseName)
-	  {
-		  if (!isValidSFNCharacter(c)) return true;
-	  }
+	// Convert to uppercase for validation checks
+	KString upperBase(baseName.c_str());
+	KString upperExt(extension.c_str());
+	upperBase.toUpper();
+	upperExt.toUpper();
 
-	  for (char c : extension)
-	  {
-		  if (!isValidSFNCharacter(c)) return true;
-	  }
+	// Check for invalid SFN characters
+	for (char c : upperBase)
+	{
+		if (!isValidSFNCharacter(c)) return true;
+	}
+	for (char c : upperExt)
+	{
+		if (!isValidSFNCharacter(c)) return true;
+	}
 
-	  return false;
+	return false;
   }
 
   KVector<fat_dentry> FAT32Partition::createLFNEntries(const KString& longName, uint8_t checksum)
   {
-	  // Break the longName into chunks of 13 UTF-16 characters
-	  KVector<fat_dentry> lfnEntries;
-	  KWString            unicodeName = utf8_to_utf16le(longName);
+	// Break the longName into chunks of 13 UTF-16 characters
+	KVector<fat_dentry> lfnEntries;
+	
+	const char* nameStr = longName.c_str();
+	size_t actualLen = longName.size();
+	
+	// Debug: Log input string byte-by-byte
+	LOG_DEBUG("[LFN-INPUT] longName='%s', actualLen=%zu", nameStr, actualLen);
+	for (size_t i = 0; i < actualLen; ++i)
+	{
+		LOG_DEBUG("[LFN-INPUT] byte[%zu] = 0x%02X ('%c')", i, (uint8_t)nameStr[i], (nameStr[i] >= 32 && nameStr[i] < 127) ? nameStr[i] : '.');
+	}
+	
+	// Convert only the actual filename characters (not including null terminator)
+	// Manually convert UTF-8 to UTF-16LE without null terminator
+	KWString unicodeName;
+	size_t i = 0;
+	LOG_DEBUG("[CONV-START] Starting UTF-8 to UTF-16 conversion, actualLen=%zu", actualLen);
+	while (i < actualLen)
+	{
+		auto utf8_char = static_cast<unsigned char>(nameStr[i]);
+		LOG_DEBUG("[CONV-LOOP] i=%zu, utf8_char=0x%02X, actualLen=%zu", i, utf8_char, actualLen);
+		uint32_t codepoint = 0;
+		size_t extra_bytes = 0;
 
-	  // Calculate the number of LFN entries needed
-	  size_t totalEntries = (unicodeName.size() + 12) / 13; // Each LFN entry can hold 13 UTF-16 characters
+		if (utf8_char <= 0x7F)
+		{
+			codepoint = utf8_char;
+			extra_bytes = 0;
+			LOG_DEBUG("[CONV-ASCII] char=0x%02X -> codepoint=0x%04X", utf8_char, codepoint);
+		}
+		else if ((utf8_char & 0xE0) == 0xC0)
+		{
+			codepoint = utf8_char & 0x1F;
+			extra_bytes = 1;
+		}
+		else if ((utf8_char & 0xF0) == 0xE0)
+		{
+			codepoint = utf8_char & 0x0F;
+			extra_bytes = 2;
+		}
+		else if ((utf8_char & 0xF8) == 0xF0)
+		{
+			codepoint = utf8_char & 0x07;
+			extra_bytes = 3;
+		}
+		else
+		{
+			LOG_DEBUG("[CONV-SKIP] Invalid UTF-8 byte at i=%zu, skipping", i);
+			++i;
+			continue;
+		}
 
-	  for (size_t i = 0; i < totalEntries; ++i)
-	  {
-		  fat_dentry lfnEntry{};
-		  memset(&lfnEntry, 0, sizeof(lfnEntry));
+		if (i + extra_bytes >= actualLen)
+		{
+			LOG_WARN("[CONV-INCOMPLETE] i=%zu + extra_bytes=%zu >= actualLen=%zu, breaking", i, extra_bytes, actualLen);
+			break;
+		}
 
-		  // Set sequence number
-		  uint8_t seqNum = static_cast<uint8_t>(totalEntries - i);
-		  if (i == 0)
-			  seqNum |= 0x40; // Last LFN entry flag
+		for (size_t j = 1; j <= extra_bytes; ++j)
+		{
+			auto cc = static_cast<unsigned char>(nameStr[i + j]);
+			if ((cc & 0xC0) != 0x80)
+			{
+				i += j;
+				break;
+			}
+			codepoint = (codepoint << 6) | (cc & 0x3F);
+		}
 
-		  lfnEntry.shortName[0] = seqNum;
+		i += extra_bytes + 1;
+		LOG_DEBUG("[CONV-PUSH] Adding codepoint=0x%04X to vector (now size=%zu)", codepoint, unicodeName.size());
 
-		  // Set attribute
-		  lfnEntry.attribute = 0x0F;
+		if (codepoint <= 0xFFFF)
+		{
+			if (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+			{
+				continue;
+			}
+			unicodeName.push_back(static_cast<uint16_t>(codepoint));
+		}
+		else if (codepoint <= 0x10FFFF)
+		{
+			codepoint -= 0x10000;
+			uint16_t high_surrogate = 0xD800 | ((codepoint >> 10) & 0x3FF);
+			uint16_t low_surrogate = 0xDC00 | (codepoint & 0x3FF);
+			unicodeName.push_back(high_surrogate);
+			unicodeName.push_back(low_surrogate);
+		}
+	}
+	LOG_DEBUG("[CONV-END] Conversion complete, unicodeName.size()=%zu", unicodeName.size());
 
-		  // Set checksum
-		  lfnEntry.ntRes             = 0x00;
-		  lfnEntry.creationTimeTenth = checksum;
+	// Use unicodeName.size() directly - it now excludes the null terminator
+	size_t actualUniChars = unicodeName.size();
+	LOG_DEBUG("[ACTUAL-CHARS] Actual UTF-16 characters: %zu", actualUniChars);
+	
+	// Debug: Log converted UTF-16 string
+	LOG_DEBUG("[LFN-UTF16] FINAL unicodeName actual chars=%zu", actualUniChars);
+	for (size_t i = 0; i < actualUniChars; ++i)
+	{
+		LOG_DEBUG("[LFN-UTF16] FINAL char[%zu] = 0x%04X", i, unicodeName[i]);
+	}
 
-		  // Set name parts
-		  size_t charIndex = i * 13;
+	// Calculate the number of LFN entries needed
+	// Use actualUniChars (excluding null terminator) to calculate LFN entries
+	size_t totalEntries = (actualUniChars + 12) / 13; // Each LFN entry can hold 13 UTF-16 characters
+	LOG_DEBUG("[LFN-CALC] actualUniChars=%zu, totalEntries needed=%zu", actualUniChars, totalEntries);
 
-		  // First 5 UTF-16 characters
-		  for (size_t j = 0; j < 5; ++j)
-		  {
-			  if (charIndex + j < unicodeName.size())
-			  {
-				  uint16_t wchar = unicodeName[charIndex + j];
-				  lfnEntry.shortName[1 + j * 2] = wchar & 0xFF;
-				  lfnEntry.shortName[2 + j * 2] = (wchar >> 8) & 0xFF;
-			  }
-			  else
-			  {
-				  lfnEntry.shortName[1 + j * 2] = 0xFF;
-				  lfnEntry.shortName[2 + j * 2] = 0xFF;
-			  }
-		  }
+	for (size_t i = 0; i < totalEntries; ++i)
+	{
+		fat_dentry lfnEntry{};
+		memset(&lfnEntry, 0, sizeof(lfnEntry));
 
-		  // Next 6 UTF-16 characters
-		  for (size_t j = 0; j < 6; ++j)
-		  {
-			  if (charIndex + 5 + j < unicodeName.size())
-			  {
-				  uint16_t wchar = unicodeName[charIndex + 5 + j];
-				  lfnEntry.shortName[14 + j * 2] = wchar & 0xFF;
-				  lfnEntry.shortName[15 + j * 2] = (wchar >> 8) & 0xFF;
-			  }
-			  else
-			  {
-				  lfnEntry.shortName[14 + j * 2] = 0xFF;
-				  lfnEntry.shortName[15 + j * 2] = 0xFF;
-			  }
-		  }
+		// Prepare a byte-wise view to fill LFN name fields by absolute offsets
+		uint8_t* entryBytes = reinterpret_cast<uint8_t*>(&lfnEntry);
+		
+		// IMPORTANT: Initialize name fields to 0xFFFF per VFAT spec
+		// Name1 (bytes 1-10): 5 UTF-16 chars
+		for (size_t j = 0; j < 5; ++j)
+		{
+			entryBytes[1 + j * 2] = 0xFF;
+			entryBytes[1 + j * 2 + 1] = 0xFF;
+		}
+		// Name2 (bytes 14-25): 6 UTF-16 chars
+		for (size_t j = 0; j < 6; ++j)
+		{
+			entryBytes[14 + j * 2] = 0xFF;
+			entryBytes[14 + j * 2 + 1] = 0xFF;
+		}
+		// Name3 (bytes 28-31): 2 UTF-16 chars
+		for (size_t j = 0; j < 2; ++j)
+		{
+			entryBytes[28 + j * 2] = 0xFF;
+			entryBytes[28 + j * 2 + 1] = 0xFF;
+		}
 
-		  // Last 2 UTF-16 characters
-		  for (size_t j = 0; j < 2; ++j)
-		  {
-			  if (charIndex + 11 + j < unicodeName.size())
-			  {
-				  uint16_t wchar = unicodeName[charIndex + 11 + j];
-				  lfnEntry.shortName[28 + j * 2] = wchar & 0xFF;
-				  lfnEntry.shortName[29 + j * 2] = (wchar >> 8) & 0xFF;
-			  }
-			  else
-			  {
-				  lfnEntry.shortName[28 + j * 2] = 0xFF;
-				  lfnEntry.shortName[29 + j * 2] = 0xFF;
-			  }
-		  }
+		// Set sequence number (n..1) where (n | 0x40) denotes the LAST logical LFN entry
+		// Per FAT32 spec: First entry written to disk must have 0x40 set (last entry in LFN set)
+		uint8_t seqNum = static_cast<uint8_t>(totalEntries - i);
+		if (i == 0) seqNum |= 0x40; // Mark as last entry in LFN set (first entry Windows reads)
+		entryBytes[0] = seqNum;     // LDIR_Ord
 
-		  // Set zero for reserved fields
-		  lfnEntry.firstClusterLow = 0x0000;
+		// Set attribute (LFN), type (0), checksum, and reserved cluster (0)
+		// Per FAT32 spec line 1007: LDIR_Attr must be ATTR_LONG_NAME (0x0F)
+		// Bits 6-7 are reserved and should be 0, so we use 0x0F not 0xFF
+		entryBytes[11] = 0x0F;      // LDIR_Attr (ReadOnly|Hidden|System|VolumeID)
+		entryBytes[12] = 0x00;      // LDIR_Type (must be 0 for LFN entries)
+		entryBytes[13] = checksum;  // LDIR_Chksum (checksum of associated short name)
+		// Per FAT32 spec line 1012: LDIR_FstClusLO must be zero (bytes 26-27)
+		// Note: firstClusterHigh (bytes 20-21) should also be zero for LFN entries
+		lfnEntry.firstClusterLow = 0x0000; // LDIR_FstClusLO (must be zero per spec line 1012)
+		lfnEntry.firstClusterHigh = 0x0000; // Also ensure high word is zero (not strictly required but safer)
 
-		  lfnEntries.push_back(lfnEntry);
-	  }
+		// Copy up to 13 UTF-16LE code units for this entry
+		size_t charIndex = (totalEntries - 1 - i) * 13;
 
-	  return lfnEntries;
+		auto writeChar = [&](size_t fieldOffset, size_t slotIdx, uint16_t value)
+		{
+			// fieldOffset: start offset of the field in the entry (1, 14, or 28)
+			// slotIdx: 0-based index inside the field
+			size_t byteOffset = fieldOffset + slotIdx * 2;
+			entryBytes[byteOffset]     = static_cast<uint8_t>(value & 0xFF);
+			entryBytes[byteOffset + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+		};
+
+	// Write exactly 13 UTF-16 code units for this entry with a single 0x0000 terminator
+	// and 0xFFFF padding thereafter. Map positions 0..4 -> Name1, 5..10 -> Name2, 11..12 -> Name3.
+	bool terminated = false;
+	for (size_t j = 0; j < 13; ++j)
+	{
+		size_t globalIdx = charIndex + j;
+		uint16_t value;
+		if (!terminated && globalIdx < actualUniChars)
+		{
+			value = unicodeName[globalIdx];
+			LOG_DEBUG("[LFN-CHAR] Entry %zu, slot %zu: globalIdx=%zu < actualUniChars=%zu, writing char 0x%04X", i, j, globalIdx, actualUniChars, value);
+		}
+		else if (!terminated && globalIdx == actualUniChars)
+		{
+			value = 0x0000; // write exactly one terminator
+			terminated = true;
+			LOG_DEBUG("[LFN-TERM] Entry %zu, slot %zu: globalIdx=%zu == actualUniChars=%zu, writing terminator 0x0000", i, j, globalIdx, actualUniChars);
+		}
+		else
+		{
+			value = 0xFFFF; // padding
+			LOG_DEBUG("[LFN-PAD] Entry %zu, slot %zu: globalIdx=%zu, terminated=%d, writing padding 0xFFFF", i, j, globalIdx, terminated ? 1 : 0);
+		}
+
+		if (j < 5)            writeChar(1,  j, value);
+		else if (j < 11)      writeChar(14, j - 5, value);
+		else /* j = 11..12 */ writeChar(28, j - 11, value);
+	}
+
+		lfnEntries.push_back(lfnEntry);
+		
+		// Debug: Log what we're writing
+		LOG_DEBUG("[LFN] Entry %zu: seqNum=0x%02X, attr=0x%02X, checksum=0x%02X, charIndex=%zu", i, seqNum, entryBytes[11], checksum, charIndex);
+	}
+
+	LOG_DEBUG("[LFN] Created %zu LFN entries for '%s'", lfnEntries.size(), longName.c_str());
+	return lfnEntries;
   }
 
-  std::optional<DirectoryEntry> FAT32Partition::createFile(
-	  DirectoryEntry& directoryEntry,
-	  const KString& fileName,
-	  EntryAttribute attributes
-  )
-  {
+  std::optional<DirectoryEntry> FAT32Partition::createFile(DirectoryEntry& directoryEntry, const KString& fileName, EntryAttribute attributes)  {
 
 	  // Check if the directory entry is indeed a directory
 	  if (!(uint8_t)(directoryEntry.getAttributes() & EntryAttribute::Directory))
@@ -1173,16 +1394,24 @@ namespace PalmyraOS::kernel::vfs
 	  // Read the directory entries in the specified directory
 	  KVector<DirectoryEntry> entries = getDirectoryEntries(directoryEntry.getFirstCluster());
 
-	  // Collect existing short names and check for existing file
+  	  // Collect existing short names (in dotted 8.3 form) and check for existing file
 	  KVector<KString> existingShortNames;
 	  for (const auto& entry : entries)
 	  {
-		  if (entry.getNameLong() == fileName)
-		  {
-			  LOG_ERROR("A file with the same name already exists in the directory.");
-			  return std::nullopt;
-		  }
-		  existingShortNames.push_back(entry.getNameShort());
+			if (entry.getNameLong() == fileName)
+			{
+				LOG_ERROR("A file with the same name already exists in the directory.");
+				return std::nullopt;
+			}
+
+			KString raw11 = entry.getNameShort();               // 11-byte raw SFN
+			KString base   = KString(raw11.c_str(), 8).strip(); // trim spaces
+			KString ext    = KString(raw11.c_str() + 8, 3).strip();
+			base.toUpper();
+			ext.toUpper();
+			KString dotted = base;
+			if (!ext.empty()) { dotted += "."; dotted += ext; }
+			existingShortNames.push_back(dotted);
 	  }
 
 	  // Generate unique short name (SFN)
@@ -1192,20 +1421,14 @@ namespace PalmyraOS::kernel::vfs
 		  LOG_ERROR("Failed to generate a unique short name for the file.");
 		  return std::nullopt;
 	  }
+	  
+	  LOG_DEBUG("[createFile] generateUniqueShortName('%s') returned: '%s'", fileName.c_str(), sfn.c_str());
 
-	  // Calculate SFN checksum
-	  uint8_t checksum = calculateShortNameChecksum(sfn.c_str());
-
-	  // Prepare LFN entries if needed
-	  KVector<fat_dentry> lfnEntries;
-	  if (needsLFN(fileName))
-	  {
-		  lfnEntries = createLFNEntries(fileName, checksum);
-	  }
 
 	  // Create the main directory entry
 	  fat_dentry newDentry{};
-	  memset(&newDentry, ' ', sizeof(newDentry));  // Initialize with spaces
+	  memset(&newDentry, 0, sizeof(newDentry));  // Initialize with zeros per spec
+	  memset(newDentry.shortName, ' ', 11);      // Only shortName gets spaces
 
 	  // Set the short name (8.3 format), pad with spaces
 	  size_t  dotPos    = sfn.find('.');
@@ -1226,13 +1449,47 @@ namespace PalmyraOS::kernel::vfs
 	  memset(baseNamePadded, ' ', 8);
 	  memset(extensionPadded, ' ', 3);
 
-	  // Copy the baseName and extension into the padded arrays
-	  memcpy(baseNamePadded, baseName.c_str(), baseNameLen);
-	  memcpy(extensionPadded, extension.c_str(), extensionLen);
+	  // IMPORTANT: Copy the baseName and extension into the padded arrays
+	  // Do NOT use memcpy with c_str() because it may copy null terminators!
+	  // Per FAT32 spec: short names MUST be padded with spaces (0x20), not nulls (0x00)
+	  for (size_t i = 0; i < baseNameLen; ++i)
+	  {
+		  char c = baseName.c_str()[i];
+		  if (c != '\0')  // Stop at null terminator
+		  {
+			  baseNamePadded[i] = c;
+		  }
+	  }
+	  for (size_t i = 0; i < extensionLen; ++i)
+	  {
+		  char c = extension.c_str()[i];
+		  if (c != '\0')  // Stop at null terminator
+		  {
+			  extensionPadded[i] = c;
+		  }
+	  }
 
 	  // Copy baseNamePadded and extensionPadded into shortName
 	  memcpy(newDentry.shortName, baseNamePadded, 8);
 	  memcpy(newDentry.shortName + 8, extensionPadded, 3);
+
+	  // IMPORTANT: Calculate checksum from the FINAL padded 11-byte short name
+	  // The checksum must match exactly what's written to disk, not the raw string
+	  // This ensures LFN entries will match the directory entry when read back
+	  uint8_t checksum = calculateShortNameChecksum(reinterpret_cast<const char*>(newDentry.shortName));
+	  LOG_DEBUG("[SFN] Full 11-byte name: [%02X %02X %02X %02X %02X %02X %02X %02X . %02X %02X %02X], checksum: 0x%02X", 
+	           (uint8_t)newDentry.shortName[0], (uint8_t)newDentry.shortName[1], (uint8_t)newDentry.shortName[2],
+	           (uint8_t)newDentry.shortName[3], (uint8_t)newDentry.shortName[4], (uint8_t)newDentry.shortName[5],
+	           (uint8_t)newDentry.shortName[6], (uint8_t)newDentry.shortName[7], (uint8_t)newDentry.shortName[8],
+	           (uint8_t)newDentry.shortName[9], (uint8_t)newDentry.shortName[10], checksum);
+	LOG_DEBUG("[SFN] As string: '%.8s.%.3s'", newDentry.shortName, newDentry.shortName + 8);
+
+	  // Prepare LFN entries if needed
+	  KVector<fat_dentry> lfnEntries;
+	  if (needsLFN(fileName))
+	  {
+		  lfnEntries = createLFNEntries(fileName, checksum);
+	  }
 
 	  // Set attributes and initial values
 	  newDentry.attribute        = static_cast<uint8_t>(attributes);
@@ -1240,18 +1497,45 @@ namespace PalmyraOS::kernel::vfs
 	  newDentry.firstClusterHigh = 0;
 	  newDentry.fileSize         = 0;
 
+	  // IMPORTANT: Per FAT32 spec, dates/times CANNOT be zero!
+	  // Windows rejects entries with zero dates as corrupted.
+	  // Date format: bits 0-4=day(1-31), bits 5-8=month(1-12), bits 9-15=year(since 1980)
+	  // Time format: bits 0-4=2sec(0-29), bits 5-10=min(0-59), bits 11-15=hour(0-23)
+	  // Using 2020-01-01 12:00:00 (40 years since 1980)
+	  uint16_t defaultDate = (40 << 9) | (1 << 5) | 1;  // 2020-01-01
+	  uint16_t defaultTime = (12 << 11) | (0 << 5) | 0; // 12:00:00
+
 	  // Set time and date fields (could set to zero or get current time)
 	  newDentry.creationTimeTenth = 0;
-	  newDentry.creationTime      = 0;
-	  newDentry.creationDate      = 0;
-	  newDentry.lastAccessDate    = 0;
-	  newDentry.writeTime         = 0;
-	  newDentry.writeDate         = 0;
+	  newDentry.creationTime      = defaultTime;
+	  newDentry.creationDate      = defaultDate;
+	  newDentry.lastAccessDate    = defaultDate;
+	  newDentry.writeTime         = defaultTime;
+	  newDentry.writeDate         = defaultDate;
+	  
+	  // CRITICAL: Set NT reserved field for case preservation
+	  // Bit 3 (0x08) = lowercase base name
+	  // Bit 4 (0x10) = lowercase extension
+	  // Since we're using LFN, we should set this to 0
+	  newDentry.ntRes = 0x00;
 
 	  // Now, find free entries in the directory data
 	  // Need totalEntries = lfnEntries.size() + 1
 
-	  KVector<uint8_t> dirData = readFile(directoryEntry.getFirstCluster(), std::numeric_limits<int32_t>::max());
+	  // IMPORTANT: Read only the actual directory size from its cluster chain.
+	  // Using an arbitrary large buffer (e.g., 10MB) causes incorrect insert offsets
+	  // which later produce invalid on-disk positions when flushing the entry.
+	  KVector<uint32_t> dirClusterChain = readClusterChain(directoryEntry.getFirstCluster());
+	  uint32_t actualDirBytes = dirClusterChain.size() * clusterSize_ * sectorSize_;
+	  // Add a sane upper bound to avoid excessive allocations in damaged directories
+	  constexpr uint32_t MAX_DIR_SIZE = 100 * 1024 * 1024;
+	  uint32_t dirReadSize = std::min(actualDirBytes, MAX_DIR_SIZE);
+	  if (dirReadSize == 0)
+	  {
+		  // Directory with no readable clusters yet; operate on a single-cluster buffer
+		  dirReadSize = clusterSize_ * sectorSize_;
+	  }
+	  KVector<uint8_t> dirData = readFile(directoryEntry.getFirstCluster(), dirReadSize);
 
 	  size_t totalEntriesNeeded = lfnEntries.size() + 1;
 	  size_t dirEntrySize       = sizeof(fat_dentry);
@@ -1288,30 +1572,55 @@ namespace PalmyraOS::kernel::vfs
 		  }
 	  }
 
-	  if (!foundFreeEntries)
+	  // Ensure the buffer can hold the entries at insert position
+	  size_t requiredSize = insertPos + totalEntriesNeeded * dirEntrySize;
+	  if (dirData.size() < requiredSize)
 	  {
-		  // Need to extend dirData
-		  insertPos = dirData.size();
-		  dirData.resize(dirData.size() + totalEntriesNeeded * dirEntrySize, 0);
+		  // Extend the directory data to accommodate new entries
+		  dirData.resize(requiredSize, 0);
 	  }
 
 	  // Now, insert the LFN entries and main entry into dirData at insertPos
 
 	  // Copy LFN entries and main entry into dirData in order
 
-	  // LFN entries are inserted in reverse order (last one first)
+      // Write LFN entries in on-disk order: (n|0x40), n-1, ..., 1
 
-	  size_t entryOffset = insertPos;
+      size_t entryOffset = insertPos;
 
-	  for (auto it = lfnEntries.rbegin(); it != lfnEntries.rend(); ++it)
-	  {
-		  memcpy(dirData.data() + entryOffset, &(*it), dirEntrySize);
-		  entryOffset += dirEntrySize;
-	  }
+      for (size_t i = 0; i < lfnEntries.size(); ++i)
+      {
+          memcpy(dirData.data() + entryOffset, &lfnEntries[i], dirEntrySize);
+          entryOffset += dirEntrySize;
+      }
 
 	  // Copy the main directory entry
+	  LOG_WARN("[createFile] Writing main entry at offset %u: cluster=%u, size=%u, attr=0x%02X", 
+	           entryOffset, (newDentry.firstClusterHigh << 16) | newDentry.firstClusterLow, 
+	           newDentry.fileSize, newDentry.attribute);
 	  memcpy(dirData.data() + entryOffset, &newDentry, dirEntrySize);
 	  entryOffset += dirEntrySize;
+	  
+	  // IMPORTANT: Ensure directory is properly terminated after new entries
+	  // After writing our entries, the next entry should be marked as end (0x00) if we're at the end
+	  // or if we extended the directory. This prevents directory parsing from reading garbage.
+	  if (entryOffset >= dirData.size())
+	  {
+		  // We extended the directory - the resize() already zeroed it, but ensure end marker
+		  // This is redundant but safe since resize() zeros new memory
+	  }
+	  else if (entryOffset < dirData.size())
+	  {
+		  // Check if next entry should be marked as end
+		  // Only mark as end if it was previously free (0x00 or 0xE5) and we're replacing it
+		  // If it's a valid entry, leave it alone
+		  uint8_t nextEntryFirstByte = dirData[entryOffset];
+		  if (nextEntryFirstByte == 0x00 || nextEntryFirstByte == 0xE5)
+		  {
+			  // Was free, ensure it stays as end marker
+			  dirData[entryOffset] = 0x00;
+		  }
+	  }
 
 	  // Now, update the directory clusters and write back to disk
 
@@ -1351,6 +1660,93 @@ namespace PalmyraOS::kernel::vfs
 		  setNextCluster(clusterChain.back(), 0x0FFFFFFF); // End of chain marker
 	  }
 
+	  // ========== DIAGNOSTIC LOGGING FOR DEBUG ==========
+	  // Calculate mainEntryOffset here since it's used before it's declared below
+	  uint32_t mainEntryOffset = static_cast<uint32_t>(insertPos + (lfnEntries.size() * dirEntrySize));
+	  
+	  LOG_WARN("[createFile] === DIAGNOSTIC: Directory Write Debug ===");
+	  LOG_WARN("[createFile] dirData.size() = %u bytes (%u entries)", dirData.size(), dirData.size() / 32);
+	  LOG_WARN("[createFile] insertPos = %u, totalEntriesNeeded = %u", insertPos, totalEntriesNeeded);
+	  LOG_WARN("[createFile] mainEntryOffset = %u", mainEntryOffset);
+	  LOG_WARN("[createFile] clusterSizeBytes = %u, totalClusters = %u", clusterSizeBytes, totalClusters);
+	  
+	  auto hexDigit = [](uint8_t value) -> char
+	  {
+		  return (value < 10) ? static_cast<char>('0' + value) : static_cast<char>('A' + (value - 10));
+	  };
+
+	  auto dumpBytes = [&](const char* label, size_t offset, size_t length)
+	  {
+		  if (offset >= dirData.size())
+		  {
+			  LOG_WARN("[createFile] %s offset %u out of range (dirData.size=%u)", label, offset, dirData.size());
+			  return;
+		  }
+		  size_t end = std::min(dirData.size(), offset + length);
+		  for (size_t pos = offset; pos < end; pos += 16)
+		  {
+			  size_t chunk = std::min<size_t>(16, end - pos);
+			  char   hexLine[(3 * 16) + 1];
+			  size_t index = 0;
+			  for (size_t j = 0; j < chunk && index + 2 < sizeof(hexLine); ++j)
+			  {
+				  if (j > 0 && index + 3 < sizeof(hexLine))
+				  {
+					  hexLine[index++] = ' ';
+				  }
+				  uint8_t value = dirData[pos + j];
+				  hexLine[index++] = hexDigit(static_cast<uint8_t>(value >> 4));
+				  hexLine[index++] = hexDigit(static_cast<uint8_t>(value & 0x0F));
+			  }
+			  hexLine[std::min(index, sizeof(hexLine) - 1)] = '\0';
+			  LOG_WARN("[createFile] %s offset %u (+%zu): %s", label, offset, pos - offset, hexLine);
+		  }
+	  };
+
+	  // Dump first 128 bytes (4 entries) of dirData to see what's being written
+	  LOG_WARN("[createFile] === Directory Data Dump (first 4 entries) ===");
+	  for (size_t i = 0; i < std::min(dirData.size(), size_t(128)); i += 32)
+	  {
+		  dumpBytes("Entry", i, 32);
+	  }
+
+	  // Dump the entries we are about to append
+	  dumpBytes("LFN start", insertPos, 32);
+	  dumpBytes("LFN next", insertPos + 32, 32);
+	  dumpBytes("Main entry", mainEntryOffset, 32);
+	  dumpBytes("Terminator", mainEntryOffset + 32, 32);
+	  
+	  // CRITICAL: Verify the actual LFN order on disk
+	  LOG_WARN("[createFile] === LFN Order Verification ===");
+	  for (size_t idx = 0; idx < lfnEntries.size(); ++idx)
+	  {
+		  size_t offset = insertPos + (idx * dirEntrySize);
+		  if (offset < dirData.size())
+		  {
+			  LOG_WARN("[createFile] LFN[%u] at offset %u: seq=%02X, attr=%02X, checksum=%02X",
+				  idx, offset, dirData[offset], dirData[offset + 11], dirData[offset + 13]);
+		  }
+	  }
+	  LOG_WARN("[createFile] Main entry at offset %u: name[0]=%02X, attr=%02X",
+		  mainEntryOffset, dirData[mainEntryOffset], dirData[mainEntryOffset + 11]);
+	  
+	  // Show LFN entry details
+	  LOG_WARN("[createFile] === LFN Entries Details ===");
+	  for (size_t i = 0; i < lfnEntries.size(); ++i)
+	  {
+		  const fat_dentry& lfn = lfnEntries[i];
+		  LOG_WARN("[createFile] LFN[%u]: seq=%02X, attr=%02X, ntRes=%02X, chksum=%02X, fstClusLo=%04X",
+			  i, (uint8_t)lfn.shortName[0], lfn.attribute, lfn.ntRes, lfn.creationTimeTenth, lfn.firstClusterLow);
+	  }
+	  
+	  // Show main entry details
+	  LOG_WARN("[createFile] === Main Entry Details ===");
+	  LOG_WARN("[createFile] Main: name='%.11s', attr=%02X, size=%u, cluster=%u",
+		  newDentry.shortName, newDentry.attribute, newDentry.fileSize,
+		  ((uint32_t)newDentry.firstClusterHigh << 16) | newDentry.firstClusterLow);
+	  LOG_WARN("[createFile] === END DIAGNOSTIC ===");
+	  // ========== END DIAGNOSTIC LOGGING ==========
+
 	  // Write the updated directory data back to disk
 	  for (size_t i = 0; i < dirData.size(); i += clusterSizeBytes)
 	  {
@@ -1371,14 +1767,19 @@ namespace PalmyraOS::kernel::vfs
 	  }
 
 	  // Create the new DirectoryEntry object
+	  // IMPORTANT: Store offset to the MAIN entry, not the first LFN entry!
+	  // insertPos points to the first LFN entry, but we need the offset to the main entry
+	  // which is insertPos + (number of LFN entries * entry size)
+	  // Note: mainEntryOffset was already calculated above in diagnostic section
 	  DirectoryEntry newEntry(
-		  static_cast<uint32_t>(insertPos),
+		  mainEntryOffset,
 		  directoryEntry.getFirstCluster(),
 		  fileName,
 		  newDentry
 	  );
 
-	  LOG_ERROR("worked.");
+	  LOG_WARN("[createFile] Created entry at offset %u (LFN starts at %u) in directory cluster %u", 
+	           mainEntryOffset, insertPos, directoryEntry.getFirstCluster());
 	  return newEntry;
   }
 

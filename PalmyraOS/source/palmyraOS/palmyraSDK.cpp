@@ -30,22 +30,25 @@ int PalmyraOS::SDK::constructDirectoryPath(
 		offset += dirLength;
 
 		// Append a '/' after the directory name.
-		buffer[offset - 1] = '/';
+		// strcpy null-terminated the string, so we write '/' at that position
+		buffer[offset] = '/';
+		offset++;
 	}
 
 	if (offset > 1)
 	{
-		// Replace the trailing '/' with a null terminator to complete the path string.
+		// Null-terminate after the trailing '/' to complete the path string.
+		// This preserves the '/' so appended filenames create proper paths like "/bin/file"
 		buffer[offset] = '\0';
+		return offset;  // Return position after the '/', ready for appending
 	}
 	else
 	{
 		// If currentDirectory is empty, set the path to root "/".
 		buffer[0] = '/';
 		buffer[1] = '\0';
+		return 1;  // Return position after the '/'
 	}
-
-	return offset; // Success
 }
 
 int PalmyraOS::SDK::isElf(PalmyraOS::types::UserHeapManager& heap, const PalmyraOS::types::UString<char>& absolutePath)

@@ -1,4 +1,4 @@
-// Files/Virtual File System Base
+// Files/Virtual File System
 
 #pragma once
 

@@ -14,6 +14,7 @@
 #include "core/tasks/ProcessManager.h"
 #include "core/cpu.h"
 #include <new>
+#include <algorithm>
 
 // Globals
 
@@ -472,20 +473,181 @@ void PalmyraOS::kernel::initializePartitions()
 				);
 				vfs::VirtualFileSystem::setInodeByPath(name, rootNode);
 
-				// TODO create a new file
-//				auto folder = fat32.resolvePathToEntry(KString("/exp/"));
-//				auto newfile = fat32.createFile(folder, KString("mynewfile2.txt"));
-//				auto newfile = fat32.resolvePathToEntry(KString("/exp/mynewfile2.txt"));
+				// Debug: Analyze directory entries to see how Windows writes LFNs
+				LOG_WARN("=== ANALYZING WINDOWS-RENAMED FILE ===");
+				
+				vfs::DirectoryEntry folder = fat32.resolvePathToEntry(KString("/exp4/"));
 
 
-//				LOG_WARN("File: size: %d, cluster: %d", newfile.getFileSize(), newfile.getFirstCluster());
+				auto newfile = fat32.createFile(folder, KString("e7newfile19.txt"));
+				//auto newfile = fat32.resolvePathToEntry(KString("/exp/mynewfile2.txt"));
 
-//				auto n = fat32.write(newfile, {'h', 'i', ' ', 'f', 'i', 'l', 'e', '\0'});
-//				LOG_WARN("Writing to file %s.", (n? "is successful" : "failed"));
-//				if (newfile.has_value()) {
-//					auto n = fat32.write(newfile.value(), {'h', 'i', ' ', 'f', 'i', 'l', 'e'/*, '\0'*/});
-//					LOG_WARN("Writing to file %s.", (n? "is successful" : "failed"));
-//				}
+
+				// LOG_WARN("File created: size: %d, cluster: %d", newfile->getFileSize() , newfile->getFirstCluster());
+
+				// auto n = fat32.write(*newfile, {'h', 'i', ' ', 'f', 'i', 'l', 'e', '\0'});
+				// LOG_WARN("First write to file %s.", (n? "is successful" : "failed"));
+				// LOG_WARN("After first write: size: %d, cluster: %d", newfile->getFileSize() , newfile->getFirstCluster());
+				
+				// if (newfile.has_value()) {
+				// 	auto n = fat32.write(newfile.value(), {'h', 'i', ' ', 'f', 'i', 'l', 'e'/*, '\0'*/});
+				// 	LOG_WARN("Second write to file %s.", (n? "is successful" : "failed"));
+				// 	LOG_WARN("After second write: size: %d, cluster: %d", newfile->getFileSize() , newfile->getFirstCluster());
+					
+				// 	// Read the file back to verify
+				// 	auto readData = fat32.read(newfile.value(), 0, 100);
+				// 	LOG_WARN("Read %u bytes from file", readData.size());
+				// 	if (readData.size() > 0) {
+				// 		// Create a null-terminated string for logging
+				// 		KVector<uint8_t> temp = readData;
+				// 		temp.push_back('\0');
+				// 		LOG_WARN("File contents: '%s'", temp.data());
+				// 	}
+				// }
+
+
+
+				if (folder.getAttributes() != vfs::EntryAttribute::Invalid)
+				{
+					LOG_WARN("Found /exp2/ directory, reading entries...");
+					uint32_t dirCluster = folder.getFirstCluster();
+					KVector<uint8_t> dirData = fat32.readEntireFile(dirCluster);
+					LOG_WARN("Directory has %u bytes of data", dirData.size());
+
+					struct LfnPart { uint8_t ord; KWString w; size_t off; };
+					KVector<LfnPart> lfnParts; // collected after seeing LAST
+					uint8_t  lfnChecksum = 0;
+					bool     lfnActive = false;
+
+					auto dumpHex = [&](size_t off)
+					{
+						char hexDump[100]; size_t pos = 0;
+						for (size_t j = 0; j < 32 && pos < 99; ++j)
+						{
+							if (j == 16) { hexDump[pos++]=' '; hexDump[pos++]='|'; hexDump[pos++]=' '; }
+							else if (j > 0 && j % 4 == 0) { hexDump[pos++]=' '; }
+							uint8_t b = dirData[off + j];
+							static const char hx[] = "0123456789ABCDEF";
+							hexDump[pos++] = hx[b >> 4];
+							hexDump[pos++] = hx[b & 0x0F];
+							hexDump[pos++] = ' ';
+						}
+						hexDump[pos] = '\0';
+						LOG_WARN("  Hex: %s", hexDump);
+					};
+
+					auto trimSfn = [](const char* p, int n)->int { while (n>0 && p[n-1]==' ') --n; return n; };
+					auto asciiFromUtf16 = [](const KWString& w, char* out, size_t outCap)
+					{
+						size_t o=0; for (size_t i=0;i<w.size() && o+1<outCap;i++){ uint16_t ch=w[i]; if (ch==0x0000) break; out[o++]=(ch<128)?(char)ch:'?'; }
+						out[o]='\0';
+					};
+
+					for (size_t i = 0; i + 32 <= dirData.size(); i += 32)
+					{
+						uint8_t first = dirData[i];
+						if (first == 0x00) break;
+						if (first == 0xE5) continue;
+
+						LOG_WARN("=== Entry at offset %u ===", (uint32_t)i);
+						dumpHex(i);
+
+						uint8_t attr = dirData[i + 11];
+						if ((attr & 0x3F) == 0x0F)
+						{
+							uint8_t seq = dirData[i];
+							uint8_t chk = dirData[i + 13];
+							bool isLast = (seq & 0x40) != 0;
+							uint8_t ord = (uint8_t)(seq & 0x3F);
+							LOG_WARN("  Type: LFN, Seq=0x%02X%s, Checksum=0x%02X", ord, isLast?" (LAST)":"", chk);
+
+							if (isLast) { lfnParts.clear(); lfnChecksum = chk; lfnActive = true; }
+
+							KWString part;
+							auto addRange = [&](size_t start, size_t count)
+							{
+								for (size_t j=0;j<count;j++)
+								{
+									uint16_t ch = (uint16_t)(dirData[i + start + j*2] | (dirData[i + start + j*2 + 1] << 8));
+									if (ch == 0x0000 || ch == 0xFFFF) break;
+									part.push_back(ch);
+								}
+							};
+							addRange(1,5); addRange(14,6); addRange(28,2);
+							if (lfnActive) lfnParts.push_back({ord, part, i});
+						}
+						else
+						{
+							const char* sfn = (const char*)&dirData[i];
+							int baseLen = trimSfn(sfn, 8);
+							int extLen  = trimSfn(sfn+8, 3);
+							char sfnPretty[16];
+							int p=0; for (int k=0;k<baseLen && p<15;k++) sfnPretty[p++]=sfn[k];
+							if (extLen>0 && p<15) sfnPretty[p++]='.';
+							for (int k=0;k<extLen && p<15;k++) sfnPretty[p++]=sfn[8+k];
+							sfnPretty[p]='\0';
+
+							uint8_t sum=0; for (int k=0;k<11;k++) sum = ((sum & 1)<<7) + (sum>>1) + (uint8_t)sfn[k];
+							LOG_WARN("  Type: SFN, Attr=0x%02X", attr);
+							LOG_WARN("  Name: '%s'", sfnPretty);
+							LOG_WARN("  First char byte: 0x%02X", (uint8_t)sfn[0]);
+							LOG_WARN("  Checksum: 0x%02X", sum);
+							LOG_WARN("  SFN[11]: %02X %02X %02X %02X %02X %02X %02X %02X . %02X %02X %02X",
+								(uint8_t)sfn[0],(uint8_t)sfn[1],(uint8_t)sfn[2],(uint8_t)sfn[3],(uint8_t)sfn[4],(uint8_t)sfn[5],(uint8_t)sfn[6],(uint8_t)sfn[7],(uint8_t)sfn[8],(uint8_t)sfn[9],(uint8_t)sfn[10]);
+
+							if (lfnActive && !lfnParts.empty())
+							{
+								// Build full LFN in order ord=1..N
+								std::sort(lfnParts.begin(), lfnParts.end(), [](const LfnPart& a, const LfnPart& b){ return a.ord < b.ord; });
+								KWString lfnFull;
+								for (auto& part : lfnParts) for (uint16_t ch : part.w) lfnFull.push_back(ch);
+								char lfnAscii[64]; asciiFromUtf16(lfnFull, lfnAscii, sizeof(lfnAscii));
+								LOG_WARN("  LFN->SFN Pair: long='%s', sfn='%s', matchChk=%s", lfnAscii, sfnPretty, (sum==lfnChecksum?"YES":"NO"));
+								// Highlight target zynewfile17.txt
+								auto ieq = [](char a){ return (a>='a'&&a<='z')? (char)(a-32):a; };
+								const char* tgt = "ZYNEWFILE17.TXT";
+								bool isTarget = true; for (size_t ti=0; tgt[ti] || lfnAscii[ti]; ++ti) { if (ieq(tgt[ti])!=ieq(lfnAscii[ti])) { isTarget=false; break; } }
+								if (isTarget)
+								{
+									LOG_WARN(">>> TARGET /exp2/zynewfile17.txt: SFNoff=%u, LFNchk=0x%02X, SFNchk=0x%02X", (uint32_t)i, lfnChecksum, sum);
+									// Dump SFN fields
+									uint8_t ntRes = dirData[i+12];
+									uint8_t cTenth = dirData[i+13];
+									uint16_t cTime = (uint16_t)(dirData[i+14] | (dirData[i+15]<<8));
+									uint16_t cDate = (uint16_t)(dirData[i+16] | (dirData[i+17]<<8));
+									uint16_t aDate = (uint16_t)(dirData[i+18] | (dirData[i+19]<<8));
+									uint16_t cluHi = (uint16_t)(dirData[i+20] | (dirData[i+21]<<8));
+									uint16_t wTime = (uint16_t)(dirData[i+22] | (dirData[i+23]<<8));
+									uint16_t wDate = (uint16_t)(dirData[i+24] | (dirData[i+25]<<8));
+									uint16_t cluLo = (uint16_t)(dirData[i+26] | (dirData[i+27]<<8));
+									uint32_t fSize = (uint32_t)(dirData[i+28] | (dirData[i+29]<<8) | (dirData[i+30]<<16) | (dirData[i+31]<<24));
+									LOG_WARN("  SFN fields: ntRes=0x%02X cTenth=%u cTime=0x%04X cDate=0x%04X aDate=0x%04X wTime=0x%04X wDate=0x%04X clu=%u size=%u",
+										ntRes, cTenth, cTime, cDate, aDate, wTime, wDate, ((uint32_t)cluHi<<16)|cluLo, fSize);
+									// Dump LFN chain offsets and ords
+									for (auto& part : lfnParts) LOG_WARN("  LFN part at off=%u ord=%u len=%u", (uint32_t)part.off, part.ord, (uint32_t)part.w.size());
+								}
+							}
+
+							// Reset for next chain
+							lfnParts.clear(); lfnActive = false; lfnChecksum = 0;
+						}
+					}
+				}
+				else
+				{
+					LOG_ERROR("Could not find /exp2/ directory!");
+				}
+				LOG_WARN("=== END WINDOWS FILE ANALYSIS ===");
+
+				// TODO: Create new file test after analysis
+
+
+
+
+
+
+				
+
 
 			}
 			else if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::NTFS)

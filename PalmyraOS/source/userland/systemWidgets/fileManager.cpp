@@ -105,6 +105,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv)
 			// File Names column
 			int maxFilesOffset = 0;
 			int maxTypesOffset = 0;
+			int maxSizesOffset = 0;
 			for (auto& [item, type, size] : content)
 			{
 				if (contentIndex++ % 2 == 0)
@@ -213,6 +214,23 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv)
 				windowGui.text() << "\n";
 			}
 
+			// Third Column - File Sizes
+			windowGui.text().setCursor(maxTypesOffset + 15, scrollY_content);
+			for (auto& [item, type, size] : content)
+			{
+				windowGui.text().setCursor(maxTypesOffset + 15, windowGui.text().getCursorY());
+				if (type == EntryType::Directory)
+				{
+					windowGui.text() << "-";
+				}
+				else
+				{
+					windowGui.text() << size << " B";
+				}
+				maxSizesOffset = std::max(maxSizesOffset, windowGui.text().getCursorX());
+				windowGui.text() << "\n";
+			}
+
 
 		}
 
@@ -292,7 +310,7 @@ int PalmyraOS::Userland::builtin::fileManager::fetchContent(
 				{
 					.name = entryName,
 					.dentryType = EntryType::Directory,
-					.size = 0
+					.size = 0  // Directories don't have size in traditional sense
 				}
 			);
 		}
@@ -389,7 +407,7 @@ void PalmyraOS::Userland::builtin::fileManager::pushArchive(
 	}
 	else if (isElf_ == 100)
 	{
-		// Elf x86_64 executable
+		// Elf x86_64 library
 		content.push_back(
 			{
 				.name = entryName,

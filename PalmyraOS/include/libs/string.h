@@ -226,7 +226,7 @@ namespace PalmyraOS::types
 
 	  // Size and capacity
 	  size_type size() const
-	  { return data_.size(); }
+	  { return data_.size() > 0 ? data_.size() - 1 : 0; }
 	  size_type capacity() const
 	  { return data_.capacity(); }
 	  [[nodiscard]] bool empty() const
@@ -393,6 +393,7 @@ namespace PalmyraOS::types
 	  {
 		  size_type len = strlen(str);
 		  if (len == 0) return 0;
+		  if (len > size()) return npos;  // Search string longer than target
 
 		  for (size_type i = 0; i <= size() - len; ++i)
 		  {
@@ -484,22 +485,22 @@ namespace PalmyraOS::types
 
 		  // Find the position of the first non-whitespace character
 		  size_type start = 0;
-		  while (start < data_.size() && is_whitespace(data_[start]))
+		  while (start < size() && is_whitespace(data_[start]))
 		  {
 			  ++start;
 		  }
 
 		  // Find the position of the last non-whitespace character
-		  size_type end = data_.size() - 1;
+		  size_type end = size();
 		  while (end > start && is_whitespace(data_[end - 1]))
 		  {
 			  --end;
 		  }
 
 		  // Erase leading and trailing whitespace
-		  if (start > 0 || end <= data_.size())
+		  if (start > 0 || end < size())
 		  {
-			  data_.erase(data_.begin() + end, data_.end());
+			  data_.erase(data_.begin() + end, data_.end() - 1);
 			  data_.erase(data_.begin(), data_.begin() + start);
 		  }
 
@@ -597,9 +598,10 @@ namespace PalmyraOS::types
 
 	  string& toLower()
 	  {
-		  for (auto& ch : data_)
+		  // Iterate only over actual characters, not the null terminator
+		  for (size_type i = 0; i < size(); ++i)
 		  {
-			  ch = tolower(ch);
+			  data_[i] = tolower(data_[i]);
 		  }
 		  ensure_null_terminator();
 		  return *this;
@@ -607,9 +609,10 @@ namespace PalmyraOS::types
 
 	  string& toUpper()
 	  {
-		  for (auto& ch : data_)
+		  // Iterate only over actual characters, not the null terminator
+		  for (size_type i = 0; i < size(); ++i)
 		  {
-			  ch = toupper(ch);
+			  data_[i] = toupper(data_[i]);
 		  }
 		  ensure_null_terminator();
 		  return *this;
