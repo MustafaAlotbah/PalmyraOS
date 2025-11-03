@@ -43,7 +43,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
     while (true) {
         // Display Current Directory
         {
-            SDK::Layout layout(windowGui, nullptr, false, 20);
+            SDK::Layout layout(windowGui, nullptr, false, 20, nullptr);
             windowGui.brush().fillRectangle(layout.getX(),
                                             layout.getY(),
                                             layout.getX() + layout.getWidth(),
@@ -75,7 +75,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
 
         // Display Content
         {
-            SDK::Layout layout(windowGui, &scrollY_content, true);
+            SDK::Layout layout(windowGui, &scrollY_content, true, 0, nullptr);
 
             uint32_t contentIndex = 0;
 

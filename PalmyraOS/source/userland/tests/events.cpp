@@ -63,7 +63,7 @@ int PalmyraOS::Userland::Tests::events::main(uint32_t argc, char** argv) {
         windowGui.text() << "\n";
 
         {
-            SDK::Layout layout(windowGui, &scrollY_layout, true);
+            SDK::Layout layout(windowGui, &scrollY_layout, true, 0, nullptr);
             for (int i = 0; i < 10; ++i) {
                 for (int j = 0; j < 5; ++j) { windowGui.text() << "Item (" << i << ", " << j << ") "; }
                 windowGui.text() << "\n";

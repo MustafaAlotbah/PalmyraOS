@@ -7,9 +7,7 @@
 
 /**********************************************************/
 
-int PalmyraOS::SDK::constructDirectoryPath(char* buffer,
-                                           size_t bufferSize,
-                                           const PalmyraOS::types::UVector<PalmyraOS::types::UString<char>>& currentDirectory) {
+int PalmyraOS::SDK::constructDirectoryPath(char* buffer, size_t bufferSize, const PalmyraOS::types::UVector<PalmyraOS::types::UString<char>>& currentDirectory) {
     int offset       = 0;
     buffer[offset++] = '/';
 
@@ -344,15 +342,15 @@ void PalmyraOS::SDK::WindowGUI::fillRectangle(uint32_t x, uint32_t y, uint32_t w
 /**********************************************************/
 
 
-PalmyraOS::SDK::Layout::Layout(WindowGUI& windowGui, int* scrollY, bool scrollable, size_t height)
+PalmyraOS::SDK::Layout::Layout(WindowGUI& windowGui, int* scrollY, bool scrollable, size_t height, bool* autoScrollFlag)
     : windowGui_(windowGui), scrollable_(scrollable), scrollBarWidth_(scrollable_ ? 5 : 0),
 
       prevPositionX_(windowGui_.text().getPositionX()), prevPositionY_(windowGui_.text().getPositionY()), prevWidth_(windowGui_.text().getWidth()),
       prevHeight_(windowGui_.text().getHeight()), prevCursorY_(windowGui_.text().getCursorY()),
 
-      currCursorX_(windowGui_.text().getCursorX() + 2), currCursorY_(windowGui_.text().getCursorY() + 2),
-      currWidth_(prevWidth_ - currCursorX_ - scrollBarWidth_ - 2), currHeight_(prevHeight_ - currCursorY_ - 2),  // Maximum Area
-      scrollY_(scrollY) {
+      currCursorX_(windowGui_.text().getCursorX() + 2), currCursorY_(windowGui_.text().getCursorY() + 2), currWidth_(prevWidth_ - currCursorX_ - scrollBarWidth_ - 2),
+      currHeight_(prevHeight_ - currCursorY_ - 2),  // Maximum Area
+      scrollY_(scrollY), autoScrollFlag_(autoScrollFlag) {
     // if height is explicitly given, cap the  maximum area
     if (height > 0) currHeight_ = std::min<uint32_t>(height, currHeight_);
 
@@ -377,8 +375,19 @@ PalmyraOS::SDK::Layout::~Layout() {
                                  windowGui_.text().getPositionY() + windowGui_.text().getHeight(),
                                  Color::Gray500);
 
-    // Calculate content height
+    // Calculate content height (total pixels used by rendered text)
     int contentHeight = windowGui_.text().getCursorY() - currScrollY_;
+
+    // AUTO-SCROLL: If content exceeds visible area and auto-scroll is enabled, scroll to show the bottom
+    // This is called BEFORE we restore the text renderer state
+    if (scrollable_ && scrollY_ && autoScrollFlag_ && *autoScrollFlag_ && contentHeight > (int) currHeight_) {
+        // Content is taller than visible area - auto-scroll to show the newest content
+        // Add extra margin (20 pixels) to ensure the last line is fully visible with breathing room
+        int autoScrollTarget = -(contentHeight - (int) currHeight_ + 20);
+        if (autoScrollTarget < 0) { currScrollY_ = autoScrollTarget; }
+        // Disable auto-scroll flag for the next frame - user can now manually scroll
+        *autoScrollFlag_ = false;
+    }
 
     windowGui_.text().setCursor(0, prevCursorY_ + windowGui_.text().getHeight() + 4);
     windowGui_.text().setPosition(prevPositionX_, prevPositionY_);
@@ -390,10 +399,16 @@ PalmyraOS::SDK::Layout::~Layout() {
         uint32_t scrollBarY      = currCursorY_;
         uint32_t scrollBarHeight = currHeight_;
 
+        // UP button - scroll up (increase offset toward 0)
         if (windowGui_.button("", scrollBarX, scrollBarY, scrollBarWidth_, scrollBarHeight / 2, 0, true)) { currScrollY_ = std::min(0, currScrollY_ + 1); }
 
+        // DOWN button - scroll down (decrease offset)
+        // CRITICAL FIX: Calculate minimum scroll correctly to prevent positive values
+        int minScroll = -(contentHeight - (int) currHeight_);
+        if (minScroll > 0) minScroll = 0;  // Ensure minimum is never positive
+
         if (windowGui_.button("", scrollBarX, scrollBarY + scrollBarHeight / 2, scrollBarWidth_, scrollBarHeight / 2, 0, true)) {
-            currScrollY_ = std::max<int>(currScrollY_ - 1, -(contentHeight - currHeight_));
+            currScrollY_ = std::max<int>(currScrollY_ - 1, minScroll);
         }
 
         // store the current scroll

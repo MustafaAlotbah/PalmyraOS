@@ -22,12 +22,15 @@ using namespace PalmyraOS::types;
 namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
     // Typedefs for buffer types simplify declarations
-    using StdoutType            = CircularBuffer<char, 4096>;
-    using StdinType             = CircularBuffer<char, 4096>;
+    using StdoutType             = CircularBuffer<char, 4096>;
+    using StdinType              = CircularBuffer<char, 4096>;
 
     // Current working directory (global state)
-    constexpr size_t kPathMax   = 512;  // single place to tune path buffer size
-    static char g_cwd[kPathMax] = "/";
+    constexpr size_t kPathMax    = 512;  // single place to tune path buffer size
+    static char g_cwd[kPathMax]  = "/";
+
+    // Auto-scroll flag: Only scroll to bottom after new command execution, not on every frame
+    static bool shouldAutoScroll = false;
 
     // Helper: Render colored prompt "PalmyraOS:<cwd>$ " with ANSI color codes
     void appendColoredPrompt(StdoutType& output) {
@@ -119,6 +122,25 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
     void executeCommand(UserHeapManager& heap, StdinType& input, StdoutType& output);
     void renderStdoutWithANSI(PalmyraOS::kernel::TextRenderer& renderer, const char* buffer);
 
+    // Auto-scroll helper: Returns the scroll position needed to show the bottom of content
+    // This should be called after rendering to position the view at the newest content
+    void autoScrollToBottom(int& scrollY, int contentCursorY, int visibleHeight) {
+        // contentCursorY = where the cursor ended up after rendering all content
+        // We want to show the bottom visibleHeight pixels of content
+        // If content is less than visible area, scroll to top (0)
+        // If content exceeds visible area, scroll to show the bottom
+
+        int contentHeight = contentCursorY;  // Total height of rendered content
+        if (contentHeight > visibleHeight) {
+            // Content is taller than visible area - scroll to show the bottom
+            scrollY = -(contentHeight - visibleHeight);
+        }
+        else {
+            // Content fits in visible area - show from top
+            scrollY = 0;
+        }
+    }
+
     int main(uint32_t argc, char** argv) {
         // Initialize dynamic memory allocator for the application
         UserHeapManager heap;
@@ -168,6 +190,9 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
             // Prompt the user again
             appendColoredPrompt(stdoutBuffer);
+
+            // Enable auto-scroll to show the new prompt
+            shouldAutoScroll = true;
         }
 
         while (true) {
@@ -206,12 +231,26 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
 
                     // Prompt the user again
                     appendColoredPrompt(stdoutBuffer);
+
+                    // Enable auto-scroll for the next frame to show the new prompt
+                    shouldAutoScroll = true;
                 }
             }
 
+            // Handle mouse scrolling
+            {
+                MouseEvent mouseEvent = nextMouseEvent(window.getID());
+                if (mouseEvent.isEvent) {
+                    // Middle button scroll: positive deltaX = scroll up, negative = scroll down
+                    if (mouseEvent.isMiddleDown) {
+                        scrollY_content += mouseEvent.x / 5;  // Scroll up when x > 0
+                        // Clamp will be handled by Layout destructor
+                    }
+                }
+            }
 
             {
-                SDK::Layout layout(windowGui, &scrollY_content, true);
+                SDK::Layout layout(windowGui, &scrollY_content, true, 0, &shouldAutoScroll);
 
                 // Render the prompt with ANSI color support
                 renderStdoutWithANSI(windowGui.text(), stdoutBuffer.get());

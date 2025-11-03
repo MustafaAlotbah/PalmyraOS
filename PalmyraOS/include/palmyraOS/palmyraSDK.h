@@ -95,7 +95,7 @@ namespace PalmyraOS::SDK {
 
     class Layout {
     public:
-        explicit Layout(WindowGUI& windowGui, int* scrollY, bool scrollable = false, size_t height = 0);
+        explicit Layout(WindowGUI& windowGui, int* scrollY, bool scrollable = false, size_t height = 0, bool* autoScrollFlag = nullptr);
         ~Layout();
 
         [[nodiscard]] inline uint32_t getX() const { return prevPositionX_ + currCursorX_ + 1; }
@@ -124,6 +124,7 @@ namespace PalmyraOS::SDK {
         // Scroll-related variables
         int* scrollY_;
         int currScrollY_;
+        bool* autoScrollFlag_;
     };
 
     int constructDirectoryPath(char* buffer, size_t bufferSize, const types::UVector<types::UString<char>>& currentDirectory);
