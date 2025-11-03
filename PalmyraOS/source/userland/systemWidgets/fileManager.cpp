@@ -7,7 +7,7 @@
 
 
 namespace PalmyraOS::Userland::builtin::fileManager {
-    enum class EntryType { Directory, Invalid, Archive, Elf32, Elf64, ElfLib };
+    enum class EntryType { Directory, Invalid, Archive, Elf32, Elf64, ElfLib, Image };
 
     struct DirectoryEntry {
         types::UString<char> name;
@@ -17,10 +17,37 @@ namespace PalmyraOS::Userland::builtin::fileManager {
 
     int fetchContent(types::UserHeapManager& heap, types::UVector<types::UString<char>>& currentDirectory, types::UVector<DirectoryEntry>& content);
 
-    void pushArchive(types::UserHeapManager& heap,
-                     types::UVector<DirectoryEntry>& content,
-                     const types::UString<char>& parentDirectory,
-                     const types::UString<char>& entryName);
+    void pushArchive(types::UserHeapManager& heap, types::UVector<DirectoryEntry>& content, const types::UString<char>& parentDirectory, const types::UString<char>& entryName);
+
+    /**
+     * Check if a filename is an image file by extension
+     * Supports .bmp, .jpg, .jpeg, .png
+     */
+    static bool isImageFile(const types::UString<char>& filename) {
+        const char* name = filename.c_str();
+        size_t len       = filename.size();
+
+        if (len < 4) return false;
+
+        // Get the extension (after the last dot)
+        const char* ext = nullptr;
+        for (int i = len - 1; i >= 0; i--) {
+            if (name[i] == '.') {
+                ext = &name[i + 1];
+                break;
+            }
+        }
+
+        if (!ext) return false;
+
+        // Check against supported image formats (case-insensitive)
+        if (strcmp(ext, "bmp") == 0 || strcmp(ext, "BMP") == 0) return true;
+        if (strcmp(ext, "jpg") == 0 || strcmp(ext, "JPG") == 0) return true;
+        if (strcmp(ext, "jpeg") == 0 || strcmp(ext, "JPEG") == 0) return true;
+        if (strcmp(ext, "png") == 0 || strcmp(ext, "PNG") == 0) return true;
+
+        return false;
+    }
 
 }  // namespace PalmyraOS::Userland::builtin::fileManager
 
@@ -44,11 +71,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
         // Display Current Directory
         {
             SDK::Layout layout(windowGui, nullptr, false, 20, nullptr);
-            windowGui.brush().fillRectangle(layout.getX(),
-                                            layout.getY(),
-                                            layout.getX() + layout.getWidth(),
-                                            layout.getY() + layout.getHeight(),
-                                            Color::DarkerGray);
+            windowGui.brush().fillRectangle(layout.getX(), layout.getY(), layout.getX() + layout.getWidth(), layout.getY() + layout.getHeight(), Color::DarkerGray);
 
             // Root directory link
             if (windowGui.link("root")) {
@@ -113,6 +136,23 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
                         int status = posix_spawn(&child_pid, "/bin/terminal.elf", nullptr, nullptr, argv_, nullptr);
                     }
                 }
+                else if (type == EntryType::Image) {
+                    // Handle Image files here
+
+                    if (windowGui.link(item.c_str(), false, Color::Cyan, Color::LighterBlue, Color::DarkBlue)) {
+                        // Construct the directory path
+                        char directoryBuffer[512];
+                        int offset = SDK::constructDirectoryPath(directoryBuffer, sizeof(directoryBuffer), currentDirectory);
+                        if (offset < 0) continue;  // Handle buffer overflow error
+                        strcpy(directoryBuffer + offset, item.c_str());
+
+                        char* argv[] = {const_cast<char*>("/bin/imgview.elf"), const_cast<char*>(directoryBuffer), nullptr};
+
+                        // Spawn the image viewer process
+                        uint32_t child_pid;
+                        int status = posix_spawn(&child_pid, "/bin/imgview.elf", nullptr, nullptr, argv, nullptr);
+                    }
+                }
                 else {
                     if (windowGui.link(item.c_str(), false, Color::Gray300, Color::Gray100, Color::Gray500)) {
                         // Construct the directory path
@@ -143,6 +183,10 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
                 else if (type == EntryType::Elf32) {
                     windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
                     windowGui.text() << "Elf32";
+                }
+                else if (type == EntryType::Image) {
+                    windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
+                    windowGui.text() << "Image";
                 }
                 else {
                     windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
@@ -254,6 +298,12 @@ void PalmyraOS::Userland::builtin::fileManager::pushArchive(types::UserHeapManag
                                                             types::UVector<DirectoryEntry>& content,
                                                             const types::UString<char>& parentDirectory,
                                                             const types::UString<char>& entryName) {
+    // Check if it's an image file first
+    if (isImageFile(entryName)) {
+        content.push_back({.name = entryName, .dentryType = EntryType::Image, .size = 0});
+        return;
+    }
+
     // Archive or Executable
 
     // Construct absolute path

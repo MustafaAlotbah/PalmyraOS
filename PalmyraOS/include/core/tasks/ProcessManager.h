@@ -287,8 +287,7 @@ namespace PalmyraOS::kernel {
          * @param mode Execution mode of the new process
          * @return Pointer to the created process
          */
-        static Process*
-        newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, bool isInternal);
+        static Process* newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, bool isInternal);
 
         static Process* execv_elf(KVector<uint8_t>& elfFileContent, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv);
 

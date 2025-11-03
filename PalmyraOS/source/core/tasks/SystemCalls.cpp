@@ -801,6 +801,26 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
         return;
     }
 
+    if (strcmp(path, "/bin/imgview.elf") == 0) {
+
+        LOG_INFO("EXEC IMAGE VIEWER");
+        Process* proc =
+                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::ImageViewer::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+
+
+        if (!proc) {
+            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
+            return;
+        }
+
+        // If pid is a valid pointer, store the process ID of the new process
+        if (isValidAddress(pid)) { *pid = proc->getPid(); }
+
+        // Return success
+        regs->eax = 0;
+        return;
+    }
+
 
     // Load the ELF file from the specified path
     auto file = vfs::VirtualFileSystem::getInodeByPath(KString(path));
