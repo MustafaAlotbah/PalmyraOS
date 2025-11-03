@@ -551,6 +551,38 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             return;
         }
 
+        // RMDIR - Remove an empty directory
+        if (tokens[0] == "rmdir") {
+            if (tokens.size() < 2) {
+                // Require a directory path
+                output.append("Usage: rmdir <dirname>\n", 23);
+                return;
+            }
+
+            char resolvedPath[kPathMax];
+            resolvePathToBuffer(tokens[1].c_str(), resolvedPath, sizeof(resolvedPath));
+            const char* dirPath = resolvedPath;
+
+            // Call rmdir() syscall
+            int result          = rmdir(dirPath);
+            if (result < 0) {
+                // Failed to remove directory
+                output.append("rmdir: ", 7);
+                output.append(dirPath, strlen(dirPath));
+                if (result == -ENOENT) { output.append(": No such file or directory\n", 28); }
+                else if (result == -ENOTDIR) { output.append(": Not a directory\n", 18); }
+                else if (result == -ENOTEMPTY) { output.append(": Directory not empty\n", 22); }
+                else if (result == -EFAULT) { output.append(": Bad address\n", 14); }
+                else { output.append(": Failed to remove directory\n", 29); }
+                return;
+            }
+
+            output.append("Directory removed: ", 19);
+            output.append(dirPath, strlen(dirPath));
+            output.append("\n", 1);
+            return;
+        }
+
         if (tokens[0] == "rm") {
             if (tokens.size() < 2) {
                 output.append("Usage: rm <file>\n", 17);

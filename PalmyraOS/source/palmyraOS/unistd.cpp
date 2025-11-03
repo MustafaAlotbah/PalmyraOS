@@ -376,7 +376,16 @@ int mkdir(const char* pathname, uint16_t mode) {
 
 int unlink(const char* pathname) {
     int result;
-    register uint32_t syscall_no asm("eax") = POSIX_INT_UNLINK;
+    register uint32_t syscall_no asm("eax")  = POSIX_INT_UNLINK;
+    register const char* path_reg asm("ebx") = pathname;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(path_reg) : "memory");
+    return result;
+}
+
+int rmdir(const char* pathname) {
+    int result;
+    register uint32_t syscall_no asm("eax")  = POSIX_INT_RMDIR;
     register const char* path_reg asm("ebx") = pathname;
 
     asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(path_reg) : "memory");

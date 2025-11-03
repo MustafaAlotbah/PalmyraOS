@@ -257,13 +257,26 @@ namespace PalmyraOS::kernel::vfs {
          * @brief Delete a file within this directory inode.
          *
          * Filesystems that represent directories should override this to support
-         * file deletion. The default implementation returns nullptr to indicate
+         * file deletion. The default implementation returns false to indicate
          * that the operation is not supported by this inode.
          *
          * @param name The name of the file to delete (no path separators).
-         * @return Pointer to the deleted inode on success, or nullptr if unsupported/failed.
+         * @return true on success, false if unsupported/failed.
          */
         virtual bool deleteFile(const KString& name);
+
+        /**
+         * @brief Delete a directory within this directory inode.
+         *
+         * Filesystems that represent directories should override this to support
+         * directory deletion. The default implementation returns false to indicate
+         * that the operation is not supported by this inode. The directory must be
+         * empty (contain only "." and ".." entries) to be deleted.
+         *
+         * @param name The name of the directory to delete (no path separators).
+         * @return true on success, false if unsupported/failed/not empty.
+         */
+        virtual bool deleteDirectory(const KString& name);
 
         /**
          * @brief Truncate this file inode to a specified size.

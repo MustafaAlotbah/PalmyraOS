@@ -725,32 +725,40 @@ namespace PalmyraOS::kernel::vfs {
 
         // Invalid offset, cluster chain is shorter than expected
         if (clusterIndex >= clusterChain.size()) {
-            LOG_ERROR("Invalid offset: cluster chain is shorter than expected.");
+            LOG_ERROR("[flushEntry] Invalid offset: cluster chain is shorter than expected.");
             return false;
         }
 
         uint32_t currentCluster = clusterChain[clusterIndex];
-        uint32_t sector         = getSectorFromCluster(currentCluster) + sectorWithinCluster;
+        uint32_t baseSector     = getSectorFromCluster(currentCluster);  // base sector of the cluster
+        uint32_t targetSector   = baseSector + sectorWithinCluster;      // sector containing the entry
 
-        // Read the sector containing the directory entry
-        uint8_t sectorData[512];
+        // Read the ENTIRE cluster from its BASE sector (not from targetSector)
+        KVector<uint8_t> clusterData(clusterSizeBytes_);
         {
-            bool diskStatus = diskDriver_.readSector(sector, sectorData, DEFAULT_TIMEOUT);
-            if (!diskStatus) {
-                LOG_ERROR("Failed to read sector %u from disk.", sector);
-                return false;
+            for (uint8_t i = 0; i < clusterSize_; ++i) {
+                bool diskStatus = diskDriver_.readSector(baseSector + i, clusterData.data() + i * sectorSize_, DEFAULT_TIMEOUT);
+                if (!diskStatus) {
+                    LOG_ERROR("[flushEntry] Failed to read sector %u from disk.", baseSector + i);
+                    return false;
+                }
             }
         }
 
-        // Copy the FAT directory entry structure into the correct location within the sector data
-        memcpy(sectorData + offsetWithinSector, &dentry, sizeof(fat_dentry));
+        // Calculate the offset within the cluster (not just within the sector)
+        uint32_t offsetWithinCluster = (sectorWithinCluster * sectorSize_) + offsetWithinSector;
 
-        // Write the modified sector data back to the disk
+        // Copy the FAT directory entry structure into the correct location within the cluster data
+        memcpy(clusterData.data() + offsetWithinCluster, &dentry, sizeof(fat_dentry));
+
+        // Write the entire cluster back to disk starting from BASE sector
         {
-            bool diskStatus = diskDriver_.writeSector(sector, sectorData, DEFAULT_TIMEOUT);
-            if (!diskStatus) {
-                LOG_ERROR("Failed to write sector %u to disk.", sector);
-                return false;
+            for (uint8_t i = 0; i < clusterSize_; ++i) {
+                bool diskStatus = diskDriver_.writeSector(baseSector + i, clusterData.data() + i * sectorSize_, DEFAULT_TIMEOUT);
+                if (!diskStatus) {
+                    LOG_ERROR("[flushEntry] Failed to write sector %u to disk.", baseSector + i);
+                    return false;
+                }
             }
         }
 
@@ -1438,8 +1446,15 @@ namespace PalmyraOS::kernel::vfs {
         KVector<fat_dentry> lfnEntries;
         if (needsLFN(fileName)) { lfnEntries = createLFNEntries(fileName, checksum); }
 
-        // Set attributes and initial values
-        newDentry.attribute               = static_cast<uint8_t>(attributes);
+        // Set attributes and initial values - CRITICAL: Ensure Directory attribute is preserved
+        if (attributes == EntryAttribute::Directory) {
+            newDentry.attribute = 0x10;  // Explicitly set Directory bit
+            LOG_WARN("[createFile] DIRECTORY: Explicitly setting attribute to 0x10 (Directory)");
+        }
+        else {
+            newDentry.attribute = static_cast<uint8_t>(attributes);
+            LOG_WARN("[createFile] FILE: Setting attribute to 0x%02X", static_cast<uint8_t>(attributes));
+        }
         newDentry.firstClusterLow         = 0;  // Initially zero, allocate when writing data
         newDentry.firstClusterHigh        = 0;
         newDentry.fileSize                = 0;
@@ -1753,6 +1768,7 @@ namespace PalmyraOS::kernel::vfs {
 
         // Step 1: Create the directory entry in the parent directory
         // This creates the entry but with firstCluster = 0 initially
+        LOG_WARN("[createDirectory] About to call createFile with EntryAttribute::Directory = %d (0x%02X)", (int) EntryAttribute::Directory, (int) EntryAttribute::Directory);
         auto newDirEntry = createFile(parentDirEntry, dirName, EntryAttribute::Directory);
         if (!newDirEntry.has_value()) {
             LOG_ERROR("[createDirectory] Failed to create directory entry for '%s'", dirName.c_str());
@@ -1861,12 +1877,29 @@ namespace PalmyraOS::kernel::vfs {
         dirEntry.setClusterChain(dirCluster);
 
         // Step 9: Flush the updated entry back to the parent directory on disk
+        LOG_WARN("[createDirectory] About to flush entry with attribute 0x%02X", (uint8_t) dirEntry.getAttributes());
         bool flushSuccess = flushEntry(dirEntry);
         if (!flushSuccess) {
             LOG_ERROR("[createDirectory] Failed to flush directory entry for '%s'", dirName.c_str());
             freeClusterChain(dirCluster);
             return std::nullopt;
         }
+
+        // CRITICAL VERIFICATION: Re-read the entry from disk to verify it was written correctly
+        KVector<DirectoryEntry> verifyEntries = getDirectoryEntries(parentDirEntry.getFirstCluster());
+        DirectoryEntry* verifyEntry           = nullptr;
+        for (auto& entry: verifyEntries) {
+            if (entry.getNameLong() == dirName) {
+                verifyEntry = &entry;
+                break;
+            }
+        }
+        if (verifyEntry) {
+            uint8_t diskAttr = (uint8_t) verifyEntry->getAttributes();
+            LOG_WARN("[createDirectory] VERIFICATION: Entry on disk has attribute 0x%02X", diskAttr);
+            if (!(diskAttr & 0x10)) { LOG_ERROR("[createDirectory] CRITICAL: Directory entry on disk has wrong attribute 0x%02X (missing Directory bit)", diskAttr); }
+        }
+        else { LOG_ERROR("[createDirectory] CRITICAL: Could not find newly created directory in parent after flush"); }
 
         LOG_WARN("[createDirectory] Successfully created directory '%s' at cluster %u", dirName.c_str(), dirCluster);
         return dirEntry;
@@ -2000,6 +2033,216 @@ namespace PalmyraOS::kernel::vfs {
         }
 
         LOG_WARN("[deleteFile] Successfully deleted file '%s' (%u LFN entries marked deleted)", fileName.c_str(), lfnCount);
+        return true;
+    }
+
+    bool FAT32Partition::deleteDirectory(DirectoryEntry& parentDirEntry, const KString& dirName) {
+        LOG_INFO("[deleteDirectory] Deleting directory '%s' from parent cluster %u", dirName.c_str(), parentDirEntry.getFirstCluster());
+
+        // STEP 1: Read & Parse parent directory
+        KVector<DirectoryEntry> entries = getDirectoryEntries(parentDirEntry.getFirstCluster());
+
+        // STEP 2: Find target entry by name
+        DirectoryEntry* targetEntry     = nullptr;
+        for (auto& entry: entries) {
+            if (entry.getNameLong() == dirName) {
+                targetEntry = &entry;
+                break;
+            }
+        }
+
+        if (!targetEntry) {
+            LOG_ERROR("[deleteDirectory] Directory '%s' not found in parent directory", dirName.c_str());
+            return false;
+        }
+
+        // STEP 3: Validation - must be a directory
+        uint8_t entryAttr = (uint8_t) targetEntry->getAttributes();
+        LOG_WARN("[deleteDirectory] Found entry '%s' with attribute 0x%02X", dirName.c_str(), entryAttr);
+        if (!(entryAttr & (uint8_t) EntryAttribute::Directory)) {
+            LOG_ERROR("[deleteDirectory] '%s' is not a directory (attr=0x%02X, expected Directory bit 0x10)", dirName.c_str(), entryAttr);
+            return false;
+        }
+
+        // STEP 4: Check if directory is empty (only "." and ".." allowed)
+        // CRITICAL SAFETY CHECK: Check raw directory data for "." and ".." entries
+        // getDirectoryEntries() doesn't return these, so we must read the raw data
+
+        uint32_t targetCluster = targetEntry->getFirstCluster();
+        if (targetCluster < 2) {
+            LOG_ERROR("[deleteDirectory] Invalid cluster number %u for directory '%s'", targetCluster, dirName.c_str());
+            return false;
+        }
+
+        // Read the raw directory data
+        KVector<uint8_t> targetDirData = readEntireFile(targetCluster);
+        if (targetDirData.empty()) {
+            LOG_ERROR("[deleteDirectory] Failed to read directory data for '%s'", dirName.c_str());
+            return false;
+        }
+
+        LOG_WARN("[deleteDirectory] ====== DIRECTORY EMPTY CHECK ======");
+        LOG_WARN("[deleteDirectory] Directory '%s' cluster=%u, data_size=%u bytes", dirName.c_str(), targetCluster, targetDirData.size());
+
+        // Check VERY CAREFULLY - log every byte
+        uint8_t byte0  = targetDirData[0];
+        uint8_t byte11 = targetDirData.size() > 11 ? targetDirData[11] : 0xFF;
+        char name0[12];
+        memcpy(name0, targetDirData.data(), 11);
+        name0[11] = '\0';
+        LOG_WARN("[deleteDirectory] Entry[0]: byte0=0x%02X attr=0x%02X name='%s'", byte0, byte11, name0);
+
+        if (targetDirData.size() >= 64) {
+            uint8_t byte32 = targetDirData[32];
+            uint8_t byte43 = targetDirData[43];
+            char name32[12];
+            memcpy(name32, targetDirData.data() + 32, 11);
+            name32[11] = '\0';
+            LOG_WARN("[deleteDirectory] Entry[1]: byte0=0x%02X attr=0x%02X name='%s'", byte32, byte43, name32);
+        }
+
+        if (targetDirData.size() >= 96) {
+            uint8_t byte64 = targetDirData[64];
+            LOG_WARN("[deleteDirectory] Entry[2]: byte0=0x%02X (should be 0x00 for end marker)", byte64);
+        }
+
+        // Now do the actual check - explicitly ONLY accept . and .. with Directory attribute
+        // Accept ONLY if:
+        // - First entry is "." with Directory attribute
+        // - Second entry is ".." with Directory attribute
+        // - Third entry is 0x00 (end marker)
+
+        bool isValidEmpty = false;
+
+        if (targetDirData.size() >= 96) {
+            // We need at least 3 entries: ".", "..", and 0x00 marker
+            uint8_t* e0     = targetDirData.data();
+            uint8_t* e1     = targetDirData.data() + 32;
+            uint8_t* e2     = targetDirData.data() + 64;
+
+            bool e0IsDot    = (e0[0] == '.' && e0[1] == ' ' && (e0[11] == 0x10 || e0[11] == 0x30));
+            bool e1IsDotDot = (e1[0] == '.' && e1[1] == '.' && (e1[11] == 0x10 || e1[11] == 0x30));
+            bool e2IsEnd    = (e2[0] == 0x00);
+
+            LOG_WARN("[deleteDirectory] e0IsDot=%d e1IsDotDot=%d e2IsEnd=%d", e0IsDot, e1IsDotDot, e2IsEnd);
+
+            if (e0IsDot && e1IsDotDot && e2IsEnd) {
+                isValidEmpty = true;
+                LOG_WARN("[deleteDirectory] Directory is VALID EMPTY");
+            }
+            else { LOG_ERROR("[deleteDirectory] Directory '%s' is not empty or malformed", dirName.c_str()); }
+        }
+        else { LOG_ERROR("[deleteDirectory] Directory data too small (%u bytes, need >= 96)", targetDirData.size()); }
+
+        if (!isValidEmpty) {
+            LOG_WARN("[deleteDirectory] ====== END CHECK - NOT EMPTY ======");
+            return false;  // ENOTEMPTY
+        }
+
+        LOG_WARN("[deleteDirectory] ====== END CHECK - SAFE TO DELETE ======");
+
+        // STEP 5: Get target entry offset and first cluster
+        uint32_t targetOffset = targetEntry->getOffset();
+        uint32_t firstCluster = targetEntry->getFirstCluster();
+
+        LOG_DEBUG("[deleteDirectory] Target entry at offset %u, first cluster %u", targetOffset, firstCluster);
+
+        // STEP 6: Free the data cluster chain (if any)
+        if (firstCluster > 2) {
+            LOG_DEBUG("[deleteDirectory] Freeing cluster chain starting at %u", firstCluster);
+            freeClusterChain(firstCluster);
+        }
+
+        // STEP 7: Read parent directory raw data (all bytes, including LFN entries)
+        KVector<uint8_t> dirData = readEntireFile(parentDirEntry.getFirstCluster());
+        if (dirData.empty()) {
+            LOG_ERROR("[deleteDirectory] Failed to read parent directory data");
+            return false;
+        }
+
+        LOG_DEBUG("[deleteDirectory] Parent directory data size: %u bytes", dirData.size());
+
+        // STEP 8: Mark target entry as deleted (0xE5)
+        if (targetOffset >= dirData.size()) {
+            LOG_ERROR("[deleteDirectory] Target offset %u exceeds directory size %u", targetOffset, dirData.size());
+            return false;
+        }
+
+        dirData[targetOffset] = 0xE5;
+        LOG_DEBUG("[deleteDirectory] Marked main entry at offset %u as deleted (0xE5)", targetOffset);
+
+        // STEP 9: Find and mark LFN entries as deleted
+        // LFN entries come BEFORE the main entry in directory, each is 32 bytes
+        // Go backwards from targetOffset checking if entries are LFN (attribute byte at offset 11 == 0x0F)
+
+        uint32_t lfnCount = 0;
+
+        if (targetOffset >= 32) {
+            for (int32_t offset = static_cast<int32_t>(targetOffset) - 32; offset >= 0; offset -= 32) {
+                uint8_t* entry    = dirData.data() + offset;
+                uint8_t firstByte = entry[0];
+                uint8_t attrByte  = entry[11];
+
+                // Check if this is an LFN entry: attribute byte (offset 11) must be 0x0F
+                // Per FAT32 spec line 1351, LFN entries have ATTR_LONG_NAME = 0x0F
+                bool isLFN        = (attrByte & 0x3F) == 0x0F;
+
+                if (!isLFN) {
+                    // Not an LFN, stop searching backwards
+                    LOG_DEBUG("[deleteDirectory] Reached non-LFN entry at offset %u, stopping LFN search", offset);
+                    break;
+                }
+
+                // This is an LFN entry, mark it as deleted
+                entry[0] = 0xE5;
+                lfnCount++;
+                LOG_DEBUG("[deleteDirectory] Marked LFN entry at offset %u as deleted (was seq=0x%02X)", offset, firstByte);
+
+                // Check if this was the LAST (first written) LFN entry - marked with 0x40 bit in sequence number
+                // If so, we found them all, so stop
+                if ((firstByte & 0x40) != 0) {
+                    LOG_DEBUG("[deleteDirectory] Found last LFN entry at offset %u (has 0x40 bit set)", offset);
+                    break;
+                }
+            }
+        }
+
+        if (lfnCount > 0) { LOG_DEBUG("[deleteDirectory] Deleted %u LFN entries before main entry", lfnCount); }
+
+        // STEP 10: Write modified directory data back to disk
+        KVector<uint32_t> clusterChain = readClusterChain(parentDirEntry.getFirstCluster());
+        if (clusterChain.empty()) {
+            LOG_ERROR("[deleteDirectory] Parent directory has no clusters");
+            return false;
+        }
+
+        size_t clusterSizeBytes = clusterSize_ * sectorSize_;
+
+        // Write back all clusters (we modified the directory data)
+        for (size_t i = 0; i < clusterChain.size(); ++i) {
+            size_t dataOffset = i * clusterSizeBytes;
+
+            // Don't read past end of dirData
+            if (dataOffset >= dirData.size()) break;
+
+            size_t dataSize = std::min(clusterSizeBytes, dirData.size() - dataOffset);
+
+            KVector<uint8_t> clusterData(dirData.begin() + static_cast<KVector<uint8_t>::difference_type>(dataOffset),
+                                         dirData.begin() + static_cast<KVector<uint8_t>::difference_type>(dataOffset + dataSize));
+
+            // Pad with zeros if this is not a full cluster
+            if (clusterData.size() < clusterSizeBytes) { clusterData.resize(clusterSizeBytes, 0); }
+
+            bool writeSuccess = writeCluster(clusterChain[i], clusterData);
+            if (!writeSuccess) {
+                LOG_ERROR("[deleteDirectory] Failed to write directory cluster %u", clusterChain[i]);
+                return false;
+            }
+
+            LOG_DEBUG("[deleteDirectory] Wrote directory cluster %u", clusterChain[i]);
+        }
+
+        LOG_WARN("[deleteDirectory] Successfully deleted directory '%s' (%u LFN entries marked deleted)", dirName.c_str(), lfnCount);
         return true;
     }
 

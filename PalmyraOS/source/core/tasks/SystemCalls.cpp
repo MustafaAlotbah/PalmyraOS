@@ -50,6 +50,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize() {
     systemCallHandlers_[POSIX_INT_IOCTL]              = &SystemCallsManager::handleIoctl;
     systemCallHandlers_[POSIX_INT_LSEEK]              = &SystemCallsManager::handleLongSeek;
     systemCallHandlers_[POSIX_INT_MKDIR]              = &SystemCallsManager::handleMkdir;
+    systemCallHandlers_[POSIX_INT_RMDIR]              = &SystemCallsManager::handleRmdir;
     systemCallHandlers_[POSIX_INT_UNLINK]             = &SystemCallsManager::handleUnlink;
 
     // Interprocess
@@ -283,6 +284,67 @@ void PalmyraOS::kernel::SystemCallsManager::handleMkdir(PalmyraOS::kernel::inter
 
     if (!newDir) {
         regs->eax = -EEXIST;  // Directory already exists or creation failed
+        return;
+    }
+
+    regs->eax = 0;  // Success
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleRmdir(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int rmdir(const char *pathname)
+
+    // Extract arguments from registers
+    char* pathname = (char*) regs->ebx;
+
+    // Check if pathname is a valid pointer
+    if (!isValidAddress(pathname)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    KString path(pathname);
+
+    // POSIX semantics: rmdir() must fail with ENOTDIR if target is not a directory.
+    // First, resolve the full path to the inode. If not found -> ENOENT.
+    {
+        auto target = vfs::VirtualFileSystem::getInodeByPath(path);
+        if (!target) {
+            LOG_ERROR("[SYSCALL] RMDIR - Target path '%s' not found", path.c_str());
+            regs->eax = -ENOENT;
+            return;
+        }
+
+        if (target->getType() != vfs::InodeBase::Type::Directory) {
+            regs->eax = -ENOTDIR;
+            return;
+        }
+    }
+
+    auto components = path.split('/', true);
+    if (components.empty()) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    auto* parent = vfs::VirtualFileSystem::getParentDirectory(vfs::VirtualFileSystem::getRootInode(), components);
+    if (!parent || parent->getType() != vfs::InodeBase::Type::Directory) {
+        regs->eax = -ENOENT;
+        return;
+    }
+
+    KString dirName = components.back();
+    // Enable interrupts to allow the system to handle other tasks during the operation
+    interrupts::InterruptController::enableInterrupts();
+    bool success = parent->deleteDirectory(dirName);
+    interrupts::InterruptController::disableInterrupts();
+
+    if (!success) {
+        // deleteDirectory() returns false for several reasons:
+        // - Directory not found (ENOENT) - already checked above
+        // - Not empty (ENOTEMPTY)
+        // - Not a directory (ENOTDIR) - already checked above
+        // Assuming the most common failure is non-empty directory
+        regs->eax = -ENOTEMPTY;
         return;
     }
 

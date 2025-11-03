@@ -36,6 +36,8 @@ namespace PalmyraOS::kernel::vfs {
 
         bool deleteFile(const KString& name) override;
 
+        bool deleteDirectory(const KString& name) override;
+
     private:
         FAT32Partition& parentPartition_;
         uint32_t directoryStartCluster_;

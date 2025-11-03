@@ -42,9 +42,10 @@
 #define POSIX_INT_UNLINK 10
 #define POSIX_INT_LSEEK 19
 #define POSIX_INT_GET_PID 20
+#define POSIX_INT_MKDIR 39
+#define POSIX_INT_RMDIR 40
 #define POSIX_INT_BRK 45
 #define POSIX_INT_IOCTL 54
-#define POSIX_INT_MKDIR 39
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
 #define POSIX_INT_GETUID 199
@@ -316,3 +317,11 @@ int mkdir(const char* pathname, unsigned short mode);
  * @return 0 on success, or -1 if an error occurred.
  */
 int unlink(const char* pathname);
+
+/**
+ * @brief Removes an empty directory.
+ *
+ * @param pathname The pathname of the directory to remove.
+ * @return 0 on success, or -1 if an error occurred.
+ */
+int rmdir(const char* pathname);

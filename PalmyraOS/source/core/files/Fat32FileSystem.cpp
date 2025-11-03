@@ -138,6 +138,21 @@ bool PalmyraOS::kernel::vfs::FAT32Directory::deleteFile(const KString& name) {
     return true;
 }
 
+bool PalmyraOS::kernel::vfs::FAT32Directory::deleteDirectory(const KString& name) {
+    fat_dentry dirDentry{};
+    memset(&dirDentry, 0, sizeof(dirDentry));
+    dirDentry.attribute        = static_cast<uint8_t>(EntryAttribute::Directory);
+    dirDentry.firstClusterLow  = static_cast<uint16_t>(directoryStartCluster_ & 0xFFFF);
+    dirDentry.firstClusterHigh = static_cast<uint16_t>((directoryStartCluster_ >> 16) & 0xFFFF);
+    DirectoryEntry parentDirEntry(0, directoryStartCluster_, KString("."), dirDentry);
+
+    bool success = parentPartition_.deleteDirectory(parentDirEntry, name);
+    if (!success) return false;
+
+    InodeBase::removeDentry(name);
+    return true;
+}
+
 /// endregion
 
 

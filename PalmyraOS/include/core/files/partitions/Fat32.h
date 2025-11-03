@@ -170,6 +170,23 @@ namespace PalmyraOS::kernel::vfs {
          */
         bool deleteFile(DirectoryEntry& parentDirEntry, const KString& fileName);
 
+        /**
+         * @brief Delete an empty directory from the FAT32 partition
+         *
+         * Deletes a directory by:
+         * 1. Finding the directory's directory entry
+         * 2. Verifying it is a directory
+         * 3. Ensuring it is empty (contains only "." and "..")
+         * 4. Freeing the cluster chain associated with the directory
+         * 5. Marking the directory entry and LFN entries as deleted (0xE5)
+         * 6. Writing the directory back to disk
+         *
+         * @param parentDirEntry The parent directory entry
+         * @param dirName The name of the directory to delete
+         * @return true on success, false on failure
+         */
+        bool deleteDirectory(DirectoryEntry& parentDirEntry, const KString& dirName);
+
     private:
         // Helper methods for parsing the BIOS Parameter Block (BPB) and initializing fields
         [[nodiscard]] bool parseBIOSParameterBlock();

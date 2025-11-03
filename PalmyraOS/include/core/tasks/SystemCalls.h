@@ -33,6 +33,7 @@ namespace PalmyraOS::kernel {
         static void handleLongSeek(interrupts::CPURegisters* regs);
         static void handleIoctl(interrupts::CPURegisters* regs);
         static void handleMkdir(interrupts::CPURegisters* regs);
+        static void handleRmdir(interrupts::CPURegisters* regs);
         static void handleUnlink(interrupts::CPURegisters* regs);
 
         /* From Linux */
