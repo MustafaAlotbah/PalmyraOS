@@ -2110,23 +2110,41 @@ namespace PalmyraOS::kernel::vfs {
         // Accept ONLY if:
         // - First entry is "." with Directory attribute
         // - Second entry is ".." with Directory attribute
-        // - Third entry is 0x00 (end marker)
+        // - All remaining entries are either 0x00 (end marker) or 0xE5 (deleted/free entries)
 
         bool isValidEmpty = false;
 
         if (targetDirData.size() >= 96) {
-            // We need at least 3 entries: ".", "..", and 0x00 marker
-            uint8_t* e0     = targetDirData.data();
-            uint8_t* e1     = targetDirData.data() + 32;
-            uint8_t* e2     = targetDirData.data() + 64;
+            // We need at least 3 entries: ".", "..", and empty space
+            uint8_t* e0          = targetDirData.data();
+            uint8_t* e1          = targetDirData.data() + 32;
 
-            bool e0IsDot    = (e0[0] == '.' && e0[1] == ' ' && (e0[11] == 0x10 || e0[11] == 0x30));
-            bool e1IsDotDot = (e1[0] == '.' && e1[1] == '.' && (e1[11] == 0x10 || e1[11] == 0x30));
-            bool e2IsEnd    = (e2[0] == 0x00);
+            bool e0IsDot         = (e0[0] == '.' && e0[1] == ' ' && (e0[11] == 0x10 || e0[11] == 0x30));
+            bool e1IsDotDot      = (e1[0] == '.' && e1[1] == '.' && (e1[11] == 0x10 || e1[11] == 0x30));
 
-            LOG_WARN("[deleteDirectory] e0IsDot=%d e1IsDotDot=%d e2IsEnd=%d", e0IsDot, e1IsDotDot, e2IsEnd);
+            // Check that all entries after "." and ".." are either free (0xE5) or end markers (0x00)
+            bool allEntriesEmpty = true;
+            for (size_t offset = 64; offset < targetDirData.size(); offset += 32) {
+                uint8_t firstByte = targetDirData[offset];
+                if (firstByte == 0x00) {
+                    // End of directory marker - all subsequent entries should also be 0x00
+                    break;
+                }
+                else if (firstByte == 0xE5) {
+                    // Deleted/free entry - acceptable for empty directory
+                    continue;
+                }
+                else {
+                    // Active entry found - directory is not empty
+                    allEntriesEmpty = false;
+                    LOG_DEBUG("[deleteDirectory] Found active entry at offset %zu: firstByte=0x%02X", offset, firstByte);
+                    break;
+                }
+            }
 
-            if (e0IsDot && e1IsDotDot && e2IsEnd) {
+            LOG_WARN("[deleteDirectory] e0IsDot=%d e1IsDotDot=%d allEntriesEmpty=%d", e0IsDot, e1IsDotDot, allEntriesEmpty);
+
+            if (e0IsDot && e1IsDotDot && allEntriesEmpty) {
                 isValidEmpty = true;
                 LOG_WARN("[deleteDirectory] Directory is VALID EMPTY");
             }
