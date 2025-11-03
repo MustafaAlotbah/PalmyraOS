@@ -11,7 +11,7 @@ namespace PalmyraOS::kernel {
     // Maximum number of processes supported
     constexpr uint32_t MAX_PROCESSES             = 512;
     constexpr uint32_t PROCESS_KERNEL_STACK_SIZE = 10;
-    constexpr uint32_t PROCESS_USER_STACK_SIZE   = 10;
+    constexpr uint32_t PROCESS_USER_STACK_SIZE   = 30;  // Increased from 10 to handle interrupts during heavy I/O
 
     struct ProcessDebug {
         uint32_t entryEip       = 0;

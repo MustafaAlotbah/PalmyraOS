@@ -135,6 +135,7 @@ namespace PalmyraOS::kernel::vfs {
         [[nodiscard]] KVector<uint8_t> read(const DirectoryEntry& entry, uint32_t offset, uint32_t countBytes) const;
         [[nodiscard]] bool append(DirectoryEntry& entry, const KVector<uint8_t>& bytes);
         [[nodiscard]] bool write(DirectoryEntry& entry, const KVector<uint8_t>& bytes);
+        [[nodiscard]] bool writeAtOffset(DirectoryEntry& entry, const KVector<uint8_t>& bytes, uint32_t offset);
 
         // Directory methods TODO
         std::optional<DirectoryEntry> createFile(DirectoryEntry& directoryEntry, const KString& fileName, EntryAttribute attributes = EntryAttribute::Archive);

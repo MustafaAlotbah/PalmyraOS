@@ -902,6 +902,124 @@ namespace PalmyraOS::kernel::vfs {
         return true;
     }
 
+    bool FAT32Partition::writeAtOffset(DirectoryEntry& entry, const KVector<uint8_t>& bytes, uint32_t offset) {
+        // Handle empty write
+        if (bytes.empty()) return true;
+
+        uint32_t currentFileSize = entry.getFileSize();
+        uint32_t writeEnd        = offset + bytes.size();
+
+        // If writing beyond EOF, we need to zero-fill the gap first
+        // FAT32 doesn't support sparse files, so we must write zeros
+        if (offset > currentFileSize) {
+            LOG_DEBUG("[writeAtOffset] Writing beyond EOF, zero-filling gap from %u to %u", currentFileSize, offset);
+            KVector<uint8_t> zeros(offset - currentFileSize, 0);
+            if (!append(entry, zeros)) {
+                LOG_ERROR("[writeAtOffset] Failed to zero-fill gap before offset write");
+                return false;
+            }
+            currentFileSize = entry.getFileSize();  // Update after append
+        }
+
+        // Calculate which clusters we need to access
+        uint32_t startCluster   = offset / clusterSizeBytes_;
+        uint32_t endCluster     = (writeEnd - 1) / clusterSizeBytes_;
+        uint32_t clustersNeeded = endCluster + 1;
+
+        // Get existing cluster chain
+        KVector<uint32_t> clusterChain;
+        if (entry.getFirstCluster() > 0) { clusterChain = readClusterChain(entry.getFirstCluster()); }
+
+        // Allocate additional clusters if needed
+        while (clusterChain.size() < clustersNeeded) {
+            auto newClusterOpt = allocateCluster();
+            if (!newClusterOpt) {
+                LOG_ERROR("[writeAtOffset] Failed to allocate cluster during write");
+                return false;
+            }
+
+            uint32_t newCluster = newClusterOpt.value();
+
+            if (clusterChain.empty()) {
+                // First cluster - update directory entry
+                entry.setClusterChain(newCluster);
+                if (!flushEntry(entry)) {
+                    LOG_ERROR("[writeAtOffset] Failed to flush entry after setting first cluster");
+                    freeClusterChain(newCluster);  // Clean up
+                    return false;
+                }
+            }
+            else {
+                // Link to previous cluster in chain
+                if (!setNextCluster(clusterChain.back(), newCluster)) {
+                    LOG_ERROR("[writeAtOffset] Failed to link cluster %u to %u", clusterChain.back(), newCluster);
+                    freeClusterChain(newCluster);  // Clean up
+                    return false;
+                }
+            }
+
+            clusterChain.push_back(newCluster);
+        }
+
+        // Now write data cluster by cluster with read-modify-write for partial updates
+        uint32_t bytesWritten = 0;
+        uint32_t bytesToWrite = bytes.size();
+
+        for (uint32_t clusterIdx = startCluster; clusterIdx <= endCluster && bytesWritten < bytesToWrite; ++clusterIdx) {
+            uint32_t cluster            = clusterChain[clusterIdx];
+
+            // Calculate offset within this cluster
+            uint32_t clusterOffset      = (clusterIdx == startCluster) ? (offset % clusterSizeBytes_) : 0;
+
+            // Calculate how many bytes to write in this cluster
+            uint32_t remainingInCluster = clusterSizeBytes_ - clusterOffset;
+            uint32_t remainingToWrite   = bytesToWrite - bytesWritten;
+            uint32_t chunkSize          = std::min(remainingInCluster, remainingToWrite);
+
+            // Determine if we need to preserve existing data (read-modify-write)
+            bool needsReadModifyWrite   = (clusterOffset > 0) || (chunkSize < clusterSizeBytes_);
+
+            KVector<uint8_t> clusterData;
+            if (needsReadModifyWrite) {
+                // Read existing cluster data to preserve unchanged bytes
+                clusterData = readFile(cluster, clusterSizeBytes_);
+                if (clusterData.size() < clusterSizeBytes_) {
+                    // Pad with zeros if cluster wasn't fully used before
+                    clusterData.resize(clusterSizeBytes_, 0);
+                }
+            }
+            else {
+                // Writing entire cluster, no need to read - initialize with zeros
+                clusterData.resize(clusterSizeBytes_, 0);
+            }
+
+            // Copy new data into cluster buffer at the correct offset
+            memcpy(clusterData.data() + clusterOffset, bytes.data() + bytesWritten, chunkSize);
+
+            // Write the modified cluster back to disk
+            if (!writeCluster(cluster, clusterData)) {
+                LOG_ERROR("[writeAtOffset] Failed to write cluster %u", cluster);
+                return false;
+            }
+
+            LOG_DEBUG("[writeAtOffset] Wrote %u bytes to cluster %u (offset %u)", chunkSize, cluster, clusterOffset);
+            bytesWritten += chunkSize;
+        }
+
+        // Update file size if we extended the file
+        if (writeEnd > currentFileSize) {
+            entry.setFileSize(writeEnd);
+            if (!flushEntry(entry)) {
+                LOG_ERROR("[writeAtOffset] Failed to flush entry after updating file size");
+                return false;
+            }
+            LOG_DEBUG("[writeAtOffset] Extended file size from %u to %u", currentFileSize, writeEnd);
+        }
+
+        LOG_DEBUG("[writeAtOffset] Successfully wrote %u bytes at offset %u", bytesWritten, offset);
+        return true;
+    }
+
     FAT32Partition::Type FAT32Partition::getType() { return type_; }
 
     bool FAT32Partition::isValidSFNCharacter(char c) {

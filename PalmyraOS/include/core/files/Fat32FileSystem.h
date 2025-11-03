@@ -13,6 +13,8 @@ namespace PalmyraOS::kernel::vfs {
 
         size_t read(char* buffer, size_t size, size_t offset) override;
 
+        size_t write(const char* buffer, size_t size, size_t offset) override;
+
         int truncate(size_t newSize) override;
 
     private:

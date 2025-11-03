@@ -169,6 +169,27 @@ size_t PalmyraOS::kernel::vfs::FAT32Archive::read(char* buffer, size_t size, siz
     return bytesToRead;
 }
 
+size_t PalmyraOS::kernel::vfs::FAT32Archive::write(const char* buffer, size_t size, size_t offset) {
+    // Convert buffer to KVector for FAT32Partition compatibility
+    KVector<uint8_t> data(size);
+    memcpy(data.data(), buffer, size);
+
+    // Delegate to partition-level write with offset
+    bool success = parentPartition_.writeAtOffset(directoryEntry_, data, offset);
+
+    if (!success) {
+        return 0;  // Write failed, return 0 bytes written
+    }
+
+    // Update cached size if we extended the file
+    size_t newSize = offset + size;
+    if (newSize > getSize()) {
+        InodeBase::size_ = newSize;
+    }
+
+    return size;  // Return number of bytes written
+}
+
 int PalmyraOS::kernel::vfs::FAT32Archive::truncate(size_t newSize) {
     // For now support truncating to zero only
     if (newSize != 0) return -1;

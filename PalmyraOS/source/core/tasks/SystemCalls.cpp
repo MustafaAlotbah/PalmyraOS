@@ -689,21 +689,18 @@ void PalmyraOS::kernel::SystemCallsManager::handleLongSeek(PalmyraOS::kernel::in
     int32_t newOffset;
     switch (whence) {
         case SEEK_SET: newOffset = offset; break;
-        case SEEK_CUR:
-            newOffset = file->getOffset() + offset;
-            break;
-            //		case SEEK_END: // TODO
-            //			newOffset = file->getInode()->getSize() + offset;
-            //			break;
+        case SEEK_CUR: newOffset = file->getOffset() + offset; break;
+        case SEEK_END: newOffset = file->getInode()->getSize() + offset; break;
         default:
             // Invalid whence value, return an error
             regs->eax = -EINVAL;
             return;
     }
 
-    // Check if the new offset is within valid bounds // TODO inode->getSize()
-    if (newOffset < 0 /*|| static_cast<uint32_t>(newOffset) > file->getInode()->getSize()*/) {
-        // If the new offset is out of bounds, return an error
+    // Check if the new offset is within valid bounds
+    // Note: POSIX allows seeking beyond EOF - writing will extend the file
+    if (newOffset < 0) {
+        // If the new offset is negative, return an error
         regs->eax = -EINVAL;
         return;
     }
