@@ -9,6 +9,7 @@
 #include "palmyraOS/time.h"                         // For sleeping
 #include "palmyraOS/unistd.h"                       // Include PalmyraOS system calls
 
+#include "libs/ctype.h"                // isdigit for ANSI parsing
 #include "libs/string.h"               // strlen
 #include "palmyraOS/circularBuffer.h"  // For efficient FIFO buffer implementation
 #include "palmyraOS/palmyraSDK.h"      // Window, Window Frame
@@ -28,11 +29,20 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
     constexpr size_t kPathMax   = 512;  // single place to tune path buffer size
     static char g_cwd[kPathMax] = "/";
 
-    // Helper: Render colored prompt "PalmyraOS:<cwd>$ "
+    // Helper: Render colored prompt "PalmyraOS:<cwd>$ " with ANSI color codes
     void appendColoredPrompt(StdoutType& output) {
+        // \033 is the escape character (octal for 27)
+        // \033[33m = Yellow (for PalmyraOS)
+        // \033[36m = Cyan (for current path)
+        // \033[0m = Reset to default
+
+        output.append("\033[33m", 5);  // Yellow
         output.append("PalmyraOS", 9);
+        output.append("\033[0m", 4);  // Reset
         output.append(":", 1);
+        output.append("\033[36m", 5);  // Cyan
         output.append(g_cwd, strlen(g_cwd));
+        output.append("\033[0m", 4);  // Reset
         output.append("$ ", 2);
     }
 
@@ -107,6 +117,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
     // Function declarations for command parsing and execution
     void parseCommand(UserHeapManager& heap, CircularBuffer<char>& input, types::UVector<types::UString<char>>& tokens);
     void executeCommand(UserHeapManager& heap, StdinType& input, StdoutType& output);
+    void renderStdoutWithANSI(PalmyraOS::kernel::TextRenderer& renderer, const char* buffer);
 
     int main(uint32_t argc, char** argv) {
         // Initialize dynamic memory allocator for the application
@@ -202,8 +213,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             {
                 SDK::Layout layout(windowGui, &scrollY_content, true);
 
-                // Render the prompt with colors
-                windowGui.text() << PalmyraOS::Color::Gray100 << stdoutBuffer.get();
+                // Render the prompt with ANSI color support
+                renderStdoutWithANSI(windowGui.text(), stdoutBuffer.get());
 
                 // Display the current input and a blinking cursor for feedback
                 windowGui.text() << PalmyraOS::Color::LightGreen << stdinBuffer.get() << PalmyraOS::Color::Gray100;
@@ -810,6 +821,83 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             output.append(tokens[0].c_str(), tokens[0].size());
             output.append("'\n", 2);
             return;
+        }
+    }
+
+    void renderStdoutWithANSI(PalmyraOS::kernel::TextRenderer& renderer, const char* buffer) {
+        /**
+         * Renders stdout buffer with ANSI color sequence support.
+         * Supports basic ANSI color codes: \u001b[XXm where XX is:
+         *   0 = Reset to default (Gray100)
+         *   30 = Black,    31 = Red,      32 = Green,   33 = Yellow
+         *   34 = Blue,     35 = Magenta,  36 = Cyan,    37 = White
+         */
+        if (!buffer || *buffer == '\0') return;
+
+        PalmyraOS::Color currentColor = PalmyraOS::Color::Gray100;  // Default terminal color
+        char chunk[256];
+        size_t chunk_idx = 0;
+
+        for (size_t i = 0; buffer[i] != '\0'; ++i) {
+            // Detect ANSI escape sequence: ESC [ <code> m
+            if ((unsigned char) buffer[i] == 27 && buffer[i + 1] == '[') {
+                // Flush current accumulated text with current color
+                if (chunk_idx > 0) {
+                    chunk[chunk_idx] = '\0';
+                    renderer << currentColor << chunk;
+                    chunk_idx = 0;
+                }
+
+                // Skip ESC [
+                i += 2;
+
+                // Extract numeric code until we hit 'm'
+                char code_str[4] = {0};
+                size_t code_idx  = 0;
+
+                while (buffer[i] != '\0' && buffer[i] != 'm' && code_idx < 3) {
+                    if (isdigit(buffer[i])) { code_str[code_idx++] = buffer[i]; }
+                    i++;
+                }
+
+                // Process the color code if we found the 'm' terminator
+                if (buffer[i] == 'm') {
+                    int code = 0;
+                    if (code_idx > 0) { code = strtol(code_str, nullptr, 10); }
+
+                    // Map ANSI color code to PalmyraOS::Color
+                    switch (code) {
+                        case 0: currentColor = PalmyraOS::Color::Gray100; break;  // Reset
+                        case 30: currentColor = PalmyraOS::Color::Black; break;
+                        case 31: currentColor = PalmyraOS::Color::Red; break;
+                        case 32: currentColor = PalmyraOS::Color::Green; break;
+                        case 33: currentColor = PalmyraOS::Color::Yellow; break;
+                        case 34: currentColor = PalmyraOS::Color::Blue; break;
+                        case 35: currentColor = PalmyraOS::Color::Magenta; break;
+                        case 36: currentColor = PalmyraOS::Color::Cyan; break;
+                        case 37: currentColor = PalmyraOS::Color::White; break;
+                        default: break;  // Unknown code, keep current color
+                    }
+                }
+            }
+            else {
+                // Regular character - accumulate in chunk
+                if (chunk_idx < 255) { chunk[chunk_idx++] = buffer[i]; }
+                else {
+                    // Chunk buffer is full, flush it and start new chunk
+                    chunk[chunk_idx] = '\0';
+                    renderer << currentColor << chunk;
+                    chunk_idx = 0;
+                    chunk[0]  = buffer[i];
+                    chunk_idx = 1;
+                }
+            }
+        }
+
+        // Flush any remaining accumulated text
+        if (chunk_idx > 0) {
+            chunk[chunk_idx] = '\0';
+            renderer << currentColor << chunk;
         }
     }
 
