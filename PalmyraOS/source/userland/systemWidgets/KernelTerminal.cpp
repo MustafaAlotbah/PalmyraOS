@@ -209,8 +209,41 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                     stdinBuffer.backspace();  // Handle backspace for corrections
                                               // Append any other key to our input buffer
                 else {
-                    // TODO improve keyboard events
-                    if (event.isShiftDown && event.key == '/') { stdinBuffer.append('_'); }
+                    // Handle Shift key combinations for special characters
+                    if (event.isShiftDown) {
+                        switch (event.key) {
+                            case '1': stdinBuffer.append('!'); break;
+                            case '2': stdinBuffer.append('"'); break;  // This is what you wanted!
+                            case '3': stdinBuffer.append('#'); break;
+                            case '4': stdinBuffer.append('$'); break;
+                            case '5': stdinBuffer.append('%'); break;
+                            case '6': stdinBuffer.append('^'); break;
+                            case '7': stdinBuffer.append('&'); break;
+                            case '8': stdinBuffer.append('*'); break;
+                            case '9': stdinBuffer.append('('); break;
+                            case '0': stdinBuffer.append(')'); break;
+                            case '-': stdinBuffer.append('_'); break;
+                            case '=': stdinBuffer.append('+'); break;
+                            case '[': stdinBuffer.append('{'); break;
+                            case ']': stdinBuffer.append('}'); break;
+                            case '\\': stdinBuffer.append('|'); break;
+                            case ';': stdinBuffer.append(':'); break;
+                            case '\'': stdinBuffer.append('"'); break;  // Alternative quote
+                            case ',': stdinBuffer.append('<'); break;
+                            case '.': stdinBuffer.append('>'); break;
+                            case '/': stdinBuffer.append('_'); break;
+                            case '`': stdinBuffer.append('~'); break;
+                            // Handle letter cases (A-Z)
+                            default:
+                                if (event.key >= 'a' && event.key <= 'z') {
+                                    stdinBuffer.append(event.key - 32);  // Convert to uppercase
+                                }
+                                else {
+                                    stdinBuffer.append(event.key);  // Fallback
+                                }
+                                break;
+                        }
+                    }
                     else { stdinBuffer.append(event.key); }
                 }
 
@@ -273,20 +306,39 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
         // Fetch the command string from input buffer
         char* command = (char*) input.get();
 
-        // Begin tokenizing the command by spaces and newlines
-        char* token   = strtok(command, " \n");
+        // Smart tokenizer that handles quoted strings with spaces
+        size_t len    = strlen(command);
+        size_t i      = 0;
 
-        // As long as there are tokens...
-        while (token != nullptr) {
-            // Create a dynamic string for each token
-            auto _token = types::UString<char>(heap);
+        while (i < len) {
+            // Skip whitespace and newlines
+            while (i < len && (command[i] == ' ' || command[i] == '\t' || command[i] == '\n')) { i++; }
 
-            // Assign the token to our dynamic string and push it
-            _token      = token;
-            tokens.push_back(_token);
+            if (i >= len) break;  // End of string
 
-            // Continue to the next token
-            token = strtok(nullptr, " \n");
+            // Start building a token
+            auto token = types::UString<char>(heap);
+
+            // Check if this token starts with a quote
+            if (command[i] == '"') {
+                i++;  // Skip opening quote
+                // Read until closing quote or end of string
+                while (i < len && command[i] != '"') {
+                    token += command[i];
+                    i++;
+                }
+                if (i < len) i++;  // Skip closing quote
+            }
+            else {
+                // Regular token - read until space or end
+                while (i < len && command[i] != ' ' && command[i] != '\t' && command[i] != '\n') {
+                    token += command[i];
+                    i++;
+                }
+            }
+
+            // Add the token if it's not empty
+            if (token.size() > 0) { tokens.push_back(token); }
         }
     }
 
@@ -441,11 +493,20 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                     DirectoryEntry = (struct linux_dirent*) (buffer + currentByteIndex);
                     DentryType     = *(buffer + currentByteIndex + DirectoryEntry->d_reclen - 1);
 
-                    // Append directory names with a slash to indicate they are directories
-                    output.append(DirectoryEntry->d_name, strlen(DirectoryEntry->d_name));
-
-                    if (DentryType == DT_DIR) output.append("/  ", 4);
-                    else output.append("  ", 3);
+                    // Color directories in cyan, files in default color
+                    if (DentryType == DT_DIR) {
+                        // Use cyan color for directories (ANSI code 36)
+                        output.append("\033[36m", 5);  // Cyan
+                        output.append(DirectoryEntry->d_name, strlen(DirectoryEntry->d_name));
+                        output.append("/", 1);
+                        output.append("\033[0m", 4);  // Reset to default
+                        output.append("  ", 3);
+                    }
+                    else {
+                        // Files use default color
+                        output.append(DirectoryEntry->d_name, strlen(DirectoryEntry->d_name));
+                        output.append("  ", 3);
+                    }
 
                     // Move to the next entry
                     currentByteIndex += DirectoryEntry->d_reclen;
