@@ -66,7 +66,13 @@ PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode 
 
     debug_.entryEip = reinterpret_cast<uint32_t>(entryPoint);
 
-    // 5. Initialize Virtual File System Hooks
+    // Record the time when this process was started (for /proc/pid/stat)
+    startTime_      = SystemClock::getTicks();
+
+    // 5. Capture command-line arguments (safe copy for later access via /proc/{pid}/cmdline)
+    captureCommandlineArguments(argc, argv);
+
+    // 6. Initialize Virtual File System Hooks
     initializeProcessInVFS();
 
 
@@ -74,9 +80,9 @@ PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode 
 }
 
 void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, bool isInternal) {
-
     // 1. Create and map the paging directory to itself based on the process mode.
-    LOG_DEBUG("Creating Paging Directory.");
+    LOG_DEBUG("Creating Paging Directory. Mode: %s, Is Internal: %d", mode == Process::Mode::Kernel ? "Kernel" : "User", isInternal);
+
     if (mode == Process::Mode::Kernel) {
         // For kernel mode, use the kernel's paging directory.
         pagingDirectory_ = kernel::kernelPagingDirectory_ptr;
@@ -88,15 +94,12 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
         new (pagingDirectory_) PagingDirectory();
 
         registerPages(pagingDirectory_, PagingDirectoryFrames);
-        pagingDirectory_->mapPages(pagingDirectory_,
-                                   pagingDirectory_,
-                                   PagingDirectoryFrames,
-                                   PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor);
+        pagingDirectory_->mapPages(pagingDirectory_, pagingDirectory_, PagingDirectoryFrames, PageFlags::Present | PageFlags::ReadWrite | PageFlags::UserSupervisor);
     }
     // Page directory is initialized
 
     // 2. Map the kernel stack for both kernel and user mode processes.
-    LOG_DEBUG("Mapping Kernel Stack");
+    LOG_DEBUG("Mapping Kernel Stack. Size: %d pages", PROCESS_KERNEL_STACK_SIZE);
     kernelStack_ = kernelPagingDirectory_ptr->allocatePages(PROCESS_KERNEL_STACK_SIZE);
     registerPages(kernelStack_, PROCESS_KERNEL_STACK_SIZE);
     pagingDirectory_->mapPages(kernelStack_,
@@ -109,7 +112,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
     // 3. If the process is in user mode, set up the user stack.
     if (mode == Process::Mode::User) {
         // Allocate and map the user stack.
-        LOG_DEBUG("Mapping User Stack");
+        LOG_DEBUG("Mapping User Stack. Size: %d pages", PROCESS_USER_STACK_SIZE);
         userStack_ = allocatePages(PROCESS_USER_STACK_SIZE);
         LOG_INFO("User Stack at 0x%X of size %d pages", userStack_, PROCESS_USER_STACK_SIZE);
 
@@ -118,7 +121,7 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
         if (isInternal) kernelSpaceFlags = kernelSpaceFlags | PageFlags::UserSupervisor;
 
         // The kernel is still mapped, but only accessed in user mode for internal applications.
-        LOG_DEBUG("Mapping Kernel Space");
+        LOG_DEBUG("Mapping Kernel Space. Size: %d pages", kernel::kernelLastPage);
         pagingDirectory_->mapPages(nullptr, nullptr, kernel::kernelLastPage, kernelSpaceFlags);
     }
 }
@@ -286,10 +289,7 @@ bool PalmyraOS::kernel::Process::checkStackOverflow() const {
      * The kernel stack pointer (esp) should never be below the base of the kernel stack (kernelStack_).
      */
     if (stack_.esp < (reinterpret_cast<uint32_t>(kernelStack_))) {
-        kernel::kernelPanic("Kernel Stack Overflow detected for PID: %d.\nESP: 0x%x is below Kernel Stack Base: 0x%x",
-                            pid_,
-                            stack_.esp,
-                            reinterpret_cast<uint32_t>(kernelStack_));
+        kernel::kernelPanic("Kernel Stack Overflow detected for PID: %d.\nESP: 0x%x is below Kernel Stack Base: 0x%x", pid_, stack_.esp, reinterpret_cast<uint32_t>(kernelStack_));
     }
 
     /*
@@ -393,12 +393,14 @@ void PalmyraOS::kernel::Process::initializeProcessInVFS() {
                                           sizeof(output),
                                           ""
                                           "Pid: %d\n"
+                                          "Name: %s\n"
                                           "State: %s\n"
                                           "Up Time: %s\n"
                                           "Pages: %d\n"
                                           "Windows: %d\n"
                                           "exitCode: %d\n",
                                           pid_,
+                                          commandName_.c_str(),
                                           stateToString(),
                                           uptime,
                                           physicalPages_.size(),
@@ -461,6 +463,193 @@ void PalmyraOS::kernel::Process::initializeProcessInVFS() {
             nullptr,
             nullptr);
     vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stderr"), stderrNode);
+
+    /// Command-line arguments file - Linux compatible format (null-terminated strings)
+    auto cmdlineNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+            // Read function: serializes cmdline to null-terminated format
+            [this](char* buffer, size_t size, size_t offset) -> size_t {
+                // Serialize command-line arguments to buffer (Linux /proc/pid/cmdline format)
+                char serialized[512];
+                size_t serialized_len = this->serializeCmdline(serialized, sizeof(serialized));
+
+                // Handle offset into the serialized data
+                if (offset >= serialized_len) return 0;
+
+                // Calculate bytes to copy
+                size_t available = serialized_len - offset;
+                size_t to_copy   = available < size ? available : size;
+
+                // Copy to output buffer
+                memcpy(buffer, serialized + offset, to_copy);
+
+                return to_copy;
+            },
+            nullptr,
+            nullptr);
+    vfs::VirtualFileSystem::setInodeByPath(directory + KString("/cmdline"), cmdlineNode);
+
+    /// Linux-compatible process statistics file
+    auto statNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+            // Read function: serializes process stats in Linux /proc/pid/stat format
+            [this](char* buffer, size_t size, size_t offset) -> size_t {
+                // Serialize process statistics in Linux-compatible format
+                char serialized[512];
+                size_t serialized_len = this->serializeStat(serialized, sizeof(serialized));
+
+                // Handle offset into the serialized data
+                if (offset >= serialized_len) return 0;
+
+                // Calculate bytes to copy
+                size_t available = serialized_len - offset;
+                size_t to_copy   = available < size ? available : size;
+
+                // Copy to output buffer
+                memcpy(buffer, serialized + offset, to_copy);
+
+                return to_copy;
+            },
+            nullptr,
+            nullptr);
+    vfs::VirtualFileSystem::setInodeByPath(directory + KString("/stat"), statNode);
+}
+
+/// Helper Methods for Command-line Metadata
+
+/**
+ * @brief Converts process state to Linux-compatible single character representation
+ *
+ * Maps PalmyraOS process states to Linux standard state characters:
+ * - 'R' : Running (State::Running)
+ * - 'S' : Sleeping/Ready (State::Ready)
+ * - 'Z' : Zombie (State::Terminated, awaiting cleanup)
+ * - 'X' : Dead (State::Killed, cleaned up)
+ * - '?' : Unknown state (fallback)
+ *
+ * @return Single character representing the process state (Linux compatible)
+ */
+char PalmyraOS::kernel::Process::stateToChar() const {
+    switch (state_) {
+        case State::Running: return 'R';     // Currently executing
+        case State::Ready: return 'S';       // Ready/sleeping (could be either)
+        case State::Terminated: return 'Z';  // Terminated, awaiting cleanup (zombie)
+        case State::Killed: return 'X';      // Killed, fully cleaned up
+        case State::Waiting: return 'D';     // Waiting on I/O
+        default: return '?';                 // Unknown state
+    }
+}
+
+/**
+ * @brief Captures command-line arguments at process creation time (safe for later access)
+ *
+ * This elegant solution stores the argv array safely at process construction,
+ * enabling safe access later via /proc/{pid}/cmdline without worrying about
+ * whether the original argv pointers are still valid (especially important for
+ * user-mode processes where argv lives on the user stack).
+ */
+void PalmyraOS::kernel::Process::captureCommandlineArguments(uint32_t argc, char* const* argv) {
+    // Guard: Validate inputs
+    if (!argv || argc == 0) return;
+
+    // Extract and store the command name (argv[0])
+    if (argv[0]) { commandName_ = KString(argv[0]); }
+
+    // Capture all arguments as safe copies
+    commandlineArgs_.clear();
+    commandlineArgs_.reserve(argc);  // Pre-allocate for efficiency
+
+    for (uint32_t i = 0; i < argc; ++i) {
+        if (argv[i]) { commandlineArgs_.push_back(KString(argv[i])); }
+    }
+
+    LOG_DEBUG("[Process %d] Captured %d command-line arguments: %s", pid_, argc, commandName_.c_str());
+}
+
+/**
+ * @brief Serializes command-line arguments to null-terminated format (Linux /proc/pid/cmdline style)
+ *
+ * This method generates a serialized representation of the command-line arguments
+ * in the standard POSIX format used by Linux: "arg1\0arg2\0arg3\0"
+ *
+ * @param buffer Output buffer to write the serialized cmdline
+ * @param bufferSize Maximum size of the output buffer
+ * @return Number of bytes written to the buffer
+ */
+size_t PalmyraOS::kernel::Process::serializeCmdline(char* buffer, size_t bufferSize) const {
+    if (!buffer || bufferSize == 0) return 0;
+
+    size_t written = 0;
+
+    // Serialize each argument, separated by null terminators
+    for (const auto& arg: commandlineArgs_) {
+        const char* str = arg.c_str();
+        size_t argLen   = arg.size();
+
+        // Check if we have enough space for this argument + null terminator
+        if (written + argLen + 1 > bufferSize) break;
+
+        // Copy argument to buffer
+        memcpy(buffer + written, str, argLen);
+        written += argLen;
+
+        // Add null terminator
+        buffer[written++] = '\0';
+    }
+
+    return written;
+}
+
+
+/**
+ * @brief Serializes process statistics in Linux /proc/pid/stat format
+ *
+ * Generates a space-separated line compatible with Linux stat format (minimal fields).
+ * This enables standard Linux tools to read PalmyraOS /proc files.
+ *
+ * Format (24 fields):
+ *   pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt
+ *   majflt cmajflt utime stime cutime cstime priority nice num_threads
+ *   itrealvalue starttime vsize rss
+ *
+ * @param buffer Output buffer to write the serialized stat
+ * @param bufferSize Maximum size of the output buffer
+ * @param totalSystemTicks Total system CPU ticks (unused for now, for future expansion)
+ * @return Number of bytes written to the buffer
+ */
+size_t PalmyraOS::kernel::Process::serializeStat(char* buffer, size_t bufferSize, uint64_t totalSystemTicks) const {
+    if (!buffer || bufferSize == 0) return 0;
+
+    // Use snprintf to safely format the stat line
+    size_t written = snprintf(buffer,
+                              bufferSize,
+                              "%d (%s) %c %d %d %d %d %d %u %u %u %u %lu %lu %u %u %d %d %u %u %lu %lu %lu\n",
+                              pid_,                         // 1: pid
+                              commandName_.c_str(),         // 2: (comm)
+                              stateToChar(),                // 3: state
+                              0,                            // 4: ppid
+                              0,                            // 5: pgrp
+                              0,                            // 6: session
+                              0,                            // 7: tty_nr
+                              0,                            // 8: tpgid
+                              0,                            // 9: flags
+                              0,                            // 10: minflt
+                              0,                            // 11: cminflt
+                              0,                            // 12: majflt
+                              0,                            // 13: cmajflt
+                              cpuTimeTicks_,                // 14: utime (user CPU time in ticks)
+                              0,                            // 15: stime (system CPU time - not separated yet)
+                              0,                            // 16: cutime
+                              0,                            // 17: cstime
+                              static_cast<int>(priority_),  // 18: priority
+                              0,                            // 19: nice
+                              1,                            // 20: num_threads
+                              0,                            // 21: itrealvalue (obsolete)
+                              startTime_,                   // 22: starttime (ticks since boot)
+                              0,                            // 23: vsize (virtual memory size)
+                              physicalPages_.size());       // 24: rss (resident set size in pages)
+
+    // snprintf returns the number of characters that would have been written
+    // Return actual bytes written (capped by bufferSize)
+    return (written < bufferSize) ? written : bufferSize - 1;
 }
 
 
@@ -484,12 +673,8 @@ void PalmyraOS::kernel::TaskManager::initialize() {
     processes_.reserve(MAX_PROCESSES);
 }
 
-PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(Process::ProcessEntry entryPoint,
-                                                                       Process::Mode mode,
-                                                                       Process::Priority priority,
-                                                                       uint32_t argc,
-                                                                       char* const* argv,
-                                                                       bool isInternal) {
+PalmyraOS::kernel::Process*
+PalmyraOS::kernel::TaskManager::newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, bool isInternal) {
     // Check if the maximum number of processes has been reached.
     if (processes_.size() == MAX_PROCESSES - 1) return nullptr;
 
@@ -527,6 +712,9 @@ uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::in
 
     // Save the current process state if a process is running.
     if (currentProcessIndex_ < MAX_PROCESSES) {
+        // Increment CPU time for the process that is about to yield
+        processes_[currentProcessIndex_].cpuTimeTicks_++;
+
         // save current process state
         processes_[currentProcessIndex_].stack_ = *regs;
 

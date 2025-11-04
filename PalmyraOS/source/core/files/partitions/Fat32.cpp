@@ -174,36 +174,7 @@ namespace PalmyraOS::kernel::vfs {
         }
 
         // Interpret the next cluster number based on the FAT type.
-        if (type_ == Type::FAT32) {
-            uint32_t nextCluster = get_uint32_t(sectorData, entryOffset) & 0x0FFFFFFF;
-            // Valid range check for FAT32
-            if (nextCluster >= 0x0FFFFFF8) return 0xFFFFFFFF;  // End of chain marker
-            return nextCluster;
-        }
-        else if (type_ == Type::FAT16) {
-            uint16_t nextCluster = get_uint16_t(sectorData, entryOffset);
-            // Valid range check for FAT16
-            if (nextCluster >= 0xFFF8) return 0xFFFFFFFF;  // End of chain marker
-            return nextCluster;
-        }
-        else if (type_ == Type::FAT12) {
-            uint16_t nextCluster = get_uint16_t(sectorData, entryOffset);
-            if (clusterNumber & 1) {
-                // For odd clusters, shift right by 4 bits
-                nextCluster = nextCluster >> 4;
-            }
-            else {
-                // For even clusters, mask the higher 4 bits
-                nextCluster = nextCluster & 0x0FFF;
-            }
-            // Valid range check for FAT12
-            if (nextCluster >= 0xFF8) return 0xFFFFFFFF;  // End of chain marker
-            return nextCluster;
-        }
-
-        // We should not reach this part
-        kernelPanic("function: %s:\nInvalid FAT type!", __PRETTY_FUNCTION__);
-        return 0;
+        return parseNextClusterFromFATSector(sectorData, entryOffset, clusterNumber);
     }
 
     uint32_t FAT32Partition::getFirstSectorOfCluster(uint32_t clusterNumber) const {

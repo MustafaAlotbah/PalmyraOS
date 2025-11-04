@@ -209,6 +209,35 @@ namespace PalmyraOS::kernel {
         DEFINE_DEFAULT_MOVE(Process);
         REMOVE_COPY(Process);
 
+        /**
+         * @brief Returns the command name (program name, e.g., "terminal.elf")
+         * @return Reference to the process command name
+         */
+        [[nodiscard]] const KString& getCommandName() const { return commandName_; }
+
+        /**
+         * @brief Converts process state to Linux-compatible single character
+         * @return Character: R(running), S(sleeping), D(disk I/O), T(stopped), Z(zombie)
+         */
+        [[nodiscard]] char stateToChar() const;
+
+        /**
+         * @brief Serializes command-line arguments in null-terminated format (Linux /proc/pid/cmdline style)
+         * @param buffer Output buffer to write the serialized cmdline
+         * @param bufferSize Maximum size of the output buffer
+         * @return Number of bytes written
+         */
+        [[nodiscard]] size_t serializeCmdline(char* buffer, size_t bufferSize) const;
+
+        /**
+         * @brief Serializes process stats in Linux /proc/pid/stat format
+         * @param buffer Output buffer to write the serialized stat
+         * @param bufferSize Maximum size of the output buffer
+         * @param totalSystemTicks Total system CPU ticks (for reference)
+         * @return Number of bytes written
+         */
+        [[nodiscard]] size_t serializeStat(char* buffer, size_t bufferSize, uint64_t totalSystemTicks = 0) const;
+
     private:
         /**
          * @brief Wrapper for the process.
@@ -237,6 +266,8 @@ namespace PalmyraOS::kernel {
 
         void initializeArgumentsForELF(uint32_t argc, char* const* argv);
 
+        void captureCommandlineArguments(uint32_t argc, char* const* argv);
+
         void initializeProcessInVFS();
 
 
@@ -255,6 +286,10 @@ namespace PalmyraOS::kernel {
         KVector<char> stdout_;              ///< proc/self/fd/1
         KVector<char> stderr_;              ///< proc/self/fd/2
 
+        /// Command-line metadata (captured at process creation)
+        KString commandName_;               ///< Program name (argv[0]), e.g., "terminal.elf"
+        KVector<KString> commandlineArgs_;  ///< All command-line arguments (argv), stored safely
+
         PagingDirectory* pagingDirectory_{};  ///< Pointer to the paging directory
         void* userStack_{};                   ///< Pointer to the user stack
         void* kernelStack_{};                 ///< Pointer to the kernel stack
@@ -264,6 +299,8 @@ namespace PalmyraOS::kernel {
         ProcessDebug debug_;
 
         uint64_t upTime_{0};
+        uint64_t cpuTimeTicks_{0};
+        uint64_t startTime_{0};
 
         uint32_t initial_brk = 0;
         uint32_t current_brk = 0;

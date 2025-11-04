@@ -238,7 +238,6 @@ int PalmyraOS::Userland::builtin::fileManager::fetchContent(types::UserHeapManag
     char* buffer            = static_cast<char*>(heap.alloc(bufferSize));
     if (!buffer) {
         // Error: Could not allocate memory.
-        heap.free(buffer);
         close(fileDescriptor);
         return -3;
     }
