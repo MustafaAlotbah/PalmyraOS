@@ -20,7 +20,9 @@
 
 
 namespace PalmyraOS::kernel {
-    // Transfer Modes: DMA, PIO (command specific)
+    // Transfer Modes:
+    // DMA (Direct Memory Access)
+    // PIO (Programmed I/O)
 
     class ATA {
     public:

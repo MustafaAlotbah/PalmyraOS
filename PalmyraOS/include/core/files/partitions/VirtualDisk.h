@@ -11,10 +11,10 @@ namespace PalmyraOS::kernel {
     template<typename DiskDriver>
     class VirtualDisk {
     public:
-        explicit VirtualDisk(DiskDriver& diskDriver, uint32_t startSector, uint32_t countSectors)
-            : disk_(diskDriver), startSector_(startSector), countSectors_(countSectors) {}
+        explicit VirtualDisk(DiskDriver& diskDriver, uint32_t startSector, uint32_t countSectors) : disk_(diskDriver), startSector_(startSector), countSectors_(countSectors) {}
 
         bool readSector(uint32_t logicalBlockAddress, uint8_t* buffer, uint32_t timeout) {
+            // LOG_DEBUG("VirtualDisk: Reading sector 0x%X", logicalBlockAddress);
             if (!isValidSector(logicalBlockAddress)) {
                 LOG_ERROR("VirtualDisk: Out of bounds error 0x%X-0x%X (0x%X)", startSector_, startSector_ + countSectors_ * 512, logicalBlockAddress);
                 return false;  // Out of bounds
@@ -30,9 +30,7 @@ namespace PalmyraOS::kernel {
         }
 
     private:
-        [[nodiscard]] bool isValidSector(uint32_t logicalBlockAddress) const {
-            return startSector_ <= logicalBlockAddress && logicalBlockAddress < countSectors_;
-        }
+        [[nodiscard]] bool isValidSector(uint32_t logicalBlockAddress) const { return startSector_ <= logicalBlockAddress && logicalBlockAddress < countSectors_; }
 
         DiskDriver& disk_;
         uint32_t startSector_;   // Starting sector of the partition

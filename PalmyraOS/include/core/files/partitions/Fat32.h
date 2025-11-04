@@ -195,7 +195,8 @@ namespace PalmyraOS::kernel::vfs {
 
         // Methods for accessing and reading the FAT32 partition
         [[nodiscard]] uint32_t getNextCluster(uint32_t cluster) const;
-        [[nodiscard]] uint32_t getSectorFromCluster(uint32_t cluster) const;
+        [[nodiscard]] uint32_t getFirstSectorOfCluster(uint32_t cluster) const;
+        [[nodiscard]] uint32_t parseNextClusterFromFATSector(const uint8_t* sectorData, uint32_t entryOffset, uint32_t currentCluster) const;
         [[nodiscard]] KVector<uint32_t> readClusterChain(uint32_t startCluster) const;
         [[nodiscard]] KVector<uint32_t> readClusterChain(uint32_t startCluster, uint32_t offset, uint32_t size) const;
         [[nodiscard]] std::optional<uint32_t> allocateCluster();

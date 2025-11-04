@@ -198,9 +198,7 @@ size_t PalmyraOS::kernel::vfs::FAT32Archive::write(const char* buffer, size_t si
 
     // Update cached size if we extended the file
     size_t newSize = offset + size;
-    if (newSize > getSize()) {
-        InodeBase::size_ = newSize;
-    }
+    if (newSize > getSize()) { InodeBase::size_ = newSize; }
 
     return size;  // Return number of bytes written
 }

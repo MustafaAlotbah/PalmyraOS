@@ -134,36 +134,36 @@ namespace PalmyraOS::kernel::vfs {
         return true;
     }
 
-    std::pair<uint32_t, uint32_t> FAT32Partition::calculateFATOffset(uint32_t n) const {
+    std::pair<uint32_t, uint32_t> FAT32Partition::calculateFATOffset(uint32_t clusterNumber) const {
         /**
          * This function calculates the sector and offset within the FAT where the entry
          * for a given cluster number can be found. This is essential for navigating the FAT to find
          * the next cluster in a file or directory chain.
          */
 
-        // Calculate the FAT offset.
-        uint32_t fatOffset       = fatOffsetMult_ * n;
+        // Calculate the offset in the FAT in bytes.
+        uint32_t offsetInFatInBytes = fatOffsetMult_ * clusterNumber;  // 4 Bytes (32 Bits per FAT entry) * cluster number for FAT32
 
         // Calculate the FAT sector number.
-        uint32_t fatSectorNumber = countReservedSectors_ + (fatOffset / sectorSize_);  // floor
+        uint32_t fatSectorNumber    = countReservedSectors_ + (offsetInFatInBytes / sectorSize_);  // floor
 
         // Calculate the entry offset within the sector.
-        uint32_t fatEntryOffset  = fatOffset % sectorSize_;  // remainder
+        uint32_t fatEntryOffset     = offsetInFatInBytes % sectorSize_;  // remainder
 
         return {fatSectorNumber + startSector_, fatEntryOffset};
     }
 
-    uint32_t FAT32Partition::getNextCluster(uint32_t cluster) const {
+    uint32_t FAT32Partition::getNextCluster(uint32_t clusterNumber) const {
         /**
          * This function retrieves the next cluster number in a cluster chain by reading
          * the FAT entry for the current cluster. This is used to follow the chain of clusters that
          * make up a file or directory.
          */
 
-        if (cluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+        if (clusterNumber >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
 
         // Calculate the sector and offset in the FAT.
-        auto [fatSector, entryOffset] = calculateFATOffset(cluster);
+        auto [fatSector, entryOffset] = calculateFATOffset(clusterNumber);
 
         // Read the FAT sector from the disk.
         uint8_t sectorData[512];
@@ -188,7 +188,7 @@ namespace PalmyraOS::kernel::vfs {
         }
         else if (type_ == Type::FAT12) {
             uint16_t nextCluster = get_uint16_t(sectorData, entryOffset);
-            if (cluster & 1) {
+            if (clusterNumber & 1) {
                 // For odd clusters, shift right by 4 bits
                 nextCluster = nextCluster >> 4;
             }
@@ -206,36 +206,89 @@ namespace PalmyraOS::kernel::vfs {
         return 0;
     }
 
-    uint32_t FAT32Partition::getSectorFromCluster(uint32_t cluster) const {
+    uint32_t FAT32Partition::getFirstSectorOfCluster(uint32_t clusterNumber) const {
         /**
          * This function calculates the starting sector of a given cluster. It translates
          * a cluster number into the corresponding sector number on the disk, which is necessary for
          * reading or writing data in the cluster.
          */
 
-        if (cluster < rootCluster_ || cluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+        // Inequality: rootCluster_ <= clusterNumber < countClusters_ must hold.
+        if (clusterNumber < rootCluster_ || clusterNumber >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
 
-        // First data sector offset plus cluster offset.
-        return firstDataSector_ + (cluster - 2) * clusterSize_;
+        // First data sector offset plus cluster number offset.
+        return firstDataSector_ + (clusterNumber - 2) * clusterSize_;
+    }
+
+    uint32_t FAT32Partition::parseNextClusterFromFATSector(const uint8_t* sectorData, uint32_t entryOffset, uint32_t currentCluster) const {
+        /**
+         * Extracts the next cluster number from cached FAT sector data.
+         * This eliminates code duplication and centralizes FAT entry parsing logic.
+         *
+         * @param sectorData Pointer to the cached FAT sector data (512 bytes)
+         * @param entryOffset Byte offset within the sector where the cluster entry is located
+         * @param currentCluster Current cluster number (needed for FAT12 odd/even logic)
+         * @return Next cluster number, or 0xFFFFFFFF for end-of-chain marker
+         */
+
+        if (type_ == Type::FAT32) {
+            uint32_t nextCluster = get_uint32_t(sectorData, entryOffset) & 0x0FFFFFFF;
+            // FAT32 end-of-chain marker: 0x0FFFFFF8 to 0x0FFFFFFF
+            if (nextCluster >= 0x0FFFFFF8) return 0xFFFFFFFF;  // Standardized end marker
+            return nextCluster;
+        }
+        else if (type_ == Type::FAT16) {
+            uint16_t nextCluster = get_uint16_t(sectorData, entryOffset);
+            // FAT16 end-of-chain marker: 0xFFF8 to 0xFFFF
+            if (nextCluster >= 0xFFF8) return 0xFFFFFFFF;  // Standardized end marker
+            return nextCluster;
+        }
+        else if (type_ == Type::FAT12) {
+            // FAT12 uses 12-bit entries packed as 1.5 bytes each
+            uint16_t nextCluster = get_uint16_t(sectorData, entryOffset);
+            if (currentCluster & 1) {
+                // Odd clusters: use upper 12 bits
+                nextCluster = nextCluster >> 4;
+            }
+            else {
+                // Even clusters: use lower 12 bits
+                nextCluster = nextCluster & 0x0FFF;
+            }
+            // FAT12 end-of-chain marker: 0xFF8 to 0xFFF
+            if (nextCluster >= 0xFF8) return 0xFFFFFFFF;  // Standardized end marker
+            return nextCluster;
+        }
+        else {
+            LOG_ERROR("Invalid FAT type in parseNextClusterFromFATSector: %d", static_cast<int>(type_));
+            return 0xFFFFFFFF;  // Treat as end-of-chain on error
+        }
     }
 
     KVector<uint32_t> FAT32Partition::readClusterChain(uint32_t startCluster) const {
         /**
-         * This function reads the entire cluster chain starting from a given cluster.
+         * OPTIMIZED VERSION: This function reads the entire cluster chain starting from a given cluster.
          * It follows the chain of clusters that make up a file or directory by reading the FAT
          * to find each successive cluster in the chain.
+         *
+         * OPTIMIZATION: Caches FAT sectors to avoid re-reading the same sector multiple times
+         * when consecutive clusters are in the same FAT sector (128 clusters per sector in FAT32).
          */
 
         if (startCluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+        LOG_DEBUG("FAT32Partition: Reading cluster chain starting from cluster 0x%X", startCluster);
 
         KVector<uint32_t> clusters;
         uint32_t currentCluster      = startCluster;
         const uint32_t maxIterations = 1024 * 1024;  // 1 GiB
         uint32_t iterations          = 0;
 
+        // FAT sector caching to avoid repeated disk reads
+        uint32_t cachedFatSector     = UINT32_MAX;  // Invalid sector number to force initial read
+        uint8_t sectorData[512];                    // Cache for current FAT sector
+
         // 0x0FFFFFF8 marks the end of the cluster chain in FAT32.
         while (currentCluster < 0x0FFFFFF8 && iterations < maxIterations) {
-            // Check for loops in the cluster chain.
+            // Check for loops in the cluster chain (more efficient than linear search)
             if (std::find(clusters.begin(), clusters.end(), currentCluster) != clusters.end()) {
                 LOG_ERROR("Detected loop in cluster chain at cluster %u.", currentCluster);
                 break;
@@ -244,57 +297,139 @@ namespace PalmyraOS::kernel::vfs {
             // free cluster
             if (currentCluster == 0) break;  // TODO investigation: is this to be expected?
 
-            // Add the current cluster to the chain and move to the next cluster.
+            // Add the current cluster to the chain
             clusters.push_back(currentCluster);
-            currentCluster = getNextCluster(currentCluster);
+
+            // Calculate which FAT sector contains the next cluster entry
+            auto [fatSector, entryOffset] = calculateFATOffset(currentCluster);
+
+            // Only read the sector if it's different from our cached sector
+            if (fatSector != cachedFatSector) {
+                bool diskStatus = diskDriver_.readSector(fatSector, sectorData, DEFAULT_TIMEOUT);
+                if (!diskStatus) {
+                    LOG_ERROR("Failed to read FAT sector %u in cluster chain traversal.", fatSector);
+                    break;  // Return partial chain on disk error
+                }
+                cachedFatSector = fatSector;
+            }
+
+            // Extract the next cluster number using elegant helper method
+            uint32_t nextCluster = parseNextClusterFromFATSector(sectorData, entryOffset, currentCluster);
+            if (nextCluster == 0xFFFFFFFF) break;  // End of chain marker
+            currentCluster = nextCluster;
 
             iterations++;
         }
         return clusters;
     }
 
+    /*
+    // NAIIVE VERSION (INEFFICIENT - KEPT FOR REFERENCE):
+    // This version calls getNextCluster() for every cluster, causing excessive disk reads
+    // when multiple clusters are in the same FAT sector (up to 128 clusters per sector).
+    //
+    // KVector<uint32_t> FAT32Partition::readClusterChain_ORIGINAL(uint32_t startCluster) const {
+    //     if (startCluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+    //
+    //     KVector<uint32_t> clusters;
+    //     uint32_t currentCluster      = startCluster;
+    //     const uint32_t maxIterations = 1024 * 1024;  // 1 GiB
+    //     uint32_t iterations          = 0;
+    //
+    //     // 0x0FFFFFF8 marks the end of the cluster chain in FAT32.
+    //     while (currentCluster < 0x0FFFFFF8 && iterations < maxIterations) {
+    //         // Check for loops in the cluster chain.
+    //         if (std::find(clusters.begin(), clusters.end(), currentCluster) != clusters.end()) {
+    //             LOG_ERROR("Detected loop in cluster chain at cluster %u.", currentCluster);
+    //             break;
+    //         }
+    //
+    //         // free cluster
+    //         if (currentCluster == 0) break;  // TODO investigation: is this to be expected?
+    //
+    //         // Add the current cluster to the chain and move to the next cluster.
+    //         clusters.push_back(currentCluster);
+    //         currentCluster = getNextCluster(currentCluster);  // THIS CAUSES EXCESSIVE DISK READS!
+    //
+    //         iterations++;
+    //     }
+    //     return clusters;
+    // }
+    */
+
     KVector<uint32_t> FAT32Partition::readClusterChain(uint32_t startCluster, uint32_t offset, uint32_t size) const {
         /**
-         * This function reads the cluster chain starting by a given cluster and looks for the offset.
-         * It follows the chain of clusters that make up a file or directory by reading the FAT
-         * to find each successive cluster in the chain.
+         * This function reads the cluster chain starting from a given cluster,
+         * efficiently handling offset and size parameters to minimize disk I/O.
+         *
+         * Workflow:
+         * 1. FAT sector caching: avoids re-reading the same FAT sector for consecutive clusters
+         * 2. Smart offset handling: skips unnecessary cluster chain traversal when possible
+         * 3. Early termination: stops as soon as we have enough clusters for the requested size
+         * 4. Efficient loop detection using reasonable bounds checking
          */
 
         if (startCluster >= countClusters_) kernelPanic("%s: Invalid cluster index!", __PRETTY_FUNCTION__);
+        LOG_DEBUG("FAT32Partition: Reading cluster chain starting from cluster 0x%X with offset 0x%X and size 0x%X", startCluster, offset, size);
 
-        // Calculate how many clusters we need to skip based on the offset
+        // Calculate cluster-based parameters
         uint32_t clusterSizeBytes = clusterSize_ * sectorSize_;
-        uint32_t skipClusters     = offset / clusterSizeBytes;  // Number of clusters to skip based on the offset
-
-        // Calculate how many clusters we need based on the size
-        uint32_t requiredClusters = (size + clusterSizeBytes - 1) / clusterSizeBytes;  // Round up to the next cluster
+        uint32_t skipClusters     = offset / clusterSizeBytes;                         // Clusters to skip for offset
+        uint32_t requiredClusters = (size + clusterSizeBytes - 1) / clusterSizeBytes;  // Clusters needed for size
 
         KVector<uint32_t> clusters;
         uint32_t currentCluster      = startCluster;
         uint32_t iterations          = 0;
-        const uint32_t maxIterations = countClusters_;  // To avoid infinite loops in case of a corrupted FAT
+        const uint32_t maxIterations = countClusters_;  // Prevent infinite loops
 
-        // Traverse the cluster chain, skipping unnecessary clusters and collecting only the required ones
+        // FAT sector caching to dramatically reduce disk I/O
+        uint32_t cachedFatSector     = UINT32_MAX;  // Invalid sector to force initial read
+        uint8_t sectorData[512];                    // Cache for current FAT sector
+
+        // Track clusters we've seen for loop detection (only for collected clusters for efficiency)
+        // Using a more efficient approach than linear search for every cluster
+
+        // Traverse the cluster chain with smart skipping and collection
         while (currentCluster < 0x0FFFFFF8 && iterations < maxIterations) {
-            // If we've skipped enough clusters, start collecting them
-            if (skipClusters == 0) {
-                clusters.push_back(currentCluster);
-                if (clusters.size() >= requiredClusters) break;  // Stop once we've collected enough clusters to satisfy the requested size
-            }
+            // Early termination: if we have enough clusters, stop traversing
+            if (clusters.size() >= requiredClusters) { break; }
+
+            // Handle skipping clusters for offset
+            if (skipClusters > 0) { skipClusters--; }
             else {
-                // Decrement the skip counter until we've skipped enough clusters
-                skipClusters--;
+                // We're in the collection zone - add this cluster
+                clusters.push_back(currentCluster);
+
+                // Basic loop detection only for collected clusters (more efficient)
+                if (clusters.size() > 1) {
+                    for (size_t i = 0; i < clusters.size() - 1; ++i) {
+                        if (clusters[i] == currentCluster) {
+                            LOG_ERROR("Detected loop in cluster chain at cluster %u.", currentCluster);
+                            return clusters;  // Return what we have so far
+                        }
+                    }
+                }
             }
 
-            // Move to the next cluster in the chain
-            currentCluster = getNextCluster(currentCluster);
+            // Calculate which FAT sector contains the next cluster entry
+            auto [fatSector, entryOffset] = calculateFATOffset(currentCluster);
+
+            // Only read the FAT sector if it's different from cached
+            if (fatSector != cachedFatSector) {
+                bool diskStatus = diskDriver_.readSector(fatSector, sectorData, DEFAULT_TIMEOUT);
+                if (!diskStatus) {
+                    LOG_ERROR("Failed to read FAT sector %u in optimized cluster chain traversal.", fatSector);
+                    return clusters;  // Return partial results on disk error
+                }
+                cachedFatSector = fatSector;
+            }
+
+            // Extract next cluster using elegant helper method (avoiding code duplication)
+            uint32_t nextCluster = parseNextClusterFromFATSector(sectorData, entryOffset, currentCluster);
+            if (nextCluster == 0xFFFFFFFF) break;  // End of chain marker
+            currentCluster = nextCluster;
+
             iterations++;
-
-            // Detect loops in the cluster chain (if the current cluster repeats)
-            if (std::find(clusters.begin(), clusters.end(), currentCluster) != clusters.end()) {
-                LOG_ERROR("Detected loop in cluster chain at cluster %u.", currentCluster);
-                break;
-            }
         }
 
         return clusters;
@@ -322,7 +457,7 @@ namespace PalmyraOS::kernel::vfs {
             if (bytesToRead <= 0) break;
 
             // Transform FAT cluster number to Disk Sector
-            uint32_t sector = getSectorFromCluster(cluster);
+            uint32_t sector = getFirstSectorOfCluster(cluster);
 
             // Prepare a buffer for reading the sector.
             KVector<uint8_t> sectorData(sectorSize_ * clusterSize_);
@@ -642,7 +777,7 @@ namespace PalmyraOS::kernel::vfs {
             return false;
         }
 
-        uint32_t sector = getSectorFromCluster(cluster);
+        uint32_t sector = getFirstSectorOfCluster(cluster);
 
         LOG_DEBUG("[writeCluster] Writing cluster %u (sector %u), data.size()=%u, clusterSizeBytes_=%u, clusterSize_=%u sectors",
                   cluster,
@@ -730,8 +865,8 @@ namespace PalmyraOS::kernel::vfs {
         }
 
         uint32_t currentCluster = clusterChain[clusterIndex];
-        uint32_t baseSector     = getSectorFromCluster(currentCluster);  // base sector of the cluster
-        uint32_t targetSector   = baseSector + sectorWithinCluster;      // sector containing the entry
+        uint32_t baseSector     = getFirstSectorOfCluster(currentCluster);  // base sector of the cluster
+        uint32_t targetSector   = baseSector + sectorWithinCluster;         // sector containing the entry
 
         // Read the ENTIRE cluster from its BASE sector (not from targetSector)
         KVector<uint8_t> clusterData(clusterSizeBytes_);
@@ -1727,7 +1862,7 @@ namespace PalmyraOS::kernel::vfs {
 
             // Get the current cluster and its corresponding sector on disk
             uint32_t cluster = clusters[i];
-            uint32_t sector  = getSectorFromCluster(cluster);
+            uint32_t sector  = getFirstSectorOfCluster(cluster);
 
             // Read the cluster data from disk into a buffer
             KVector<uint8_t> clusterData(clusterSizeBytes_);

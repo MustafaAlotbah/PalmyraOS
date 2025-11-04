@@ -43,9 +43,11 @@
 
 #else
 // When DEBUG is not defined, disable all logs except ERROR
-#define LOG_INFO(...)
 #define LOG_WARN(...)
-#define LOG_ERROR(...) PalmyraOS::kernel::log("ERROR", FUNCTION_DEC, __LINE__, __VA_ARGS__)
+#define LOG_DEBUG(...)
+#define LOG_INFO(...)
+#define LOG_TRACE(...)
+#define LOG_ERROR(...) PalmyraOS::kernel::log("ERROR", true, FUNCTION_DEC, __LINE__, __VA_ARGS__)
 #endif
 
 
