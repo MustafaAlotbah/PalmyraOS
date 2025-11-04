@@ -20,9 +20,6 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
         int width;
         int height;
         int channels;
-        int rowsLoaded;  // Number of rows loaded so far (for progressive rendering)
-        bool isLoading;  // True while still loading
-        float progress;  // Loading progress 0.0 to 1.0
     };
 
     static void extractFileName(const char* fullPath, char* fileName, size_t maxSize) {
@@ -277,26 +274,55 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
         // 3. Convert BGR -> RGBA and store in final pixel array
         // 4. Skip padding bytes (they're not part of the image)
 
-        // Read rows in correct order based on BMP format
+        // ============================================
+        //  Read entire pixel data in one shot
+        // ============================================
+        // Instead of reading row-by-row (causing 100+ syscalls and cluster chain traversals),
+        // read the ENTIRE pixel data buffer in a single read() call, then process rows in memory.
+        // This is the most efficient approach for typical image sizes.
+
+        printf("ImageViewer: Reading entire pixel data (%zu bytes) in one operation\n", expectedPixelDataSize);
+
+        // Allocate buffer for the entire raw pixel data from BMP file
+        unsigned char* rawPixelData = (unsigned char*) malloc(expectedPixelDataSize);
+        if (!rawPixelData) {
+            printf("ImageViewer: Failed to allocate %zu bytes for raw pixel buffer\n", expectedPixelDataSize);
+            free(rowBuffer);
+            free(pixels);
+            close(fd);
+            return nullptr;
+        }
+
+        // Read all pixel data at once (HUGE PERFORMANCE GAIN!)
+        size_t totalBytesRead = 0;
+        while (totalBytesRead < expectedPixelDataSize) {
+            int bytesRead = read(fd, rawPixelData + totalBytesRead, expectedPixelDataSize - totalBytesRead);
+            if (bytesRead <= 0) {
+                printf("ImageViewer: ERROR: Failed to read pixel data - got %zu bytes, expected %zu\n", totalBytesRead, expectedPixelDataSize);
+                free(rawPixelData);
+                free(rowBuffer);
+                free(pixels);
+                close(fd);
+                return nullptr;
+            }
+            totalBytesRead += bytesRead;
+        }
+
+        printf("ImageViewer: Successfully read %zu bytes of pixel data in single operation\n", totalBytesRead);
+
+        // Now process all rows from the in-memory buffer
         if (isTopDown) {
-            // Top-down BMP: Rows are stored in file in same order as displayed
-            // Read from y=0 (top) to y=height-1 (bottom)
+            // Top-down BMP: Rows are stored in same order as displayed
             for (int y = 0; y < *height; y++) {
-                if (!read(fd, rowBuffer, rowSize)) {
-                    free(rowBuffer);
-                    free(pixels);
-                    close(fd);
-                    return nullptr;
-                }
+                unsigned char* rowData = rawPixelData + (y * rowSize);
+
                 // Debug: Print first row's first pixel raw bytes
-                if (y == 0) { printf("ImageViewer: First row, first pixel raw bytes: B=%d G=%d R=%d\n", rowBuffer[0], rowBuffer[1], rowBuffer[2]); }
+                if (y == 0) { printf("ImageViewer: First row, first pixel raw bytes: B=%d G=%d R=%d\n", rowData[0], rowData[1], rowData[2]); }
+
+                // Convert BGR -> RGBA for each pixel in the row
                 for (int x = 0; x < *width; x++) {
-                    // Calculate destination: pixels[y][x] in RGBA format
                     unsigned char* dst = pixels + ((y * *width + x) * 4);
-                    // Calculate source: rowBuffer[x] in BGR format
-                    // For 24-bit: 3 bytes per pixel, for 32-bit: 4 bytes per pixel
-                    unsigned char* src = rowBuffer + (x * (bitCount / 8));
-                    // Convert BGR to RGBA:
+                    unsigned char* src = rowData + (x * (bitCount / 8));
                     dst[0]             = src[2];                           // R <- BGR[2] (Red)
                     dst[1]             = src[1];                           // G <- BGR[1] (Green)
                     dst[2]             = src[0];                           // B <- BGR[0] (Blue)
@@ -305,65 +331,30 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
             }
         }
         else {
-            // Bottom-up BMP (standard): Rows are stored in file in reverse order
-            // First row in file = bottom row of image (y = height-1)
-            // Last row in file = top row of image (y = 0)
-            // We read from y=height-1 down to y=0 to get correct visual order
+            // Bottom-up BMP: First row in file = bottom row of image (y = height-1)
             for (int y = *height - 1; y >= 0; y--) {
-                long rowStartPos = lseek(fd, 0, SEEK_CUR);
-                // Clear row buffer to avoid garbage data from previous reads
-                for (size_t i = 0; i < rowSize; i++) { rowBuffer[i] = 0; }
+                // Calculate row position in the raw data buffer
+                int fileRowIndex       = (*height - 1) - y;  // File row index (0 = first row in file)
+                unsigned char* rowData = rawPixelData + (fileRowIndex * rowSize);
 
-                // Read row data - handle partial reads (some file systems may return partial data)
-                // This loop ensures we read the complete row even if read() returns fewer bytes
-                int totalBytesRead = 0;
-                while (totalBytesRead < (int) rowSize) {
-                    int bytesRead = read(fd, rowBuffer + totalBytesRead, rowSize - totalBytesRead);
-                    if (bytesRead <= 0) {
-                        // EOF or error - we didn't get all the bytes we need
-                        long currentPos = lseek(fd, 0, SEEK_CUR);
-                        printf("ImageViewer: ERROR: Failed to read row %d: read %d bytes, expected %zu\n", y, totalBytesRead, rowSize);
-                        printf("ImageViewer: Row started at offset %d, current position %d\n", (int) rowStartPos, (int) currentPos);
-                        if (fileSize > 0) { printf("ImageViewer: File size is %d, remaining bytes: %d\n", (int) fileSize, (int) (fileSize - rowStartPos)); }
-                        else { printf("ImageViewer: File size unknown (lseek SEEK_END not supported)\n"); }
-                        free(rowBuffer);
-                        free(pixels);
-                        close(fd);
-                        return nullptr;
-                    }
-                    totalBytesRead += bytesRead;
-                }
                 // Debug: Print first and last rows
-                if (y == *height - 1) {
-                    printf("ImageViewer: First row read (bottom of image) at offset %d, first pixel: B=%d G=%d R=%d\n",
-                           (int) rowStartPos,
-                           rowBuffer[0],
-                           rowBuffer[1],
-                           rowBuffer[2]);
-                }
-                if (y == 0) {
-                    printf("ImageViewer: Last row read (top of image) at offset %d, first pixel: B=%d G=%d R=%d\n", (int) rowStartPos, rowBuffer[0], rowBuffer[1], rowBuffer[2]);
-                }
+                if (y == *height - 1) { printf("ImageViewer: First row processed (bottom of image), first pixel: B=%d G=%d R=%d\n", rowData[0], rowData[1], rowData[2]); }
+                if (y == 0) { printf("ImageViewer: Last row processed (top of image), first pixel: B=%d G=%d R=%d\n", rowData[0], rowData[1], rowData[2]); }
 
-                // Extract pixels from row buffer and convert BGR -> RGBA
+                // Convert BGR -> RGBA for each pixel in the row (in-memory processing)
                 for (int x = 0; x < *width; x++) {
-                    // Calculate destination: pixels[y][x] in RGBA format
-                    // Note: y is the image row (0=top, height-1=bottom), x is the column
                     unsigned char* dst = pixels + ((y * *width + x) * 4);
-                    // Calculate source: rowBuffer[x] in BGR format
-                    // For 24-bit: offset = x * 3, for 32-bit: offset = x * 4
-                    unsigned char* src = rowBuffer + (x * (bitCount / 8));
-                    // Convert BGR to RGBA:
-                    // BMP stores: [Blue, Green, Red] or [Blue, Green, Red, Alpha]
-                    // We store:   [Red, Green, Blue, Alpha]
-                    dst[0]             = src[2];                           // R <- BGR[2] (Red is 3rd byte)
-                    dst[1]             = src[1];                           // G <- BGR[1] (Green is 2nd byte)
-                    dst[2]             = src[0];                           // B <- BGR[0] (Blue is 1st byte)
-                    dst[3]             = (bitCount == 32) ? src[3] : 255;  // A <- BGR[3] if 32-bit, else 255 (fully opaque)
+                    unsigned char* src = rowData + (x * (bitCount / 8));
+                    dst[0]             = src[2];                           // R <- BGR[2] (Red)
+                    dst[1]             = src[1];                           // G <- BGR[1] (Green)
+                    dst[2]             = src[0];                           // B <- BGR[0] (Blue)
+                    dst[3]             = (bitCount == 32) ? src[3] : 255;  // A <- BGR[3] if 32-bit, else 255 (opaque)
                 }
             }
         }
 
+        // Clean up raw pixel buffer (we've converted it to RGBA format)
+        free(rawPixelData);
         free(rowBuffer);
         close(fd);
 
@@ -411,20 +402,14 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
             return nullptr;
         }
 
-        imgData->pixels     = loadBMPImage(filePath, &imgData->width, &imgData->height);
-        imgData->channels   = 4;
-        imgData->rowsLoaded = 0;      // Will be updated by streaming loader
-        imgData->isLoading  = false;  // Set to false for now (non-streaming)
-        imgData->progress   = 1.0f;   // Fully loaded for non-streaming
+        imgData->pixels   = loadBMPImage(filePath, &imgData->width, &imgData->height);
+        imgData->channels = 4;
 
         if (!imgData->pixels) {
             printf("ImageViewer: Failed to load image\n");
             free(imgData);
             return nullptr;
         }
-
-        // For non-streaming, mark all rows as loaded
-        imgData->rowsLoaded = imgData->height;
 
         printf("ImageViewer: Image loaded successfully (%dx%d)\n", imgData->width, imgData->height);
         return imgData;
@@ -434,223 +419,6 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
         if (!imgData) return;
         if (imgData->pixels) { free(imgData->pixels); }
         free(imgData);
-    }
-
-    // Render a progress bar at the top of the window
-    static void renderProgressBar(SDK::WindowGUI& windowGui, float progress) {
-        auto [fbW, fbH]         = windowGui.getFrameBufferSize();
-
-        const int barHeight     = 4;   // Height of progress bar
-        const int barY          = 30;  // Y position (30 pixels from top to avoid title bar)
-        const int barMargin     = 10;  // Margin from sides
-        const int barWidth      = fbW - (2 * barMargin);
-        const int progressWidth = (int) (barWidth * progress);
-
-        // Draw background line (dark gray)
-        for (int x = barMargin; x < barMargin + barWidth; ++x) {
-            for (int y = barY; y < barY + barHeight; ++y) { windowGui.brush().drawPoint((uint32_t) x, (uint32_t) y, Color::Gray800); }
-        }
-
-        // Draw progress line (glowing cyan)
-        for (int x = barMargin; x < barMargin + progressWidth; ++x) {
-            for (int y = barY; y < barY + barHeight; ++y) {
-                // Create glow effect by varying brightness
-                Color glowColor = (y == barY || y == barY + barHeight - 1) ? Color::Cyan          // Brighter edges
-                                                                           : Color(0, 255, 255);  // Even brighter center (pure cyan)
-                windowGui.brush().drawPoint((uint32_t) x, (uint32_t) y, glowColor);
-            }
-        }
-    }
-
-    // Streaming loader state
-    struct StreamingLoaderState {
-        int fd;                    // File descriptor
-        size_t rowSize;            // Bytes per row (with padding)
-        unsigned char* rowBuffer;  // Buffer for one row
-        int currentRow;            // Current row being loaded
-        bool isTopDown;            // BMP orientation
-        unsigned int pixelOffset;  // Offset to pixel data
-        int bitCount;              // Bits per pixel
-    };
-
-    // Start streaming load - opens file and prepares for progressive loading
-    static ImageData* startStreamingLoad(const char* filePath, StreamingLoaderState* loaderState) {
-        printf("ImageViewer: Starting streaming load from %s\n", filePath);
-
-        int fd = ::open(filePath, O_RDONLY);
-        if (fd < 0) {
-            printf("ImageViewer: File not found\n");
-            return nullptr;
-        }
-
-        // Read BMP header (14 bytes)
-        unsigned char header[14];
-        if (!read(fd, header, 14)) {
-            close(fd);
-            return nullptr;
-        }
-
-        // Verify BMP signature
-        if (header[0] != 'B' || header[1] != 'M') {
-            printf("ImageViewer: Not a valid BMP file\n");
-            close(fd);
-            return nullptr;
-        }
-
-        // Read DIB header (40 bytes)
-        unsigned char dibHeader[40];
-        if (!read(fd, dibHeader, 40)) {
-            close(fd);
-            return nullptr;
-        }
-
-        // Extract image properties
-        int width               = dibHeader[4] | (dibHeader[5] << 8) | (dibHeader[6] << 16) | (dibHeader[7] << 24);
-        int heightSigned        = dibHeader[8] | (dibHeader[9] << 8) | (dibHeader[10] << 16) | (dibHeader[11] << 24);
-        unsigned short bitCount = dibHeader[14] | (dibHeader[15] << 8);
-
-        bool isTopDown          = (heightSigned < 0);
-        int height              = (heightSigned < 0) ? -heightSigned : heightSigned;
-
-        if (width <= 0 || height <= 0 || width > (int) MAX_IMAGE_WIDTH || height > (int) MAX_IMAGE_HEIGHT) {
-            close(fd);
-            return nullptr;
-        }
-
-        if (bitCount != 24 && bitCount != 32) {
-            printf("ImageViewer: Unsupported bit depth: %d\n", bitCount);
-            close(fd);
-            return nullptr;
-        }
-
-        // Allocate ImageData
-        ImageData* imgData = (ImageData*) malloc(sizeof(ImageData));
-        if (!imgData) {
-            close(fd);
-            return nullptr;
-        }
-
-        // Allocate pixel buffer
-        size_t pixelDataSize = width * height * 4;  // RGBA
-        imgData->pixels      = (unsigned char*) malloc(pixelDataSize);
-        if (!imgData->pixels) {
-            free(imgData);
-            close(fd);
-            return nullptr;
-        }
-
-        // Initialize ImageData
-        imgData->width           = width;
-        imgData->height          = height;
-        imgData->channels        = 4;
-        imgData->rowsLoaded      = 0;
-        imgData->isLoading       = true;
-        imgData->progress        = 0.0f;
-
-        // Calculate row size with padding
-        size_t rowSize           = ((width * bitCount + 31) / 32) * 4;
-        unsigned int pixelOffset = header[10] | (header[11] << 8) | (header[12] << 16) | (header[13] << 24);
-
-        // Initialize loader state
-        loaderState->fd          = fd;
-        loaderState->rowSize     = rowSize;
-        loaderState->rowBuffer   = (unsigned char*) malloc(rowSize);
-        loaderState->currentRow  = 0;
-        loaderState->isTopDown   = isTopDown;
-        loaderState->pixelOffset = pixelOffset;
-        loaderState->bitCount    = bitCount;
-
-        if (!loaderState->rowBuffer) {
-            free(imgData->pixels);
-            free(imgData);
-            close(fd);
-            return nullptr;
-        }
-
-        // Seek to pixel data
-        lseek(fd, pixelOffset, SEEK_SET);
-
-        printf("ImageViewer: Ready for streaming (%dx%d, %d-bit)\n", width, height, bitCount);
-        printf("ImageViewer: Row size = %zu bytes (width=%d, bitCount=%d)\n", rowSize, width, bitCount);
-        printf("ImageViewer: Pixel data starts at offset %u\n", pixelOffset);
-
-        // Calculate expected vs actual bytes per row
-        size_t actualBytesPerRow = width * (bitCount / 8);
-        size_t paddingBytes      = rowSize - actualBytesPerRow;
-        printf("ImageViewer: Actual bytes per row = %zu, padding = %zu bytes\n", actualBytesPerRow, paddingBytes);
-
-        return imgData;
-    }
-
-    // Load a batch of rows (returns false when done)
-    static bool loadImageRowBatch(ImageData* imgData, StreamingLoaderState* loaderState, int rowsToLoad) {
-        if (!imgData->isLoading || loaderState->currentRow >= imgData->height) { return false; }
-
-        for (int i = 0; i < rowsToLoad && loaderState->currentRow < imgData->height; ++i) {
-            // Calculate expected file position for this row
-            // For bottom-up BMPs, the first row in the file is the bottom row of the image
-            long expectedPosition = loaderState->pixelOffset + (loaderState->currentRow * loaderState->rowSize);
-
-            // Seek to correct position (in case file position drifted)
-            lseek(loaderState->fd, expectedPosition, SEEK_SET);
-
-            // Read one row WITH PADDING
-            size_t bytesRead        = 0;
-            size_t totalBytesToRead = loaderState->rowSize;
-
-            // Ensure we read the full row (handle partial reads)
-            while (bytesRead < totalBytesToRead) {
-                int result = read(loaderState->fd, loaderState->rowBuffer + bytesRead, totalBytesToRead - bytesRead);
-                if (result <= 0) {
-                    printf("ImageViewer: Failed to read row %d (got %d bytes, expected %zu)\n", loaderState->currentRow, (int) bytesRead, totalBytesToRead);
-                    imgData->isLoading = false;
-                    return false;
-                }
-                bytesRead += result;
-            }
-
-            // Determine target row (handle bottom-up vs top-down)
-            int targetRow = loaderState->isTopDown ? loaderState->currentRow : (imgData->height - 1 - loaderState->currentRow);
-
-            // Debug first few rows
-            if (loaderState->currentRow < 3) { printf("ImageViewer: Row %d -> target row %d, read %zu bytes\n", loaderState->currentRow, targetRow, bytesRead); }
-
-            // Convert BGR to RGBA
-            for (int x = 0; x < imgData->width; ++x) {
-                int pixelIndex = (targetRow * imgData->width + x) * 4;
-
-                if (loaderState->bitCount == 24) {
-                    // 24-bit: BGR format
-                    imgData->pixels[pixelIndex + 0] = loaderState->rowBuffer[x * 3 + 2];  // R
-                    imgData->pixels[pixelIndex + 1] = loaderState->rowBuffer[x * 3 + 1];  // G
-                    imgData->pixels[pixelIndex + 2] = loaderState->rowBuffer[x * 3 + 0];  // B
-                    imgData->pixels[pixelIndex + 3] = 255;                                // A
-                }
-                else if (loaderState->bitCount == 32) {
-                    // 32-bit: BGRA format
-                    imgData->pixels[pixelIndex + 0] = loaderState->rowBuffer[x * 4 + 2];  // R
-                    imgData->pixels[pixelIndex + 1] = loaderState->rowBuffer[x * 4 + 1];  // G
-                    imgData->pixels[pixelIndex + 2] = loaderState->rowBuffer[x * 4 + 0];  // B
-                    imgData->pixels[pixelIndex + 3] = loaderState->rowBuffer[x * 4 + 3];  // A
-                }
-            }
-
-            loaderState->currentRow++;
-            imgData->rowsLoaded = loaderState->currentRow;
-            imgData->progress   = (float) loaderState->currentRow / imgData->height;
-        }
-
-        // Check if done
-        if (loaderState->currentRow >= imgData->height) {
-            imgData->isLoading = false;
-            imgData->progress  = 1.0f;
-            close(loaderState->fd);
-            free(loaderState->rowBuffer);
-            printf("ImageViewer: Streaming load complete\n");
-            return false;
-        }
-
-        return true;
     }
 
     int main(uint32_t argc, char** argv) {
@@ -688,10 +456,9 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
         windowGui.text() << PalmyraOS::Color::Gray600 << "Loading Image...";
         windowGui.swapBuffers();  // Present the loading frame immediately
 
-        // Start streaming load
-        StreamingLoaderState loaderState = {0};
-        ImageData* imageData             = startStreamingLoad(imagePath, &loaderState);
-        bool imageLoaded                 = (imageData != nullptr && imageData->pixels != nullptr);
+        // Load image with memory safety (this may take a moment)
+        ImageData* imageData = loadImageSafely(imagePath);
+        bool imageLoaded     = (imageData != nullptr && imageData->pixels != nullptr);
 
         // Main rendering loop
         // ====================
@@ -710,14 +477,6 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
             auto [fbW, fbH] = windowGui.getFrameBufferSize();
             const int maxX  = (int) fbW;
             const int maxY  = (int) fbH;
-
-            // Load more rows if still loading (only for streaming mode)
-            if (imageLoaded && imageData && imageData->isLoading) {
-                // Load 10 rows per frame for smooth progress
-                loadImageRowBatch(imageData, &loaderState, 10);
-                // Show progress bar if still loading
-                renderProgressBar(windowGui, imageData->progress);
-            }
 
             if (imageLoaded) {
                 // ============================================
@@ -746,27 +505,8 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
                 const int offsetX         = (maxX - imageData->width) / 2;
                 const int offsetY         = (availableHeight - imageData->height) / 2;
 
-                // Iterate through each pixel in the image (only loaded rows)
-                // For progressive loading, we render rows as they become available
+                // Iterate through each pixel in the image
                 for (int y = 0; y < imageData->height; ++y) {
-                    // For streaming, check if this row has been loaded yet
-                    if (imageData->isLoading) {
-                        if (!loaderState.isTopDown) {
-                            // Bottom-up BMP: first rows loaded appear at bottom
-                            // Row y=0 is at top, but it's the last to be loaded
-                            // We've loaded rowsLoaded rows starting from bottom
-                            if (y < imageData->height - imageData->rowsLoaded) {
-                                continue;  // This row hasn't been loaded yet
-                            }
-                        }
-                        else {
-                            // Top-down BMP: first rows loaded appear at top
-                            if (y >= imageData->rowsLoaded) {
-                                continue;  // This row hasn't been loaded yet
-                            }
-                        }
-                    }
-
                     int dy = offsetY + y;              // Screen Y coordinate (centered)
                     if (dy < 0) continue;              // Clip: Skip if above framebuffer
                     if (dy >= availableHeight) break;  // Clip: Don't draw if in text area or below
@@ -821,38 +561,31 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
                 }
                 else { windowGui.text() << PalmyraOS::Color::Gray600 << "File: " << displayFileName << "  "; }
 
-                // Build image info string - show loading progress or image info
+                // Build image info string - always show dimensions, conditionally show channels
                 char imageInfo[64];
 
-                if (imageData->isLoading) {
-                    // Show loading progress
-                    snprintf(imageInfo, sizeof(imageInfo), "Loading: %d%% (%d/%d rows)", (int) (imageData->progress * 100), imageData->rowsLoaded, imageData->height);
-                    windowGui.text() << PalmyraOS::Color::Cyan << imageInfo;
-                }
-                else {
-                    // Build dimensions string first
-                    snprintf(imageInfo, sizeof(imageInfo), "Image: %dx%d", imageData->width, imageData->height);
+                // Build dimensions string first
+                snprintf(imageInfo, sizeof(imageInfo), "Image: %dx%d", imageData->width, imageData->height);
 
-                    // Only add channels if there's plenty of room (conservative: 12 pixels per char)
-                    const int maxInfoChars  = (maxTextWidth / 12);
-                    const int currentLength = strlen(imageInfo);
+                // Only add channels if there's plenty of room (conservative: 12 pixels per char)
+                const int maxInfoChars  = (maxTextWidth / 12);
+                const int currentLength = strlen(imageInfo);
 
-                    // Add channels only if we have at least 20 characters of room left
-                    if (currentLength + 20 <= maxInfoChars) {
-                        // We have room, try adding channels
-                        char withChannels[64];
-                        snprintf(withChannels, sizeof(withChannels), "Image: %dx%d (%d channels)", imageData->width, imageData->height, imageData->channels);
+                // Add channels only if we have at least 20 characters of room left
+                if (currentLength + 20 <= maxInfoChars) {
+                    // We have room, try adding channels
+                    char withChannels[64];
+                    snprintf(withChannels, sizeof(withChannels), "Image: %dx%d (%d channels)", imageData->width, imageData->height, imageData->channels);
 
-                        // Only use it if it fits
-                        if (strlen(withChannels) <= (size_t) maxInfoChars) {
-                            strncpy(imageInfo, withChannels, sizeof(imageInfo) - 1);
-                            imageInfo[sizeof(imageInfo) - 1] = '\0';
-                        }
+                    // Only use it if it fits
+                    if (strlen(withChannels) <= (size_t) maxInfoChars) {
+                        strncpy(imageInfo, withChannels, sizeof(imageInfo) - 1);
+                        imageInfo[sizeof(imageInfo) - 1] = '\0';
                     }
-                    // Otherwise, imageInfo already has just dimensions (which is safe)
-
-                    windowGui.text() << PalmyraOS::Color::Gray600 << imageInfo;
                 }
+                // Otherwise, imageInfo already has just dimensions (which is safe)
+
+                windowGui.text() << PalmyraOS::Color::Gray600 << imageInfo;
             }
             else {
                 // If image failed to load, show error message centered
