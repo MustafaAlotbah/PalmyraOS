@@ -301,47 +301,32 @@ void callConstructors() {
         // Initialize the menu bar
         {
             char* argv[] = {const_cast<char*>("menuBar.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::MenuBar::main,
-                                            kernel::Process::Mode::User,
-                                            kernel::Process::Priority::Low,
-                                            1,
-                                            argv,
-                                            true);
+            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::MenuBar::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
         }
 
         // Run the kernel terminal
         {
             char* argv[] = {const_cast<char*>("terminal.elf"), const_cast<char*>("uname"), nullptr};
             // TODO new process must count argv, instead of hard coded -> error prone
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main,
-                                            kernel::Process::Mode::User,
-                                            kernel::Process::Priority::Low,
-                                            2,
-                                            argv,
-                                            true);
+            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 2, argv, true);
         }
 
         // Background process that counts just for testing
-        {
-            char* argv[] = {const_cast<char*>("proc1.elf"), const_cast<char*>("-count"), nullptr};
-            kernel::TaskManager::newProcess(Processes::process_1, kernel::Process::Mode::User, kernel::Process::Priority::Low, 2, argv, true);
-        }
+        //{
+        //    char* argv[] = {const_cast<char*>("proc1.elf"), const_cast<char*>("-count"), nullptr};
+        //    kernel::TaskManager::newProcess(Processes::process_1, kernel::Process::Mode::User, kernel::Process::Priority::Low, 2, argv, true);
+        //}
 
         // Process with a window that exists later for testing
-        {
-            char* argv[] = {const_cast<char*>("proc2.elf"), const_cast<char*>("-count"), const_cast<char*>("arg3"), nullptr};
-            kernel::TaskManager::newProcess(Processes::process_2, kernel::Process::Mode::User, kernel::Process::Priority::Low, 3, argv, true);
-        }
+        //{
+        //    char* argv[] = {const_cast<char*>("proc2.elf"), const_cast<char*>("-count"), const_cast<char*>("arg3"), nullptr};
+        //    kernel::TaskManager::newProcess(Processes::process_2, kernel::Process::Mode::User, kernel::Process::Priority::Low, 3, argv, true);
+        //}
 
         // Process with a window that exists later for testing
         {
             char* argv[] = {const_cast<char*>("clock.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelClock::main,
-                                            kernel::Process::Mode::User,
-                                            kernel::Process::Priority::Low,
-                                            1,
-                                            argv,
-                                            true);
+            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelClock::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
         }
 
         // Process with a window that exists later for testing
@@ -361,12 +346,13 @@ void callConstructors() {
         // Process with a window that exists later for testing
         {
             char* argv[] = {const_cast<char*>("fileManager.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main,
-                                            kernel::Process::Mode::User,
-                                            kernel::Process::Priority::Low,
-                                            1,
-                                            argv,
-                                            true);
+            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
+        }
+
+        // Process with a window that exists later for testing
+        {
+            char* argv[] = {const_cast<char*>("taskManager.elf"), nullptr};
+            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::taskManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
         }
     }
 
@@ -383,11 +369,9 @@ void callConstructors() {
     }
 
     // Scheduler must start somewhere inside the loop
-    while (true)
-        ;
+    while (true);
 
     LOG_ERROR("Passed after while(true)!");
     // Here we loop, until a system clock interrupts and starts scheduling.
-    while (true)
-        ;
+    while (true);
 }
