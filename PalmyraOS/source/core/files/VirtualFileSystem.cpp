@@ -185,8 +185,8 @@ namespace PalmyraOS::kernel::vfs {
         // Initialize the root inode with directory type and default permissions
         using Mode = InodeBase::Mode;
         rootNode_  = kernel::heapManager.createInstance<InodeBase>(InodeBase::Type::Directory,
-                                                                  Mode::USER_READ | Mode::USER_WRITE | Mode::USER_EXECUTE | Mode::GROUP_READ |
-                                                                          Mode::GROUP_EXECUTE | Mode::OTHERS_READ | Mode::OTHERS_EXECUTE,
+                                                                  Mode::USER_READ | Mode::USER_WRITE | Mode::USER_EXECUTE | Mode::GROUP_READ | Mode::GROUP_EXECUTE |
+                                                                          Mode::OTHERS_READ | Mode::OTHERS_EXECUTE,
                                                                   InodeBase::UserID::ROOT,
                                                                   InodeBase::GroupID::ROOT);
 
@@ -265,6 +265,39 @@ namespace PalmyraOS::kernel::vfs {
         createDirectory(KString("/proc/"), InodeBase::Mode::USER_READ);
         createDirectory(KString("/proc/driver"), InodeBase::Mode::USER_READ);
 
+        // Graphics - /sys/class/graphics/fb0/modes
+        createDirectory(KString("/sys/"), InodeBase::Mode::USER_READ);
+        createDirectory(KString("/sys/class/"), InodeBase::Mode::USER_READ);
+        createDirectory(KString("/sys/class/graphics/"), InodeBase::Mode::USER_READ);
+        createDirectory(KString("/sys/class/graphics/fb0/"), InodeBase::Mode::USER_READ);
+
+        // Create framebuffer modes inode that reads from kernel::vbe_ptr
+        auto modesInode = kernel::heapManager.createInstance<FunctionInode>([](char* buffer, size_t size, size_t offset) -> size_t {
+            // Build the Linux-compatible modes string
+            // Format: "U:WIDTHxHEIGHTp-60\n"
+            char modesStr[64];
+
+            // Get framebuffer dimensions from VBE
+            uint16_t width  = kernel::vbe_ptr->getFrameBuffer().getWidth();
+            uint16_t height = kernel::vbe_ptr->getFrameBuffer().getHeight();
+
+            // Format as Linux standard: "U:1920x1080p-60"
+            int written     = snprintf(modesStr, sizeof(modesStr), "U:%ux%up-60\n", width, height);
+            if (written < 0 || written >= (int) sizeof(modesStr)) return 0;
+
+            size_t len = written;
+
+            // Handle offset beyond the string
+            if (offset >= len) return 0;
+
+            // Calculate bytes to read
+            size_t bytesToRead = std::min(size, len - offset);
+            memcpy((void*) buffer, (void*) (modesStr + offset), bytesToRead);
+            return bytesToRead;
+        });
+
+        if (!modesInode) return false;
+        setInodeByPath(KString("/sys/class/graphics/fb0/modes"), modesInode);
 
         return true;
     }
