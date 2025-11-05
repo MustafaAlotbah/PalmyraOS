@@ -248,6 +248,9 @@ namespace PalmyraOS::kernel {
         // change the width and height of the text rendering area
         void setSize(uint32_t w, uint32_t h);
 
+        // Set the font for text rendering
+        void setFont(Font& font);
+
         Color getCurrentColor();
 
         // Puts a string on the screen
@@ -299,7 +302,7 @@ namespace PalmyraOS::kernel {
 
     private:
         FrameBuffer& frameBuffer_;                         // Reference to the frame buffer
-        Font& font_;                                       // Reference to the font
+        Font* font_;                                       // Pointer to the font (allows dynamic switching)
         Color textColor_{255, 255, 255};                   // Current text color (default is white)
         NumeralSystem representation{NumeralSystem::Dec};  // Current numeral system (default is decimal)
         uint8_t precision_{3};                             // Current precision of floats(default is 3)

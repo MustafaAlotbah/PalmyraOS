@@ -120,8 +120,11 @@ namespace PalmyraOS {
          */
         static void initializeArial12();
 
+        static void initializeFira12();
+
     public:
-        static Font Arial12;  ///< Static instance of the Arial-12 font.
+        static Font Arial12;          ///< Static instance of the Arial-12 font.
+        static Font FiraCodeLight12;  ///< Static instance of the Fira Code Light font.
 
     private:
         const char* name_{};           ///< Name of the font (e.g., "Arial-12").

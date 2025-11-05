@@ -37,6 +37,52 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
     }
 
     /**
+     * Quickly peek at BMP header to determine image dimensions
+     * without loading the entire pixel data.
+     *
+     * @param filePath Path to the BMP file
+     * @param outWidth Output parameter for image width
+     * @param outHeight Output parameter for image height
+     * @return true if successfully read dimensions, false on error
+     */
+    static bool getImageDimensions(const char* filePath, int* outWidth, int* outHeight) {
+        int fd = ::open(filePath, O_RDONLY);
+        if (fd < 0) return false;
+
+        // Read BMP File Header (14 bytes)
+        unsigned char header[14];
+        if (read(fd, header, 14) != 14) {
+            close(fd);
+            return false;
+        }
+
+        // Check BMP signature ('BM')
+        if (header[0] != 'B' || header[1] != 'M') {
+            close(fd);
+            return false;
+        }
+
+        // Read DIB Header (40 bytes for BITMAPINFOHEADER)
+        unsigned char dibHeader[40];
+        if (read(fd, dibHeader, 40) != 40) {
+            close(fd);
+            return false;
+        }
+
+        // Extract width and height (little-endian)
+        *outWidth        = dibHeader[4] | (dibHeader[5] << 8) | (dibHeader[6] << 16) | (dibHeader[7] << 24);
+        int heightSigned = dibHeader[8] | (dibHeader[9] << 8) | (dibHeader[10] << 16) | (dibHeader[11] << 24);
+        *outHeight       = (heightSigned < 0) ? -heightSigned : heightSigned;
+
+        close(fd);
+
+        // Validate dimensions against limits
+        if (*outWidth <= 0 || *outHeight <= 0 || *outWidth > (int) MAX_IMAGE_WIDTH || *outHeight > (int) MAX_IMAGE_HEIGHT) { return false; }
+
+        return true;
+    }
+
+    /**
      * Load a BMP image file from disk into memory
      *
      * BMP (Bitmap) File Format:
@@ -427,16 +473,40 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
             _exit(1);
         }
 
-        const char* imagePath = argv[1];
+        // ============================================
+        // UI Layout Constants (MUST be consistent everywhere!)
+        // These define the window chrome and must match actual rendering
+        // ============================================
+        const int UI_TOP_BAR_HEIGHT     = 20;  // Height of window title bar
+        const int UI_TOP_PADDING        = 4;   // Padding below top bar before image
+        const int UI_BOTTOM_TEXT_HEIGHT = 20;  // Height reserved for filename + image info at bottom
+        const int UI_SIDE_PADDING       = 10;  // Horizontal padding on sides
+
+        const char* imagePath           = argv[1];
 
         // Extract filename from path for window title
-        char fileName[256]    = {0};
+        char fileName[256]              = {0};
         extractFileName(imagePath, fileName, sizeof(fileName));
 
         char windowTitle[512] = {0};
         snprintf(windowTitle, sizeof(windowTitle), "Image Viewer - %s", fileName);
 
-        SDK::Window window(100, 100, 640, 480, true, windowTitle);
+        // Try to determine optimal window size based on image dimensions
+        uint32_t windowWidth  = 300;  // Default fallback width
+        uint32_t windowHeight = 200;  // Default fallback height
+
+        int imgWidth = 0, imgHeight = 0;
+        if (getImageDimensions(imagePath, &imgWidth, &imgHeight)) {
+            // Calculate required window dimensions using UI constants
+            uint32_t requiredWidth  = imgWidth + UI_SIDE_PADDING;
+            uint32_t requiredHeight = UI_TOP_BAR_HEIGHT + UI_TOP_PADDING + imgHeight + UI_BOTTOM_TEXT_HEIGHT;
+
+            // Cap at 640x480 (screen limitations)
+            windowWidth             = (requiredWidth > 640) ? 640 : requiredWidth;
+            windowHeight            = (requiredHeight > 480) ? 480 : requiredHeight;
+        }
+
+        SDK::Window window(100, 100, windowWidth, windowHeight, true, windowTitle);
         SDK::WindowGUI windowGui(window);
         windowGui.setBackground(Color::Black);
 
@@ -495,21 +565,22 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
                 // - dx, dy: Screen coordinates where pixel is drawn
                 // - We clip pixels that would go outside the framebuffer
 
-                // Reserve space at bottom for text (approximately 60 pixels for 2 lines + padding)
-                const int textAreaHeight  = 60;
-                const int availableHeight = maxY - textAreaHeight;
+                // Use UI layout constants (same as window sizing)
+                const int imageAreaStartY = UI_TOP_BAR_HEIGHT + UI_TOP_PADDING;
+                const int imageAreaEndY   = maxY - UI_BOTTOM_TEXT_HEIGHT;
+                const int availableHeight = imageAreaEndY - imageAreaStartY;
 
                 // Calculate centered position for image
                 // Center horizontally: (framebuffer_width - image_width) / 2
-                // Center vertically: (available_height - image_height) / 2
+                // Center vertically within available area between top bar and text
                 const int offsetX         = (maxX - imageData->width) / 2;
-                const int offsetY         = (availableHeight - imageData->height) / 2;
+                const int offsetY         = imageAreaStartY + (availableHeight - imageData->height) / 2;
 
                 // Iterate through each pixel in the image
                 for (int y = 0; y < imageData->height; ++y) {
-                    int dy = offsetY + y;              // Screen Y coordinate (centered)
-                    if (dy < 0) continue;              // Clip: Skip if above framebuffer
-                    if (dy >= availableHeight) break;  // Clip: Don't draw if in text area or below
+                    int dy = offsetY + y;                // Screen Y coordinate (centered)
+                    if (dy < imageAreaStartY) continue;  // Clip: Skip if above drawable area
+                    if (dy >= imageAreaEndY) break;      // Clip: Don't draw if in text area or below
 
                     for (int x = 0; x < imageData->width; ++x) {
                         int dx = offsetX + x;   // Screen X coordinate (centered)
@@ -537,7 +608,7 @@ namespace PalmyraOS::Userland::builtin::ImageViewer {
                 const int bottomMargin = 10;
                 const int leftMargin   = 10;
                 const int rightMargin  = 10;
-                int textY              = maxY - textAreaHeight + bottomMargin;
+                int textY              = maxY - UI_BOTTOM_TEXT_HEIGHT + bottomMargin - 34;
 
                 windowGui.text().setCursor(leftMargin, textY);
 

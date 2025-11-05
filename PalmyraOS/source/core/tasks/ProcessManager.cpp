@@ -24,7 +24,7 @@
 PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char* const* argv, bool isInternal)
     : pid_(pid), age_(2), state_(State::Ready), mode_(mode), priority_(priority) {
 
-    LOG_DEBUG("Constructing Process [pid %d]", pid_);
+    LOG_DEBUG("Constructing Process [pid %d] (%s) (mode: %s)", pid_, argv[0], mode_ == Mode::Kernel ? "kernel" : "user");
 
     // Assertions to ensure the entry point is within kernel space.
     // TODO: just temporarily check to prevent entry points outside the kernel.
