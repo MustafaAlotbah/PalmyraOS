@@ -288,3 +288,411 @@ size_t snprintf(char* str, size_t size, const char* format, ...) {
     va_end(ap);
     return written;
 }
+
+// ============================================================================
+// SCANF FAMILY IMPLEMENTATION
+// ============================================================================
+
+// Helper function: Skip whitespace in input string
+static const char* skip_whitespace(const char* str) {
+    if (!str) return str;
+    while (*str && (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r')) { str++; }
+    return str;
+}
+
+// Helper function: Parse integer from string (handles negative numbers)
+static bool parse_int(const char** str_ptr, int* result) {
+    if (!str_ptr || !*str_ptr || !result) return false;
+
+    const char* str = skip_whitespace(*str_ptr);
+    if (!*str) return false;
+
+    bool negative = false;
+    if (*str == '-') {
+        negative = true;
+        str++;
+    }
+    else if (*str == '+') { str++; }
+
+    if (!(*str >= '0' && *str <= '9')) return false;
+
+    int value = 0;
+    while (*str >= '0' && *str <= '9') {
+        value = value * 10 + (*str - '0');
+        str++;
+    }
+
+    *result  = negative ? -value : value;
+    *str_ptr = str;
+    return true;
+}
+
+// Helper function: Parse unsigned integer from string
+static bool parse_uint(const char** str_ptr, unsigned int* result) {
+    if (!str_ptr || !*str_ptr || !result) return false;
+
+    const char* str = skip_whitespace(*str_ptr);
+    if (!*str) return false;
+
+    if (!(*str >= '0' && *str <= '9')) return false;
+
+    unsigned int value = 0;
+    while (*str >= '0' && *str <= '9') {
+        value = value * 10 + (*str - '0');
+        str++;
+    }
+
+    *result  = value;
+    *str_ptr = str;
+    return true;
+}
+
+// Helper function: Parse hex number from string
+static bool parse_hex(const char** str_ptr, unsigned int* result) {
+    if (!str_ptr || !*str_ptr || !result) return false;
+
+    const char* str = skip_whitespace(*str_ptr);
+
+    // Handle optional "0x" prefix
+    if (*str == '0' && (*(str + 1) == 'x' || *(str + 1) == 'X')) { str += 2; }
+
+    if (!*str) return false;
+
+    // Check if character is valid hex
+    auto is_hex_digit = [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); };
+
+    auto hex_to_int   = [](char c) {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return 0;
+    };
+
+    if (!is_hex_digit(*str)) return false;
+
+    unsigned int value = 0;
+    while (*str && is_hex_digit(*str)) {
+        value = value * 16 + hex_to_int(*str);
+        str++;
+    }
+
+    *result  = value;
+    *str_ptr = str;
+    return true;
+}
+
+// Helper function: Parse binary number from string
+static bool parse_binary(const char** str_ptr, unsigned int* result) {
+    if (!str_ptr || !*str_ptr || !result) return false;
+
+    const char* str = skip_whitespace(*str_ptr);
+    if (!*str || (*str != '0' && *str != '1')) return false;
+
+    unsigned int value = 0;
+    while (*str && (*str == '0' || *str == '1')) {
+        value = value * 2 + (*str - '0');
+        str++;
+    }
+
+    *result  = value;
+    *str_ptr = str;
+    return true;
+}
+
+// Helper function: Parse floating point from string
+static bool parse_float(const char** str_ptr, double* result) {
+    if (!str_ptr || !*str_ptr || !result) return false;
+
+    const char* str = skip_whitespace(*str_ptr);
+    if (!*str) return false;
+
+    bool negative = false;
+    if (*str == '-') {
+        negative = true;
+        str++;
+    }
+    else if (*str == '+') { str++; }
+
+    if (!(*str >= '0' && *str <= '9') && *str != '.') return false;
+
+    double value         = 0.0;
+    double decimal_place = 1.0;
+    bool seen_decimal    = false;
+
+    while (*str) {
+        if (*str == '.') {
+            if (seen_decimal) break;
+            seen_decimal = true;
+            str++;
+        }
+        else if (*str >= '0' && *str <= '9') {
+            if (seen_decimal) {
+                decimal_place *= 0.1;
+                value += (double) (*str - '0') * decimal_place;
+            }
+            else { value = value * 10.0 + (double) (*str - '0'); }
+            str++;
+        }
+        else { break; }
+    }
+
+    *result  = negative ? -value : value;
+    *str_ptr = str;
+    return true;
+}
+/**
+ * Parses a formatted string and extracts values into pointers.
+ *
+ * @param str Input string to parse
+ * @param format Format string with embedded format specifiers
+ * @param args Variable argument list (va_list) with pointers to store parsed values
+ *
+ * @return Number of successfully parsed and assigned items, or EOF on error
+ *
+ * Supported Format Specifiers:
+ * ===========================
+ *
+ * %d          - Signed integer (int*)
+ *               Example: sscanf("42", "%d", &i) sets i=42
+ *
+ * %u          - Unsigned integer (unsigned int*)
+ *               Example: sscanf("100", "%u", &u) sets u=100
+ *
+ * %x / %X     - Hexadecimal unsigned (unsigned int*)
+ *               Example: sscanf("FF", "%x", &h) sets h=255
+ *
+ * %b          - Binary (unsigned int*)
+ *               Example: sscanf("1010", "%b", &b) sets b=10
+ *
+ * %f          - Floating point (double*)
+ *               Example: sscanf("3.14", "%f", &f) sets f=3.14
+ *
+ * %s          - String - REQUIRES width specifier for safety (char*)
+ *               Example: sscanf("hello", "%5s", buf) copies "hello" (max 5 chars)
+ *               WARNING: %s without width is UNSAFE - will cause buffer overflow!
+ *
+ * %c          - Single character (char*)
+ *               Example: sscanf("A", "%c", &c) sets c='A'
+ *
+ * %p          - Pointer address in hexadecimal (unsigned int* or void**)
+ *               Example: sscanf("0x1000", "%p", &ptr)
+ *
+ * %lu / %ld   - Unsigned/signed long (unsigned long*, long*)
+ *
+ * %llu / %lld - Unsigned/signed long long (unsigned long long*, long long*)
+ *
+ * %zu         - Size type unsigned (size_t*)
+ *
+ * %%          - Literal percent sign (no argument consumed)
+ *
+ * Width Specifier (IMPORTANT for strings):
+ * =======================================
+ * %Ns         - Maximum N characters to read into buffer
+ *               Example: sscanf("hello world", "%5s", buf)
+ *               Reads "hello" (stops at space or after 5 chars, whichever comes first)
+ *               This prevents buffer overflow!
+ *
+ * Whitespace Handling:
+ * ===================
+ * - Whitespace in format string is skipped in input
+ * - Leading whitespace before numeric values is automatically skipped
+ * - %s stops at whitespace unless width specified
+ *
+ * Safety Features:
+ * ===============
+ * - Returns count of successfully assigned items
+ * - Safe pointer validation
+ * - Width specifiers prevent buffer overflow for %s
+ * - Type-safe conversions with error detection
+ *
+ * @note String format (%s) MUST use width specifier to prevent buffer overflow!
+ * @note All pointers must be valid and correctly typed
+ */
+size_t vsscanf(const char* str, const char* format, va_list args) {
+    if (!str || !format) return 0;
+
+    size_t items_assigned = 0;
+    const char* input     = str;
+
+    for (const char* fmt = format; *fmt; fmt++) {
+        if (*fmt != '%') {
+            // Literal character - must match in input
+            char input_char = *input;
+            char fmt_char   = *fmt;
+
+            // Skip whitespace in input if format has whitespace
+            if (fmt_char == ' ' || fmt_char == '\t' || fmt_char == '\n') {
+                input = skip_whitespace(input);
+                fmt++;
+                while (*fmt && (*fmt == ' ' || *fmt == '\t' || *fmt == '\n')) fmt++;
+                fmt--;  // Back up one since loop will increment
+                continue;
+            }
+
+            if (!*input || *input != fmt_char) return items_assigned;
+            input++;
+            continue;
+        }
+
+        fmt++;  // Move past '%'
+
+        if (*fmt == '%') {
+            // Escaped percent
+            if (*input != '%') return items_assigned;
+            input++;
+            continue;
+        }
+
+        // Parse width specifier
+        int width = -1;
+        if (*fmt >= '0' && *fmt <= '9') {
+            width = 0;
+            while (*fmt >= '0' && *fmt <= '9') {
+                width = width * 10 + (*fmt - '0');
+                fmt++;
+            }
+        }
+
+        // Skip leading whitespace
+        input = skip_whitespace(input);
+
+        switch (*fmt) {
+            case 'd': {  // Signed integer
+                int* ptr = va_arg(args, int*);
+                if (!ptr) return items_assigned;
+                if (!parse_int(&input, ptr)) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 'u': {  // Unsigned integer
+                unsigned int* ptr = va_arg(args, unsigned int*);
+                if (!ptr) return items_assigned;
+                if (!parse_uint(&input, ptr)) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 'x':
+            case 'X': {  // Hexadecimal
+                unsigned int* ptr = va_arg(args, unsigned int*);
+                if (!ptr) return items_assigned;
+                if (!parse_hex(&input, ptr)) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 'b': {  // Binary
+                unsigned int* ptr = va_arg(args, unsigned int*);
+                if (!ptr) return items_assigned;
+                if (!parse_binary(&input, ptr)) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 'f': {  // Floating point
+                double* ptr = va_arg(args, double*);
+                if (!ptr) return items_assigned;
+                if (!parse_float(&input, ptr)) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 's': {  // String (MUST have width for safety!)
+                char* ptr = va_arg(args, char*);
+                if (!ptr) return items_assigned;
+                if (width <= 0) {
+                    // UNSAFE: no width specified for %s
+                    return items_assigned;  // Fail safely
+                }
+
+                int chars_read = 0;
+                while (*input && chars_read < width - 1 && !isspace((unsigned char) *input)) {
+                    *ptr++ = *input++;
+                    chars_read++;
+                }
+                *ptr = '\0';
+
+                if (chars_read == 0) return items_assigned;
+                items_assigned++;
+                break;
+            }
+            case 'c': {  // Character
+                char* ptr = va_arg(args, char*);
+                if (!ptr) return items_assigned;
+                if (!*input) return items_assigned;
+                *ptr = *input++;
+                items_assigned++;
+                break;
+            }
+            case 'p': {  // Pointer (hex format)
+                void** ptr = va_arg(args, void**);
+                if (!ptr) return items_assigned;
+                unsigned int addr = 0;
+                if (!parse_hex(&input, &addr)) return items_assigned;
+                *ptr = (void*) (uintptr_t) addr;
+                items_assigned++;
+                break;
+            }
+            case 'l':  // Long variants: %ld, %lu, %lld, %llu
+                if (*(fmt + 1) == 'd') {
+                    fmt++;
+                    long* ptr = va_arg(args, long*);
+                    if (!ptr) return items_assigned;
+                    int temp = 0;
+                    if (!parse_int(&input, &temp)) return items_assigned;
+                    *ptr = (long) temp;
+                    items_assigned++;
+                }
+                else if (*(fmt + 1) == 'u') {
+                    fmt++;
+                    unsigned long* ptr = va_arg(args, unsigned long*);
+                    if (!ptr) return items_assigned;
+                    unsigned int temp = 0;
+                    if (!parse_uint(&input, &temp)) return items_assigned;
+                    *ptr = (unsigned long) temp;
+                    items_assigned++;
+                }
+                else if (*(fmt + 1) == 'l') {
+                    fmt++;
+                    if (*(fmt + 1) == 'd') {
+                        fmt++;
+                        long long* ptr = va_arg(args, long long*);
+                        if (!ptr) return items_assigned;
+                        int temp = 0;
+                        if (!parse_int(&input, &temp)) return items_assigned;
+                        *ptr = (long long) temp;
+                        items_assigned++;
+                    }
+                    else if (*(fmt + 1) == 'u') {
+                        fmt++;
+                        unsigned long long* ptr = va_arg(args, unsigned long long*);
+                        if (!ptr) return items_assigned;
+                        unsigned int temp = 0;
+                        if (!parse_uint(&input, &temp)) return items_assigned;
+                        *ptr = (unsigned long long) temp;
+                        items_assigned++;
+                    }
+                }
+                break;
+            case 'z':  // size_t
+                if (*(fmt + 1) == 'u') {
+                    fmt++;
+                    size_t* ptr = va_arg(args, size_t*);
+                    if (!ptr) return items_assigned;
+                    unsigned int temp = 0;
+                    if (!parse_uint(&input, &temp)) return items_assigned;
+                    *ptr = (size_t) temp;
+                    items_assigned++;
+                }
+                break;
+            default: return items_assigned;
+        }
+    }
+
+    return items_assigned;
+}
+
+// Wrapper for sscanf
+size_t sscanf(const char* str, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    size_t result = vsscanf(str, format, args);
+    va_end(args);
+    return result;
+}

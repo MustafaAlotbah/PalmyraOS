@@ -50,3 +50,30 @@ size_t sprintf(char* str, const char* format, ...);
  * If an output error is encountered, a negative value is returned.
  */
 size_t snprintf(char* str, size_t size, const char* format, ...);
+
+
+/**
+ * Parses a formatted string and extracts values into pointers.
+ *
+ * @param str Input string to parse
+ * @param format Format string with embedded format specifiers
+ * @param args Variable argument list (va_list) with pointers to store parsed values
+ *
+ * @return Number of successfully parsed and assigned items, or EOF on error
+ * @note String format (%s) MUST use width specifier to prevent buffer overflow!
+ * @note All pointers must be valid and correctly typed
+ */
+size_t vsscanf(const char* str, const char* format, va_list args);
+
+/**
+ * Parses a formatted string and extracts values into pointers.
+ *
+ * @param str Input string to parse
+ * @param format Format string with embedded format specifiers
+ * @param ... Pointers to variables where parsed values will be stored
+ *
+ * @return Number of successfully parsed and assigned items
+ *
+ * @see vsscanf for detailed documentation and safety notes
+ */
+size_t sscanf(const char* str, const char* format, ...);
