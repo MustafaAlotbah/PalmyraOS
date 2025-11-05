@@ -8,6 +8,7 @@
 #include "core/memory/KernelHeap.h"
 #include "core/memory/paging.h"
 #include "core/peripherals/ATA.h"
+#include "core/peripherals/BGA.h"
 
 
 extern uint32_t placement_address;
@@ -58,12 +59,27 @@ namespace PalmyraOS::kernel {
     extern PalmyraOS::kernel::ATA* ata_secondary_slave;
 
     /**
-     * @brief Initializes the graphics system.
+     * @brief Initializes the graphics system from VBE bootloader information.
      * @param vbe_mode_info Pointer to VBE mode information.
      * @param vbe_control_info Pointer to VBE control information.
      * @return True if initialization is successful, false otherwise.
      */
     bool initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_control_info_t* vbe_control_info);
+
+    /**
+     * @brief Initializes the graphics system with explicit framebuffer information.
+     *
+     * This function is used when graphics information is not available from the
+     * bootloader (e.g., when BGA is detected at runtime). It allocates memory
+     * for the back buffer and initializes all graphics components.
+     *
+     * @param width Framebuffer width in pixels
+     * @param height Framebuffer height in pixels
+     * @param framebufferAddress Physical address of the framebuffer
+     * @param bpp Bits per pixel (8, 16, 24, or 32)
+     * @return True if initialization is successful, false otherwise.
+     */
+    bool initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t bpp);
 
     /**
      * @brief Clears the screen and optionally draws the logo.

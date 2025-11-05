@@ -98,6 +98,105 @@ bool PalmyraOS::kernel::initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_c
     return true;
 }
 
+bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t bpp) {
+    /**
+     * @brief Initializes the graphics subsystem with explicit framebuffer information.
+     *
+     * This function is used when graphics information is provided directly (e.g., from BGA)
+     * rather than from the bootloader. It creates a VBE-compatible mode info structure,
+     * allocates memory for the back buffer, and initializes all graphics components.
+     *
+     * @param width Framebuffer width in pixels
+     * @param height Framebuffer height in pixels
+     * @param framebufferAddress Physical address of the framebuffer
+     * @param bpp Bits per pixel (8, 16, 24, or 32)
+     * @return True if initialization is successful, false otherwise.
+     */
+
+    // Calculate bytes per pixel from bpp
+    uint16_t bytesPerPixel = bpp / 8;
+    if (bytesPerPixel == 0) bytesPerPixel = 1;  // Minimum 1 byte per pixel
+
+    // Calculate the size of the framebuffer (front buffer at hardware address)
+    uint32_t framebufferSize = width * height * bytesPerPixel;
+
+    // Allocate memory for the back buffer (same size as framebuffer)
+    uint32_t* backBuffer     = (uint32_t*) kernel::kmalloc(framebufferSize);
+    if (backBuffer == nullptr) {
+        LOG_ERROR("Failed to allocate %u bytes for graphics back buffer", framebufferSize);
+        return false;
+    }
+
+    // Zero-initialize the back buffer
+    for (uint32_t i = 0; i < width * height; ++i) { backBuffer[i] = 0; }
+
+    LOG_DEBUG("Graphics back buffer allocated: %ux%u @ %u bpp (%u bytes)", width, height, bpp, framebufferSize);
+
+    // Create a temporary VBE mode info structure for the graphics system
+    // We'll use the VBE class as a graphics abstraction layer even though it's not truly VBE
+    {
+        // Allocate memory for a vbe_mode_info_t structure
+        vbe_mode_info_t* mode_info = (vbe_mode_info_t*) kernel::kmalloc(sizeof(vbe_mode_info_t));
+        if (mode_info == nullptr) {
+            LOG_ERROR("Failed to allocate vbe_mode_info_t structure");
+            return false;
+        }
+
+        // Fill in the mode info structure with our framebuffer details
+        mode_info->width                 = width;
+        mode_info->height                = height;
+        mode_info->bpp                   = bpp;
+        mode_info->framebuffer           = framebufferAddress;
+        mode_info->attributes            = 0x0091;  // Supported, graphics mode, linear framebuffer
+
+        // Allocate memory for a vbe_control_info_t structure (minimal)
+        vbe_control_info_t* control_info = (vbe_control_info_t*) kernel::kmalloc(sizeof(vbe_control_info_t));
+        if (control_info == nullptr) {
+            LOG_ERROR("Failed to allocate vbe_control_info_t structure");
+            return false;
+        }
+
+        // Initialize the VBE object with our framebuffer information
+        kernel::vbe_ptr = (VBE*) kernel::kmalloc(sizeof(VBE));
+        if (kernel::vbe_ptr == nullptr) {
+            LOG_ERROR("Failed to allocate VBE object");
+            return false;
+        }
+
+        // Construct the VBE object with the back buffer we allocated
+        new (kernel::vbe_ptr) VBE(mode_info, control_info, backBuffer);
+    }
+
+    // Initialize the font manager
+    FontManager::initialize();
+
+    // Initialize kernel's brush
+    {
+        kernel::brush_ptr = (Brush*) kernel::kmalloc(sizeof(Brush));
+        if (kernel::brush_ptr == nullptr) {
+            LOG_ERROR("Failed to allocate Brush object");
+            return false;
+        }
+
+        new (kernel::brush_ptr) Brush(kernel::vbe_ptr->getFrameBuffer());
+    }
+
+    // Initialize kernel's text renderer
+    {
+        kernel::textRenderer_ptr = (TextRenderer*) kernel::kmalloc(sizeof(TextRenderer));
+        if (kernel::textRenderer_ptr == nullptr) {
+            LOG_ERROR("Failed to allocate TextRenderer object");
+            return false;
+        }
+
+        new (kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Arial12);
+    }
+
+    LOG_INFO("Graphics initialized with framebuffer: %ux%u @ %u bpp at 0x%X", width, height, bpp, framebufferAddress);
+
+    return true;
+}
+
 void PalmyraOS::kernel::clearScreen(bool drawLogo) {
     /**
      * @brief Clears the screen and optionally draws the logo.
@@ -192,9 +291,7 @@ bool PalmyraOS::kernel::initializePhysicalMemory(multiboot_info_t* x86_multiboot
         uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
         uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
 
-        for (int i = 0; i < frameBufferFrames; ++i) {
-            PalmyraOS::kernel::PhysicalMemory::reserveFrame((void*) (vbe_mode_info->framebuffer + (i << PAGE_BITS)));
-        }
+        for (int i = 0; i < frameBufferFrames; ++i) { PalmyraOS::kernel::PhysicalMemory::reserveFrame((void*) (vbe_mode_info->framebuffer + (i << PAGE_BITS))); }
     }
     return true;
 }
@@ -221,8 +318,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
     kernel::kernelPagingDirectory_ptr = (PagingDirectory*) PhysicalMemory::allocateFrames(PagingDirectoryFrames);
 
     // Ensure the pointer we have is aligned
-    if ((uint32_t) kernel::kernelPagingDirectory_ptr & (PAGE_SIZE - 1))
-        kernel::kernelPanic("Unaligned Kernel Directory at 0x%X", kernel::kernelPagingDirectory_ptr);
+    if ((uint32_t) kernel::kernelPagingDirectory_ptr & (PAGE_SIZE - 1)) kernel::kernelPanic("Unaligned Kernel Directory at 0x%X", kernel::kernelPagingDirectory_ptr);
 
     // Map kernel space by identity
     {
@@ -246,6 +342,8 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
     {
         uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
         uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
+        LOG_INFO("Mapping video memory by identity: %u frames", frameBufferFrames);
+        LOG_INFO("Frame buffer size: %u bytes", frameBufferSize);
         kernel::kernelPagingDirectory_ptr->mapPages((void*) vbe_mode_info->framebuffer,
                                                     (void*) vbe_mode_info->framebuffer,
                                                     frameBufferFrames,
@@ -310,10 +408,7 @@ void PalmyraOS::kernel::initializeDrivers() {
     ata_secondary_master = heapManager.createInstance<ATA>(0x170, ATA::Type::Master);
     ata_secondary_slave  = heapManager.createInstance<ATA>(0x170, ATA::Type::Slave);
 
-    auto atas            = {std::pair(ata_primary_master, "pM"),
-                            std::pair(ata_primary_slave, "pS"),
-                            std::pair(ata_secondary_master, "sM"),
-                            std::pair(ata_secondary_slave, "sS")};
+    auto atas            = {std::pair(ata_primary_master, "pM"), std::pair(ata_primary_slave, "pS"), std::pair(ata_secondary_master, "sM"), std::pair(ata_secondary_slave, "sS")};
 
     for (auto& [ata, name]: atas) {
         if (!ata) {
@@ -336,8 +431,8 @@ void PalmyraOS::kernel::initializeDrivers() {
                  ata->getFirmwareVersion(),
                  ata->getSectors28Bit(),
                  ata->getStorageSize() / 1048576);
-        textRenderer << "Model [" << ata->getModelNumber() << "] Serial [" << ata->getSerialNumber() << "] Firmware [" << ata->getFirmwareVersion()
-                     << "] Sectors [" << ata->getSectors28Bit() << "] Space [" << (ata->getStorageSize() / 1048576) << " MiB]";
+        textRenderer << "Model [" << ata->getModelNumber() << "] Serial [" << ata->getSerialNumber() << "] Firmware [" << ata->getFirmwareVersion() << "] Sectors ["
+                     << ata->getSectors28Bit() << "] Space [" << (ata->getStorageSize() / 1048576) << " MiB]";
     }
 
     textRenderer << "\n";
@@ -402,11 +497,8 @@ void PalmyraOS::kernel::initializePartitions() {
                 }
 
                 textRenderer << "FAT32]";
-                auto rootNode = heapManager.createInstance<vfs::FAT32Directory>(fat32,
-                                                                                2,
-                                                                                vfs::InodeBase::Mode::USER_READ,
-                                                                                vfs::InodeBase::UserID::ROOT,
-                                                                                vfs::InodeBase::GroupID::ROOT);
+                auto rootNode =
+                        heapManager.createInstance<vfs::FAT32Directory>(fat32, 2, vfs::InodeBase::Mode::USER_READ, vfs::InodeBase::UserID::ROOT, vfs::InodeBase::GroupID::ROOT);
                 vfs::VirtualFileSystem::setInodeByPath(name, rootNode);
 
                 // Debug: Analyze directory entries to see how Windows writes LFNs
@@ -600,8 +692,7 @@ void PalmyraOS::kernel::initializePartitions() {
                                              ((uint32_t) cluHi << 16) | cluLo,
                                              fSize);
                                     // Dump LFN chain offsets and ords
-                                    for (auto& part: lfnParts)
-                                        LOG_WARN("  LFN part at off=%u ord=%u len=%u", (uint32_t) part.off, part.ord, (uint32_t) part.w.size());
+                                    for (auto& part: lfnParts) LOG_WARN("  LFN part at off=%u ord=%u len=%u", (uint32_t) part.off, part.ord, (uint32_t) part.w.size());
                                 }
                             }
 

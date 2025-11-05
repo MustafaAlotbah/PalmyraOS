@@ -179,14 +179,35 @@ void callConstructors() {
     kernel::initializeGraphics(vbe_mode_info, vbe_control_info);
     LOG_INFO("Initialized Graphics.");
 
-    // dereference graphics tools
-    auto& textRenderer = *kernel::textRenderer_ptr;
+    // ----------------------- Check BGA Graphics Adapter -----------------------
+    auto [width, height, bpp] = std::tuple{1920, 1080, 32};
+    if (kernel::BGA::isAvailable()) {
+
+        if (kernel::BGA::initialize(width, height, bpp)) {
+            LOG_INFO("BGA initialized successfully at %dx%dx%d", width, height, bpp);
+
+            // Reinitialize graphics with BGA framebuffer
+            if (kernel::initializeGraphicsWithFramebuffer(kernel::BGA::getWidth(), kernel::BGA::getHeight(), kernel::BGA::getFramebufferAddress(), kernel::BGA::getBpp())) {
+                LOG_INFO("Graphics reinitialized with BGA framebuffer");
+            }
+            else { LOG_ERROR("Failed to reinitialize graphics with BGA framebuffer"); }
+        }
+        else {
+            //    textRenderer << " Failed.\n" << SWAP_BUFF();
+            LOG_ERROR("BGA initialization failed");
+        }
+    }
+    else { LOG_INFO("BGA Graphics Adapter not available."); }
+
 
     // ensure we have enough stack here
     if (get_esp() < get_kernel_stack_end()) kernel::kernelPanic("Kernel Stack overflow by 0x%X bytes", (get_kernel_stack_end() - get_esp()));
 
     // Logo
     kernel::clearScreen(true);
+
+    // dereference graphics tools
+    auto& textRenderer = *kernel::textRenderer_ptr;
 
 
     // ----------------------- Initialize Global Descriptor Tables -------------

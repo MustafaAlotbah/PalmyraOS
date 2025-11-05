@@ -229,7 +229,7 @@ void closeAppLauncher(AppLauncherState& launcher) {
 [[noreturn]] int PalmyraOS::Userland::builtin::MenuBar::main(uint32_t argc, char** argv) {
 
     // Define dimensions and required memory for the window
-    palmyra_window w      = {.x = 0, .y = 0, .width = 1024, .height = 20, .movable = false, .title = "MenuBar"};
+    palmyra_window w      = {.x = 0, .y = 0, .width = 1920, .height = 20, .movable = false, .title = "MenuBar"};
     size_t requiredMemory = w.width * w.height * sizeof(uint32_t);
 
     // Allocate memory for the back buffer
