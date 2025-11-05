@@ -1,4 +1,5 @@
 #include "palmyraOS/palmyraSDK.h"
+#include "libs/stdio.h"  // For sscanf
 #include "libs/string.h"
 #include "palmyraOS/stdio.h"
 #include "palmyraOS/stdlib.h"  // For dynamic memory management
@@ -420,4 +421,53 @@ PalmyraOS::SDK::Layout::~Layout() {
                                      prevPositionY_ + scrollBarY + scrollBarHeight,
                                      Color::Yellow);
     }
+}
+
+/**********************************************************/
+
+bool PalmyraOS::SDK::getScreenDimensions(uint32_t* width, uint32_t* height) {
+    // Validate input pointers
+    if (!width || !height) {
+        return false;  // Cannot proceed with null pointers
+    }
+
+    char modes_str[64];
+    char mode_prefix;
+    int parsed_width  = 640;  // Fallback
+    int parsed_height = 480;
+
+    // Try to read from /sys/class/graphics/fb0/modes
+    int fd            = open("/sys/class/graphics/fb0/modes", 0);
+    if (fd < 1) {
+        // File doesn't exist or couldn't be opened, use fallback
+        *width  = 640;
+        *height = 480;
+        return false;
+    }
+
+    int bytes_read = read(fd, modes_str, sizeof(modes_str) - 1);
+    close(fd);
+
+    if (bytes_read <= 0) {
+        // Read failed, use fallback
+        *width  = 640;
+        *height = 480;
+        return false;
+    }
+
+    // Null-terminate the string
+    modes_str[bytes_read] = '\0';
+
+    // Parse format: "U:WIDTHxHEIGHTp-60\n" using sscanf
+    // We need at least 3 items to succeed (prefix, width, height)
+    if (sscanf(modes_str, "%c:%dx%dp", &mode_prefix, &parsed_width, &parsed_height) >= 3) {
+        *width  = (uint32_t) parsed_width;
+        *height = (uint32_t) parsed_height;
+        return true;
+    }
+
+    // Parsing failed, use fallback
+    *width  = 640;
+    *height = 480;
+    return false;
 }

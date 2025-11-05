@@ -73,11 +73,7 @@ namespace PalmyraOS::SDK {
 
         void fillRectangle(uint32_t x, uint32_t y, uint32_t width, uint32_t height, Color backColor = Color::Primary);
 
-        bool link(const char* text,
-                  bool whileDown   = false,
-                  Color color      = Color::Primary,
-                  Color colorHover = Color::PrimaryLight,
-                  Color colorDown  = Color::PrimaryDark);
+        bool link(const char* text, bool whileDown = false, Color color = Color::Primary, Color colorHover = Color::PrimaryLight, Color colorDown = Color::PrimaryDark);
 
         ClippedBounds clipToTextRenderer(uint32_t xMin, uint32_t yMin, uint32_t xMax, uint32_t yMax);
 
@@ -130,5 +126,19 @@ namespace PalmyraOS::SDK {
     int constructDirectoryPath(char* buffer, size_t bufferSize, const types::UVector<types::UString<char>>& currentDirectory);
 
     int isElf(types::UserHeapManager& heap, const types::UString<char>& absolutePath);
+
+    /**
+     * @brief Reads screen dimensions from /sys/class/graphics/fb0/modes
+     *
+     * Attempts to read the current display resolution from the virtual file system.
+     * If successful, populates the provided pointers with width and height.
+     * If the read fails, sets both to fallback values (640x480).
+     *
+     * @param width Pointer to uint32_t where width will be stored (or 640 on failure)
+     * @param height Pointer to uint32_t where height will be stored (or 480 on failure)
+     *
+     * @return true if dimensions were successfully read, false if using fallback values
+     */
+    bool getScreenDimensions(uint32_t* width, uint32_t* height);
 
 }  // namespace PalmyraOS::SDK

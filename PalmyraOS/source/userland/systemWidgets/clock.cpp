@@ -2,15 +2,23 @@
 #include "userland/systemWidgets/clock.h"
 
 #include "libs/pmath.h"            // sin, cos
-#include "palmyraOS/palmyraSDK.h"  // Window, Window Frame
+#include "palmyraOS/palmyraSDK.h"  // Window, Window Frame, getScreenDimensions
 #include "palmyraOS/time.h"        // For rtc_time truct
 #include "palmyraOS/unistd.h"      // Include PalmyraOS system calls
 
 
 int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv) {
 
+    // Read screen dimensions to position clock window
+    uint32_t screenWidth  = 640;
+    uint32_t screenHeight = 480;
+    SDK::getScreenDimensions(&screenWidth, &screenHeight);
+
+    // Position clock at screen_width - 100 - 10
+    uint32_t clockX = screenWidth - 100 - 10;
+
     // Create and set up the main application window
-    SDK::Window window(914, 30, 100, 120, true, "Clock");
+    SDK::Window window(clockX, 30, 100, 120, true, "Clock");
     SDK::WindowGUI windowFrame(window);
 
     // Initialize time structure

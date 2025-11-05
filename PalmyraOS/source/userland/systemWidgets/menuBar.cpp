@@ -2,8 +2,9 @@
 
 #include "userland/systemWidgets/menuBar.h"
 
-#include "palmyraOS/stdio.h"   // printf, perror
-#include "palmyraOS/stdlib.h"  // malloc
+#include "palmyraOS/palmyraSDK.h"  // getScreenDimensions
+#include "palmyraOS/stdio.h"       // printf, perror
+#include "palmyraOS/stdlib.h"      // malloc
 #include "palmyraOS/time.h"
 #include "palmyraOS/unistd.h"  // PalmyraOS API
 
@@ -75,6 +76,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
     int currentSeconds = current.tm_hour * 3600 + current.tm_min * 60 + current.tm_sec;
     return currentSeconds - startSeconds;
 }
+
 
 // ============ APP LAUNCHER FUNCTIONS ============
 
@@ -228,8 +230,13 @@ void closeAppLauncher(AppLauncherState& launcher) {
 
 [[noreturn]] int PalmyraOS::Userland::builtin::MenuBar::main(uint32_t argc, char** argv) {
 
+    // Read screen dimensions from /sys/class/graphics/fb0/modes, fallback to 640x480
+    uint32_t screenWidth  = 640;
+    uint32_t screenHeight = 480;
+    PalmyraOS::SDK::getScreenDimensions(&screenWidth, &screenHeight);
+
     // Define dimensions and required memory for the window
-    palmyra_window w      = {.x = 0, .y = 0, .width = 1920, .height = 20, .movable = false, .title = "MenuBar"};
+    palmyra_window w      = {.x = 0, .y = 0, .width = screenWidth, .height = 20, .movable = false, .title = "MenuBar"};
     size_t requiredMemory = w.width * w.height * sizeof(uint32_t);
 
     // Allocate memory for the back buffer
