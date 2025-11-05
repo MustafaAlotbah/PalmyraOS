@@ -341,11 +341,11 @@ void callConstructors() {
         }
 
         // Run the kernel terminal
-        {
-            char* argv[] = {const_cast<char*>("terminal.elf"), const_cast<char*>("uname"), nullptr};
-            // TODO new process must count argv, instead of hard coded -> error prone
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 2, argv, true);
-        }
+        // {
+        //     char* argv[] = {const_cast<char*>("terminal.elf"), const_cast<char*>("uname"), nullptr};
+        //     // TODO new process must count argv, instead of hard coded -> error prone
+        //     kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 2, argv, true);
+        // }
 
         // Background process that counts just for testing
         //{
@@ -380,16 +380,16 @@ void callConstructors() {
         //		}
 
         // Process with a window that exists later for testing
-        {
-            char* argv[] = {const_cast<char*>("fileManager.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
-        }
+        // {
+        //     char* argv[] = {const_cast<char*>("fileManager.elf"), nullptr};
+        //     kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
+        // }
 
         // Process with a window that exists later for testing
-        {
-            char* argv[] = {const_cast<char*>("taskManager.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::taskManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
-        }
+        // {
+        //     char* argv[] = {const_cast<char*>("taskManager.elf"), nullptr};
+        //     kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::taskManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
+        // }
     }
 
 

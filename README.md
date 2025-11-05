@@ -15,7 +15,7 @@ Currently:
 
 Currently, it looks as follows:
 
-![PalmyraOS](media/PalmyraOS__03_11_2025_19_28_30.png)
+![PalmyraOS](media/PalmyraOS__05_11_2025_20_26_30.png)
 
 ## Tools
 

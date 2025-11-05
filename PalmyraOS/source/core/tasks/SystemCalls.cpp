@@ -883,6 +883,66 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
         return;
     }
 
+    if (strcmp(path, "/bin/filemanager.elf") == 0) {
+
+        LOG_INFO("EXEC FILE MANAGER");
+        Process* proc =
+                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+
+
+        if (!proc) {
+            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
+            return;
+        }
+
+        // If pid is a valid pointer, store the process ID of the new process
+        if (isValidAddress(pid)) { *pid = proc->getPid(); }
+
+        // Return success
+        regs->eax = 0;
+        return;
+    }
+
+    if (strcmp(path, "/bin/taskmanager.elf") == 0) {
+
+        LOG_INFO("EXEC TASK MANAGER");
+        Process* proc =
+                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::taskManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+
+
+        if (!proc) {
+            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
+            return;
+        }
+
+        // If pid is a valid pointer, store the process ID of the new process
+        if (isValidAddress(pid)) { *pid = proc->getPid(); }
+
+        // Return success
+        regs->eax = 0;
+        return;
+    }
+
+    if (strcmp(path, "/bin/clock.elf") == 0) {
+
+        LOG_INFO("EXEC CLOCK");
+        Process* proc =
+                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelClock::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+
+
+        if (!proc) {
+            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
+            return;
+        }
+
+        // If pid is a valid pointer, store the process ID of the new process
+        if (isValidAddress(pid)) { *pid = proc->getPid(); }
+
+        // Return success
+        regs->eax = 0;
+        return;
+    }
+
 
     // Load the ELF file from the specified path
     auto file = vfs::VirtualFileSystem::getInodeByPath(KString(path));
