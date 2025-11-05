@@ -77,6 +77,21 @@ PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode 
 
 
     LOG_DEBUG("Constructing Process [pid %d] success", pid_);
+
+    // Log complete memory layout for debugging
+    LOG_DEBUG("Process Memory Layout [PID %d]:", pid_);
+    LOG_DEBUG("  Kernel Stack: 0x%X - 0x%X (Size: %d pages)",
+              reinterpret_cast<uint32_t>(kernelStack_),
+              reinterpret_cast<uint32_t>(kernelStack_) + PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE,
+              PROCESS_KERNEL_STACK_SIZE);
+    if (mode_ == Mode::User) {
+        LOG_DEBUG("  User Stack:   0x%X - 0x%X (Size: %d pages)",
+                  reinterpret_cast<uint32_t>(userStack_),
+                  reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE,
+                  PROCESS_USER_STACK_SIZE);
+    }
+    LOG_DEBUG("  Paging Directory: 0x%X", reinterpret_cast<uint32_t>(pagingDirectory_->getDirectory()));
+    LOG_DEBUG("  Kernel Space: 0x%X - 0x%X (Size: %d pages)", nullptr, nullptr, kernel::kernelLastPage);
 }
 
 void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, bool isInternal) {
@@ -107,14 +122,23 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
                                PROCESS_KERNEL_STACK_SIZE,
                                PageFlags::Present | PageFlags::ReadWrite  //| PageFlags::UserSupervisor // TODO investigation with ELF
     );
-    LOG_INFO("Kernel Stack at 0x%X of size %d pages", kernelStack_, PROCESS_KERNEL_STACK_SIZE);
+    uint32_t kernelStackStart = reinterpret_cast<uint32_t>(kernelStack_);
+    uint32_t kernelStackEnd   = kernelStackStart + (PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE);
+    LOG_INFO("Kernel Stack [PID %d] at 0x%X - 0x%X (size %d pages / %d bytes)",
+             pid_,
+             kernelStackStart,
+             kernelStackEnd,
+             PROCESS_KERNEL_STACK_SIZE,
+             PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE);
 
     // 3. If the process is in user mode, set up the user stack.
     if (mode == Process::Mode::User) {
         // Allocate and map the user stack.
         LOG_DEBUG("Mapping User Stack. Size: %d pages", PROCESS_USER_STACK_SIZE);
-        userStack_ = allocatePages(PROCESS_USER_STACK_SIZE);
-        LOG_INFO("User Stack at 0x%X of size %d pages", userStack_, PROCESS_USER_STACK_SIZE);
+        userStack_              = allocatePages(PROCESS_USER_STACK_SIZE);
+        uint32_t userStackStart = reinterpret_cast<uint32_t>(userStack_);
+        uint32_t userStackEnd   = userStackStart + (PAGE_SIZE * PROCESS_USER_STACK_SIZE);
+        LOG_INFO("User Stack [PID %d] at 0x%X - 0x%X (size %d pages / %d bytes)", pid_, userStackStart, userStackEnd, PROCESS_USER_STACK_SIZE, PAGE_SIZE * PROCESS_USER_STACK_SIZE);
 
         // registers pages automatically
         PageFlags kernelSpaceFlags = PageFlags::Present | PageFlags::ReadWrite;
@@ -128,38 +152,51 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 
 void PalmyraOS::kernel::Process::initializeCPUState() {
     // Determine the data and code segment selectors based on the mode.
-    uint32_t dataSegment = mode_ == Mode::Kernel ? gdt_ptr->getKernelDataSegmentSelector() : gdt_ptr->getUserDataSegmentSelector();
+    uint32_t dataSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelDataSegmentSelector() : gdt_ptr->getUserDataSegmentSelector();
 
-    uint32_t codeSegment = mode_ == Mode::Kernel ? gdt_ptr->getKernelCodeSegmentSelector() : gdt_ptr->getUserCodeSegmentSelector();
+    uint32_t codeSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelCodeSegmentSelector() : gdt_ptr->getUserCodeSegmentSelector();
 
     // Set the data segment selectors in the process's stack.
     // This sets the GS, FS, ES, DS, and SS segment registers.
-    stack_.gs            = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.fs            = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.es            = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.ds            = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.ss            = dataSegment | static_cast<uint32_t>(mode_);  // Only for user mode
+    stack_.gs                = dataSegment | static_cast<uint32_t>(mode_);
+    stack_.fs                = dataSegment | static_cast<uint32_t>(mode_);
+    stack_.es                = dataSegment | static_cast<uint32_t>(mode_);
+    stack_.ds                = dataSegment | static_cast<uint32_t>(mode_);
+    stack_.ss                = dataSegment | static_cast<uint32_t>(mode_);  // Only for user mode
 
     // Set the code segment selector in the process's stack.
-    stack_.cs            = codeSegment | static_cast<uint32_t>(mode_);
+    stack_.cs                = codeSegment | static_cast<uint32_t>(mode_);
 
     // The general-purpose registers are initialized to 0 by default.
 
     // Initialize the stack pointer (ESP) and instruction pointer (EIP).
-    stack_.esp           = reinterpret_cast<uint32_t>(kernelStack_) + PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE;
-    stack_.eip           = reinterpret_cast<uint32_t>(dispatcher);
+    stack_.esp               = reinterpret_cast<uint32_t>(kernelStack_) + PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE;
+    stack_.eip               = reinterpret_cast<uint32_t>(dispatcher);
+
+    uint32_t kernelStackBase = reinterpret_cast<uint32_t>(kernelStack_);
+    uint32_t kernelStackTop  = kernelStackBase + PAGE_SIZE * PROCESS_KERNEL_STACK_SIZE;
+    LOG_DEBUG("[PID %d] Kernel ESP initialized: 0x%X (Stack base: 0x%X, Stack top: 0x%X)", pid_, stack_.esp, kernelStackBase, kernelStackTop);
 
     // Set the EFLAGS register, enabling interrupts and setting reserved bits.
-    stack_.eflags        = (1 << 1) | (1 << static_cast<uint32_t>(EFlags::IF_Interrupt));
+    stack_.eflags = (1 << 1) | (1 << static_cast<uint32_t>(EFlags::IF_Interrupt));
 
     // For user mode, initialize the user stack pointer (userEsp).
     if (mode_ == Mode::User) {
-        stack_.userEsp = reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE - 512;
-        LOG_DEBUG("userEsp set at 0x%X.", stack_.userEsp);
+        uint32_t userStackBase = reinterpret_cast<uint32_t>(userStack_);
+        uint32_t userStackTop  = userStackBase + PAGE_SIZE * PROCESS_USER_STACK_SIZE;
 
-        // Fill the user stack memory range with 0 from `userEsp` to the top of the user stack
-        auto* userStackStart = reinterpret_cast<uint32_t*>(reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE - 512);
-        auto* userStackEnd   = reinterpret_cast<uint32_t*>(reinterpret_cast<uint32_t>(userStack_) + PAGE_SIZE * PROCESS_USER_STACK_SIZE);
+        // Reserve a 512-byte red zone at the top of the user stack for two purposes:
+        // 1. Overflow detection: If ESP grows into this region, it indicates critical stack shortage.
+        // 2. Argument buffer: Guarantees sufficient space for argc/argv setup in initializeArgumentsForELF()
+        //    without conflicting with the physical stack boundary.
+        // The red zone is explicitly zeroed below to create a detectable boundary pattern.
+        stack_.userEsp         = userStackTop - 512;
+        LOG_DEBUG("[PID %d] User ESP initialized: 0x%X (Stack base: 0x%X, Stack top: 0x%X)", pid_, stack_.userEsp, userStackBase, userStackTop);
+
+        // Fill the red zone memory range with 0 from `userEsp` to the top of the user stack
+        // This creates a detectable guard region that should remain zero if the stack is healthy.
+        auto* userStackStart = reinterpret_cast<uint32_t*>(userStackTop - 512);
+        auto* userStackEnd   = reinterpret_cast<uint32_t*>(userStackTop);
         std::fill(userStackStart, userStackEnd, 0);
     }
 

@@ -42,6 +42,34 @@ namespace Processes {
 
     void increase(uint64_t* integer) { (*integer)++; }
 
+    /**
+     * @brief Idle process - runs when no other processes are ready
+     *
+     * The idle process serves several important purposes:
+     * 1. Ensures the scheduler always has a ready process
+     * 2. Prevents CPU busy-waiting and reduces power consumption
+     * 3. Allows CPU to enter low-power states via HLT instruction
+     * 4. Provides graceful behavior when all user processes are blocked
+     *
+     * This should have the LOWEST priority so it only runs when no other
+     * processes are ready to execute.
+     */
+    int idle_process(uint32_t argc, char* argv[]) {
+        LOG_INFO("Idle process started (PID 0)");
+
+        while (true) {
+            // Yield to allow other processes to run
+            // If no other process is ready, we'll be rescheduled immediately
+            // sched_yield();
+
+            // Optional: Could add HLT instruction here for power saving
+            // asm volatile("hlt");  // Put CPU to sleep until next interrupt
+            asm volatile("hlt");
+        }
+
+        return 0;
+    }
+
     int process_1(uint32_t argc, char* argv[]) {
         while (true) {
             proc_1_counter++;
@@ -292,6 +320,14 @@ void callConstructors() {
 
     // Add Important Processes
     {
+        // Create the idle process FIRST (will be PID 0) - runs when nothing else is ready
+        // The idle process is the fallback task that ensures the scheduler always has work
+        //{
+        //    char* argv[] = {const_cast<char*>("idle"), nullptr};
+        //    kernel::TaskManager::newProcess(Processes::idle_process, kernel::Process::Mode::Kernel, kernel::Process::Priority::VeryLow, 0, argv, true);
+        //    LOG_INFO("Idle process created - ensures CPU has a ready task at all times");
+        //}
+
         // Initialize the Window Manager in Kernel Mode
         {
             char* argv[] = {const_cast<char*>("windowsManager.elf"), nullptr};

@@ -82,10 +82,82 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
     rtc_time startTime{};
     ioctl(epochTime_fd, RTC_RD_TIME, &startTime);
 
+    // Enhanced FPS calculation using bucketed approach (4 half-second buckets = 2 second window)
+    constexpr size_t BUCKET_COUNT             = 4;             // 4 buckets for 2 second window
+    constexpr uint64_t BUCKET_DURATION_NS     = 500000000ULL;  // 0.5 seconds in nanoseconds
+    uint32_t frameCountBuckets[BUCKET_COUNT]  = {0};           // Store frame count for each half-second
+    size_t currentBucketIndex                 = 0;             // Current bucket we're writing to
+    uint64_t lastBucketStartTime              = 0;             // Start time of current bucket
+    uint64_t currentFPS                       = 0;
+    uint64_t lastValidFPS                     = 60;  // Fallback
+
+    // Rendering frame rate cap (100 FPS max)
+    constexpr uint64_t MIN_RENDER_INTERVAL_NS = 10000000ULL;  // 10ms = 100 FPS
+    uint64_t lastRenderTime                   = 0;            // Track last time we actually rendered
+
     // Main loop for rendering and updates
     while (true) {
         count++;
         clock_gettime(CLOCK_MONOTONIC, &time_spec);
+
+        // Get current timestamp
+        uint64_t currentTimestamp = time_spec.tv_sec * 1000000000ULL + time_spec.tv_nsec;
+
+        // Initialize on first frame
+        if (lastBucketStartTime == 0) {
+            lastBucketStartTime = currentTimestamp;
+            lastRenderTime      = currentTimestamp;
+        }
+
+        // ============ BUCKETED FPS CALCULATION (continuous, counts ALL frames) ============
+        // Check if we need to move to next bucket (rotate every 500ms)
+        uint64_t timeSinceBucketStart = currentTimestamp - lastBucketStartTime;
+        if (timeSinceBucketStart >= BUCKET_DURATION_NS) {
+            // Time to rotate to next bucket
+            currentBucketIndex                    = (currentBucketIndex + 1) % BUCKET_COUNT;
+            // Don't reset here - let it naturally fill from 0
+            frameCountBuckets[currentBucketIndex] = 0;
+            lastBucketStartTime                   = currentTimestamp;
+        }
+
+        // Increment frame count for current bucket (EVERY frame, including non-rendered ones)
+        frameCountBuckets[currentBucketIndex]++;
+
+        // Calculate average FPS over all COMPLETED buckets (exclude the currently active bucket)
+        // Only count completed buckets to ensure we have full 500ms of data
+        uint32_t totalFrames = 0;
+        uint32_t bucketCount = 0;
+        for (size_t i = 0; i < BUCKET_COUNT; i++) {
+            if (i == currentBucketIndex) continue;  // Skip the currently active bucket being filled
+            if (frameCountBuckets[i] > 0) {
+                totalFrames += frameCountBuckets[i];
+                bucketCount++;
+            }
+        }
+
+        // Calculate FPS based on completed buckets only
+        // Each bucket is 500ms, so: FPS = totalFrames / (bucketCount * 0.5)
+        // With 3 completed buckets, this gives us 1.5 seconds of accurate data
+        uint64_t calculatedFPS = 0;
+        if (bucketCount > 0) {
+            calculatedFPS = (totalFrames * 2) / bucketCount;  // Normalize to 2 seconds worth
+        }
+
+        // Sanity check: reasonable FPS range
+        if (calculatedFPS >= 1 && calculatedFPS <= 5000) { lastValidFPS = calculatedFPS; }
+        currentFPS = lastValidFPS;
+
+        // ============ RENDERING FRAME RATE CAP ============
+        // Check if enough time has passed since last render (100 FPS max = 10ms minimum)
+        // uint64_t timeSinceLastRender = currentTimestamp - lastRenderTime;
+        // if (timeSinceLastRender < MIN_RENDER_INTERVAL_NS) {
+        //    // Not enough time has passed, yield to other processes (don't render yet)
+        //    sched_yield();
+        //    continue;  // Skip rendering, go to next iteration
+        //}
+
+        // Enough time has passed, proceed with rendering
+        // lastRenderTime = currentTimestamp;
 
         brush.fill(PalmyraOS::Color::Black);
         brush.drawHLine(0, w.width, w.height - 1, PalmyraOS::Color::Gray100);
@@ -95,7 +167,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
         textRenderer << Color::Orange << "Palmyra" << Color::LighterBlue << "OS ";
         textRenderer << Color::Gray100 << "v0.01\t";
         textRenderer << "SysTime: " << time_spec.tv_sec << " s\t";
-        textRenderer << "ProCount: " << count << "\t";
+        textRenderer << "Frames: " << count << "\t";
 
         // Render the current time if available
         if (epochTime_fd) {
@@ -114,13 +186,8 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
             textRenderer.setCursor(w.width / 2 - 50, 0);  // Center the clock text
             textRenderer << clock_buffer;
 
-
-            // Calculate elapsed time in seconds using helper function
-            int elapsedTime = calculateElapsedTimeInSeconds(startTime, epochTime);
-
-            // Calculate FPS
-            double fps      = count / (elapsedTime > 0 ? elapsedTime : 1);
-            textRenderer << "\tFPS: " << (int) fps;
+            // Display enhanced FPS (rolling window average)
+            textRenderer << "\tFPS: " << (int) currentFPS;
         }
 
         // Reset text renderer and swap frame buffers for next frame
@@ -131,6 +198,7 @@ int calculateElapsedTimeInSeconds(const rtc_time& start, const rtc_time& current
         sched_yield();
     }
 
-    // Close the RTC device if we ever exit the loop (unlikely with [[noreturn]])
+    // Cleanup: Free allocated memory and close device
+    // free(frameTimeHistory); // This line is no longer needed
     close(epochTime_fd);
 }

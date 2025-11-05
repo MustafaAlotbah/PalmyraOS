@@ -1,8 +1,32 @@
 #include "palmyraOS/palmyraSDK.h"
+#include "palmyraOS/time.h"  // Must be first to define custom timespec
+
+// Prevent system headers from redefining struct timespec
+#define _BITS_TYPES_STRUCT_TIMESPEC_H
+#define _SYS_TYPES_H
+
 #include "palmyraOS/unistd.h"
-#include <algorithm>
 
 namespace PalmyraOS::Userland::builtin::taskManager {
+
+    // Simple template swap helper
+    template<typename T>
+    void swap(T& a, T& b) {
+        T temp = a;
+        a      = b;
+        b      = temp;
+    }
+
+    // Simple bubble sort (safe, no STL conflicts)
+    template<typename T, typename Comparator>
+    void sortVector(types::UVector<T>& vec, Comparator comp) {
+        if (vec.size() <= 1) return;
+        for (size_t i = 0; i < vec.size(); i++) {
+            for (size_t j = 0; j < vec.size() - i - 1; j++) {
+                if (comp(vec[j + 1], vec[j])) { swap(vec[j], vec[j + 1]); }
+            }
+        }
+    }
 
     // Process information structure
     struct ProcessInfo {
@@ -10,6 +34,8 @@ namespace PalmyraOS::Userland::builtin::taskManager {
         char name[64];
         char state;
         uint64_t cpuTicks;
+        uint64_t previousCpuTicks;  // For delta calculation
+        uint32_t cpuPercent;        // Calculated CPU percentage
         uint32_t rssPages;
     };
 
@@ -19,16 +45,16 @@ namespace PalmyraOS::Userland::builtin::taskManager {
     // Refresh rate options
     enum class RefreshRate { OFF, ONE_SEC, TWO_SEC, THREE_SEC, FIVE_SEC, TEN_SEC };
 
-    // Convert refresh rate to frame count
-    uint32_t getRefreshFrames(RefreshRate rate) {
+    // Convert refresh rate to seconds interval (time-based, accurate)
+    uint32_t getRefreshSeconds(RefreshRate rate) {
         switch (rate) {
-            case RefreshRate::OFF: return 0;          // No auto-refresh
-            case RefreshRate::ONE_SEC: return 40;     // ~1 second
-            case RefreshRate::TWO_SEC: return 80;     // ~2 seconds
-            case RefreshRate::THREE_SEC: return 120;  // ~3 seconds
-            case RefreshRate::FIVE_SEC: return 200;   // ~5 seconds
-            case RefreshRate::TEN_SEC: return 400;    // ~10 seconds
-            default: return 80;
+            case RefreshRate::OFF: return 0;        // No auto-refresh
+            case RefreshRate::ONE_SEC: return 1;    // 1 second
+            case RefreshRate::TWO_SEC: return 2;    // 2 seconds
+            case RefreshRate::THREE_SEC: return 3;  // 3 seconds
+            case RefreshRate::FIVE_SEC: return 5;   // 5 seconds
+            case RefreshRate::TEN_SEC: return 10;   // 10 seconds
+            default: return 2;
         }
     }
 
@@ -189,7 +215,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
     bool sortByName(const ProcessInfo& a, const ProcessInfo& b) { return strcmp(a.name, b.name) < 0; }
 
     bool sortByCPU(const ProcessInfo& a, const ProcessInfo& b) {
-        return a.cpuTicks > b.cpuTicks;  // Descending: more CPU first
+        return a.cpuPercent > b.cpuPercent;  // Descending: higher percentage first
     }
 
     bool sortByMemory(const ProcessInfo& a, const ProcessInfo& b) {
@@ -214,10 +240,15 @@ namespace PalmyraOS::Userland::builtin::taskManager {
 
         // Initial process collection
         collectProcesses(heap, processes);
-        std::sort(processes.begin(), processes.end(), sortByCPU);
+        sortVector(processes, sortByCPU);
 
-        // Configurable auto-refresh counter
-        uint32_t refreshCounter = 0;
+        // Time-based refresh tracking for accurate CPU percentage calculation
+        timespec lastRefreshTime{};
+        clock_gettime(CLOCK_MONOTONIC, &lastRefreshTime);
+
+        // System constants for CPU calculation
+        constexpr uint32_t SYSTEM_HZ      = 100;  // Linux standard: 100 ticks/second
+        constexpr uint32_t MIN_REFRESH_MS = 500;  // Minimum 500ms between refreshes for stable readings
 
         while (true) {
             windowGui.render();
@@ -226,20 +257,91 @@ namespace PalmyraOS::Userland::builtin::taskManager {
             // Set background
             windowGui.setBackground(Color::DarkGray);
 
-            // Configurable auto-refresh logic
-            uint32_t refreshInterval = getRefreshFrames(currentRefreshRate);
-            if (refreshInterval > 0) {
-                refreshCounter++;
-                if (refreshCounter >= refreshInterval) {
+            // Time-based auto-refresh with proper CPU percentage calculation
+            uint32_t refreshSeconds = getRefreshSeconds(currentRefreshRate);
+            if (refreshSeconds > 0) {
+                timespec currentTime{};
+                clock_gettime(CLOCK_MONOTONIC, &currentTime);
+
+                // Calculate elapsed time in milliseconds
+                uint64_t elapsedMs       = ((currentTime.tv_sec - lastRefreshTime.tv_sec) * 1000ULL) + ((currentTime.tv_nsec - lastRefreshTime.tv_nsec) / 1000000ULL);
+
+                // Only refresh if enough time has passed (prevents unstable readings)
+                uint32_t targetRefreshMs = refreshSeconds * 1000;
+                if (elapsedMs >= targetRefreshMs && elapsedMs >= MIN_REFRESH_MS) {
+
+                    // Store previous process data for delta calculation
+                    types::UVector<ProcessInfo> previousProcesses(heap);
+                    for (const auto& proc: processes) { previousProcesses.push_back(proc); }
+
+                    // Collect new process data
                     collectProcesses(heap, processes);
+
+                    // STEP 1: Calculate delta ticks for each process and sum total delta
+                    uint64_t totalDeltaTicks = 0;
+                    for (auto& currentProc: processes) {
+                        // Find matching previous process data by PID
+                        ProcessInfo* prevProc = nullptr;
+                        for (auto& prev: previousProcesses) {
+                            if (prev.pid == currentProc.pid) {
+                                prevProc = &prev;
+                                break;
+                            }
+                        }
+
+                        if (prevProc != nullptr && currentProc.cpuTicks >= prevProc->cpuTicks) {
+                            // Calculate delta: how many ticks this process used in this interval
+                            uint64_t deltaTicks          = currentProc.cpuTicks - prevProc->cpuTicks;
+                            currentProc.previousCpuTicks = deltaTicks;  // Store delta temporarily
+                            totalDeltaTicks += deltaTicks;
+                        }
+                        else {
+                            // First measurement or counter reset
+                            currentProc.previousCpuTicks = 0;
+                        }
+                    }
+
+                    // STEP 2: Calculate relative CPU percentages based on share of total delta
+                    for (auto& currentProc: processes) {
+                        uint64_t thisProcDelta = currentProc.previousCpuTicks;
+
+                        if (totalDeltaTicks > 0 && thisProcDelta > 0) {
+                            // Relative CPU% = (this process's delta / total delta) * 100
+                            currentProc.cpuPercent = (thisProcDelta * 100) / totalDeltaTicks;
+                        }
+                        else {
+                            // No activity or first measurement
+                            currentProc.cpuPercent = 0;
+                        }
+
+                        // DEBUG: Show calculation for first process
+                        if (currentProc.pid == processes[0].pid) {
+                            char debugMsg[200];
+                            snprintf(debugMsg,
+                                     sizeof(debugMsg),
+                                     "[RELATIVE CPU] PID=%d delta=%llu, total=%llu, percent=%u%%",
+                                     currentProc.pid,
+                                     thisProcDelta,
+                                     totalDeltaTicks,
+                                     currentProc.cpuPercent);
+                            windowGui.text() << debugMsg << "\n";
+                        }
+
+                        // Update previousCpuTicks with actual current value for next cycle
+                        currentProc.previousCpuTicks = currentProc.cpuTicks;
+                    }
+
+                    // Sort by current column
                     switch (currentSort) {
-                        case SortColumn::PID: std::sort(processes.begin(), processes.end(), sortByPID); break;
-                        case SortColumn::NAME: std::sort(processes.begin(), processes.end(), sortByName); break;
-                        case SortColumn::CPU: std::sort(processes.begin(), processes.end(), sortByCPU); break;
-                        case SortColumn::MEMORY: std::sort(processes.begin(), processes.end(), sortByMemory); break;
+                        case SortColumn::PID: sortVector(processes, sortByPID); break;
+                        case SortColumn::NAME: sortVector(processes, sortByName); break;
+                        case SortColumn::CPU: sortVector(processes, sortByCPU); break;
+                        case SortColumn::MEMORY: sortVector(processes, sortByMemory); break;
                         default: break;
                     }
-                    refreshCounter = 0;
+
+                    // Update timestamp for next refresh cycle
+                    lastRefreshTime = currentTime;
                 }
             }
 
@@ -252,32 +354,34 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 windowGui.text() << "Sort: ";
                 if (windowGui.link("PID", false, Color::LightBlue, Color::LighterBlue, Color::DarkBlue)) {
                     currentSort = SortColumn::PID;
-                    std::sort(processes.begin(), processes.end(), sortByPID);
+                    sortVector(processes, sortByPID);
                 }
                 windowGui.text() << " | ";
 
                 if (windowGui.link("Name", false, Color::LightBlue, Color::LighterBlue, Color::DarkBlue)) {
                     currentSort = SortColumn::NAME;
-                    std::sort(processes.begin(), processes.end(), sortByName);
+                    sortVector(processes, sortByName);
                 }
                 windowGui.text() << " | ";
 
                 if (windowGui.link("CPU", false, Color::LightBlue, Color::LighterBlue, Color::DarkBlue)) {
                     currentSort = SortColumn::CPU;
-                    std::sort(processes.begin(), processes.end(), sortByCPU);
+                    sortVector(processes, sortByCPU);
                 }
                 windowGui.text() << " | ";
 
                 if (windowGui.link("Memory", false, Color::LightBlue, Color::LighterBlue, Color::DarkBlue)) {
                     currentSort = SortColumn::MEMORY;
-                    std::sort(processes.begin(), processes.end(), sortByMemory);
+                    sortVector(processes, sortByMemory);
                 }
                 windowGui.text() << " --- ";
 
                 if (windowGui.link(getRefreshText(currentRefreshRate), false, Color::Orange, Color::Yellow, Color::DarkRed)) {
                     // Cycle to next refresh rate
-                    currentRefreshRate = nextRefreshRate(currentRefreshRate);
-                    refreshCounter     = 0;  // Reset counter when changing rate
+                    currentRefreshRate      = nextRefreshRate(currentRefreshRate);
+                    // Reset refresh timer when changing rate (force immediate refresh)
+                    lastRefreshTime.tv_sec  = 0;
+                    lastRefreshTime.tv_nsec = 0;
                 }
             }
 
@@ -368,7 +472,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                     windowGui.text().setCursor(maxStateOffset + 15, windowGui.text().getCursorY());
 
                     char cpuText[32];
-                    snprintf(cpuText, sizeof(cpuText), "%llu", proc.cpuTicks);
+                    snprintf(cpuText, sizeof(cpuText), "%u%%", proc.cpuPercent);
                     windowGui.text() << cpuText;
 
                     maxCpuOffset = (windowGui.text().getCursorX() > maxCpuOffset) ? windowGui.text().getCursorX() : maxCpuOffset;
