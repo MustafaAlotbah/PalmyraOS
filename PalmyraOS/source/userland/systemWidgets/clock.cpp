@@ -38,7 +38,7 @@ int PalmyraOS::Userland::builtin::KernelClock::main(uint32_t argc, char** argv) 
     const int centerY              = (window.getHeight() + 20) / 2;
 
     while (true) {
-        windowFrame.brush().fillCircle(centerX, centerY, 47, Color::DarkerGray);
+        windowFrame.brush().fillCircle(centerX, centerY, 47, Color::DarkestGray);
         // Render the numbers around the clock
         windowFrame.text() << PalmyraOS::Color::Gray500;
         for (int i = 1; i <= 12; ++i) {

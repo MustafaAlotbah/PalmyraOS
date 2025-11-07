@@ -251,7 +251,7 @@ void closeAppLauncher(AppLauncherState& launcher) {
     PalmyraOS::kernel::Brush brush(frameBuffer);
 
     // Load the font for text rendering (requires kernel memory) TODO: only allowed at this stage, not anymore later
-    PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::Font::Arial12);
+    PalmyraOS::kernel::TextRenderer textRenderer(frameBuffer, PalmyraOS::Font::Poppins12);
 
     // Fill the initial background
     brush.fill(PalmyraOS::Color::Gray100);

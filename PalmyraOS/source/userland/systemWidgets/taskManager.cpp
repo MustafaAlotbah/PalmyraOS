@@ -228,6 +228,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
 
         SDK::Window window(100, 100, 400, 300, true, "Task Manager");
         SDK::WindowGUI windowGui(window);
+        windowGui.text().setFont(PalmyraOS::Font::Poppins12);
 
         types::UVector<ProcessInfo> processes(heap);
         SortColumn currentSort         = SortColumn::CPU;
@@ -410,12 +411,14 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 int maxNameOffset     = 0;
                 int maxStateOffset    = 0;
                 int maxCpuOffset      = 0;
+                int yOffset           = 2;
+                int rowHeight         = 20;
 
                 // First column: PID with alternating backgrounds (FileManager style)
                 for (size_t i = 0; i < processes.size(); i++) {
                     const ProcessInfo& proc = processes[i];
-
-                    if (processIndex % 2 == 0) { windowGui.fillRectangle(0, windowGui.text().getCursorY() + 1, layout.getWidth(), 16, Color::DarkerGray); }
+                    windowGui.text().setCursor(0, windowGui.text().getCursorY() + yOffset);
+                    if (processIndex % 2 == 0) { windowGui.fillRectangle(0, windowGui.text().getCursorY(), layout.getWidth(), rowHeight, Color::DarkerGray); }
 
                     char pidText[16];
                     snprintf(pidText, sizeof(pidText), "%u", proc.pid);
@@ -432,7 +435,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 windowGui.text().setCursor(maxPidOffset + 15, scrollY);
                 for (size_t i = 0; i < processes.size(); i++) {
                     const ProcessInfo& proc = processes[i];
-                    windowGui.text().setCursor(maxPidOffset + 15, windowGui.text().getCursorY());
+                    windowGui.text().setCursor(maxPidOffset + 15, windowGui.text().getCursorY() + yOffset);
 
                     if (windowGui.link(proc.name, false, Color::Primary, Color::PrimaryLight, Color::PrimaryDark)) {
                         // Future: terminate process
@@ -446,6 +449,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 windowGui.text().setCursor(maxNameOffset + 15, scrollY);
                 for (size_t i = 0; i < processes.size(); i++) {
                     const ProcessInfo& proc = processes[i];
+                    windowGui.text().setCursor(0, windowGui.text().getCursorY() + yOffset);
                     windowGui.text().setCursor(maxNameOffset + 15, windowGui.text().getCursorY());
 
                     if (proc.state == 'R') { windowGui.text() << "Running"; }
@@ -469,7 +473,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 windowGui.text().setCursor(maxStateOffset + 15, scrollY);
                 for (size_t i = 0; i < processes.size(); i++) {
                     const ProcessInfo& proc = processes[i];
-                    windowGui.text().setCursor(maxStateOffset + 15, windowGui.text().getCursorY());
+                    windowGui.text().setCursor(maxStateOffset + 15, windowGui.text().getCursorY() + yOffset);
 
                     char cpuText[32];
                     snprintf(cpuText, sizeof(cpuText), "%u%%", proc.cpuPercent);
@@ -483,7 +487,7 @@ namespace PalmyraOS::Userland::builtin::taskManager {
                 windowGui.text().setCursor(maxCpuOffset + 15, scrollY);
                 for (size_t i = 0; i < processes.size(); i++) {
                     const ProcessInfo& proc = processes[i];
-                    windowGui.text().setCursor(maxCpuOffset + 15, windowGui.text().getCursorY());
+                    windowGui.text().setCursor(maxCpuOffset + 15, windowGui.text().getCursorY() + yOffset);
 
                     char memText[32];
                     snprintf(memText, sizeof(memText), "%u KB", proc.rssPages * 4);

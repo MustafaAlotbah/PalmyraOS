@@ -154,10 +154,6 @@ void callConstructors() {
     // first construct globals
     callConstructors();
 
-    // ----------------------- Enable Protected Mode --------------------------
-    // enter protected mode (32-bit)
-    enable_protected_mode();
-
     // ----------------------- Initialize Serial Port for Logging ---------------
     // Initialize the serial port (COM1) for kernel logging output.
     // MUST be called before any LOG_* macros to ensure logs are transmitted correctly.
@@ -211,6 +207,8 @@ void callConstructors() {
 
 
     // ----------------------- Initialize Global Descriptor Tables -------------
+    // enter protected mode (32-bit)
+    enable_protected_mode();
     if (kernel::initializeGlobalDescriptorTable()) {
         textRenderer << "Initialized GDT\n" << SWAP_BUFF();
         LOG_INFO("Initialized GDT.");

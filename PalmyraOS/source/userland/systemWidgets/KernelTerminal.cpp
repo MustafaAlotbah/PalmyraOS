@@ -286,7 +286,7 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 SDK::Layout layout(windowGui, &scrollY_content, true, 0, &shouldAutoScroll);
 
                 // Switch to FiraCodeLight12 font for terminal content
-                windowGui.text().setFont(PalmyraOS::Font::FiraCodeLight12);
+                windowGui.text().setFont(PalmyraOS::Font::FiraCodeRegular12);
 
                 // Render the prompt with ANSI color support
                 renderStdoutWithANSI(windowGui.text(), stdoutBuffer.get());

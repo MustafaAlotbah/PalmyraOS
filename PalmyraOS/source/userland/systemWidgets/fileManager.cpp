@@ -58,6 +58,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
     // Create and set up the main application window
     SDK::Window window(400, 320, 480, 360, true, "Palmyra File Manager");
     SDK::WindowGUI windowGui(window);
+    windowGui.text().setFont(PalmyraOS::Font::Poppins12);
 
     // Globals
     types::UVector<types::UString<char>> currentDirectory(heap);
@@ -71,7 +72,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
         // Display Current Directory
         {
             SDK::Layout layout(windowGui, nullptr, false, 20, nullptr);
-            windowGui.brush().fillRectangle(layout.getX(), layout.getY(), layout.getX() + layout.getWidth(), layout.getY() + layout.getHeight(), Color::DarkerGray);
+            windowGui.brush().fillRectangle(layout.getX(), layout.getY(), layout.getX() + layout.getWidth(), layout.getY() + layout.getHeight(), Color::DarkestGray);
 
             // Root directory link
             if (windowGui.link("root")) {
@@ -106,8 +107,11 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
             int maxFilesOffset    = 0;
             int maxTypesOffset    = 0;
             int maxSizesOffset    = 0;
+            int yOffset           = 2;
+            int rowHeight         = 20;
             for (auto& [item, type, size]: content) {
-                if (contentIndex++ % 2 == 0) { windowGui.fillRectangle(0, windowGui.text().getCursorY() + 1, layout.getWidth(), 16, Color::DarkerGray); }
+                windowGui.text().setCursor(0, windowGui.text().getCursorY() + yOffset);
+                if (contentIndex++ % 2 == 0) { windowGui.fillRectangle(0, windowGui.text().getCursorY(), layout.getWidth(), rowHeight, Color::DarkestGray); }
 
                 if (type == EntryType::Directory) {
                     // Handle Directory here
@@ -176,6 +180,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
             // Second Column
             windowGui.text().setCursor(maxFilesOffset, scrollY_content);
             for (auto& [item, type, size]: content) {
+                windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY() + yOffset);
                 if (type == EntryType::Directory) {
                     windowGui.text().setCursor(maxFilesOffset, windowGui.text().getCursorY());
                     windowGui.text() << "Directory";
@@ -199,7 +204,7 @@ int PalmyraOS::Userland::builtin::fileManager::main(uint32_t argc, char** argv) 
             // Third Column - File Sizes
             windowGui.text().setCursor(maxTypesOffset + 15, scrollY_content);
             for (auto& [item, type, size]: content) {
-                windowGui.text().setCursor(maxTypesOffset + 15, windowGui.text().getCursorY());
+                windowGui.text().setCursor(maxTypesOffset + 15, windowGui.text().getCursorY() + yOffset);
                 if (type == EntryType::Directory) { windowGui.text() << "-"; }
                 else { windowGui.text() << size << " B"; }
                 maxSizesOffset = std::max(maxSizesOffset, windowGui.text().getCursorX());

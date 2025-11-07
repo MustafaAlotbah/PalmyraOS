@@ -77,7 +77,7 @@ kernel_start:
 
     ; set up the stack pointer (esp) 4MB after memory start.
     ; Before calling C++ functions (hence push/pop to stack)
-    ; esp = kernel_stack_start
+    ; esp := kernel_stack_start
     mov dword esp, kernel_stack_start     
 
 

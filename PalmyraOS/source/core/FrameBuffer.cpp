@@ -26,6 +26,7 @@ const PalmyraOS::Color PalmyraOS::Color::Gray700      = Color(97, 97, 97);
 const PalmyraOS::Color PalmyraOS::Color::Gray800      = Color(66, 66, 66);
 const PalmyraOS::Color PalmyraOS::Color::DarkGray     = Color(33, 33, 33);
 const PalmyraOS::Color PalmyraOS::Color::DarkerGray   = Color(18, 18, 18);
+const PalmyraOS::Color PalmyraOS::Color::DarkestGray  = Color(10, 10, 10);
 const PalmyraOS::Color PalmyraOS::Color::Black        = Color(2, 2, 2);
 
 /* Red Scale */

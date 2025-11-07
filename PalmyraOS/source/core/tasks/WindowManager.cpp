@@ -14,8 +14,7 @@
 
 uint32_t PalmyraOS::kernel::Window::count = 0;
 
-PalmyraOS::kernel::Window::Window(uint32_t* buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t heigh)
-    : x_(x), y_(y), z_(0), width_(width), height_(heigh), buffer_(buffer) {
+PalmyraOS::kernel::Window::Window(uint32_t* buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t heigh) : x_(x), y_(y), z_(0), width_(width), height_(heigh), buffer_(buffer) {
     id_ = ++count;
 
     char str_buffer[50];
@@ -177,7 +176,7 @@ void PalmyraOS::kernel::WindowManager::composite() {
 
 
     TaskManager::startAtomicOperation();
-    screenBuffer.fill(Color::DarkerGray);  // Background
+    screenBuffer.fill(Color::DarkestGray);  // Background
 
     // Erase deleted windows before sorting
     doEraseWindows();
@@ -197,15 +196,10 @@ void PalmyraOS::kernel::WindowManager::composite() {
 
     // TODO Window Manager Resources for Realtime Debugging
     textRenderer.setPosition(20, screenBuffer.getHeight() - 20);
-    textRenderer << "[Window " << activeWindowId_ << "]"
-                 << "[FPS: " << fps_ << "]"
-                 << "[Wins: " << windows_.size() << "]"
+    textRenderer << "[Window " << activeWindowId_ << "]" << "[FPS: " << fps_ << "]" << "[Wins: " << windows_.size() << "]"
                  << "[Mem: " << (PhysicalMemory::getAllocatedFrames() >> 8)  // pages to MiB
-                 << "/" << (PhysicalMemory::size() >> 8) << " MiB]"
-                 << "[M/K: " << Mouse::getCounter() << "/" << Keyboard::getCount() << "]"
-                 << "[HSC: " << SystemClock::getTicks() << "]"
-                 << "[TSC: " << CPU::getTSC() << "]"
-                 << "[At: " << TaskManager::getAtomicLevel() << "]";
+                 << "/" << (PhysicalMemory::size() >> 8) << " MiB]" << "[M/K: " << Mouse::getCounter() << "/" << Keyboard::getCount() << "]" << "[HSC: " << SystemClock::getTicks()
+                 << "]" << "[TSC: " << CPU::getTSC() << "]" << "[At: " << TaskManager::getAtomicLevel() << "]";
     textRenderer.reset();
 
     // Atomically Swap the buffers

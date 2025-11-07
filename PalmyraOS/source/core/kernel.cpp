@@ -189,7 +189,7 @@ bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16
             return false;
         }
 
-        new (kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Arial12);
+        new (kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Poppins12);
     }
 
     LOG_INFO("Graphics initialized with framebuffer: %ux%u @ %u bpp at 0x%X", width, height, bpp, framebufferAddress);

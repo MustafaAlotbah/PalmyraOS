@@ -147,7 +147,7 @@ uint32_t PalmyraOS::SDK::Window::getID() const { return window_id_; }
 PalmyraOS::SDK::WindowGUI::WindowGUI(Window& window)
     : window_(window), backBuffer_(malloc(window.getWidth() * window.getHeight() * sizeof(uint32_t))),
       frameBuffer_(window.getWidth(), window.getHeight(), window.getFrontBuffer(), (uint32_t*) backBuffer_), brush_(frameBuffer_),
-      textRenderer_(frameBuffer_, PalmyraOS::Font::Arial12), backgroundColor_(Color::DarkGray) {
+      textRenderer_(frameBuffer_, PalmyraOS::Font::Arial12), backgroundColor_(Color::DarkerGray) {
     if (backBuffer_ == MAP_FAILED) perror("Failed to map memory\n");
     else printf("Success to map memory\n");
 }

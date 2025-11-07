@@ -43,7 +43,7 @@ namespace PalmyraOS {
      * character and includes its bitmap data for graphical rendering.
      */
     struct Glyph {
-        uint16_t bitmap[12];  ///< Bitmap data representing the glyph.
+        uint32_t bitmap[32];  ///< Bitmap data representing the glyph.
         uint32_t width{0};    ///< Width of the glyph in pixels.
         uint32_t height{0};   ///< Height of the glyph in pixels.
         uint16_t offsetX{0};  ///< Horizontal offset for rendering the glyph.
@@ -120,12 +120,17 @@ namespace PalmyraOS {
          */
         static void initializeArial12();
 
-        static void initializeFira12();
+        static void initializeFiraBold12();
+
+        static void initializeFiraRegular12();
+
+        static void initializePoppin12();
 
     public:
-        static Font Arial12;          ///< Static instance of the Arial-12 font.
-        static Font FiraCodeLight12;  ///< Static instance of the Fira Code Light font.
-
+        static Font Arial12;            ///< Static instance of the Arial-12 font.
+        static Font FiraCodeBold12;     ///< Static instance of the Fira Code Light font.
+        static Font FiraCodeRegular12;  ///< Static instance of the Fira Code Bold font.
+        static Font Poppins12;          ///< Static instance of the Poppin font.
     private:
         const char* name_{};           ///< Name of the font (e.g., "Arial-12").
         Glyph glyphs_[MAX_FONT_SIZE];  ///< Array of glyphs representing the characters in the font.
