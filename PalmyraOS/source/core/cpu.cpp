@@ -20,8 +20,7 @@ uint64_t PalmyraOS::kernel::CPU::getTSC() {
 
 void PalmyraOS::kernel::CPU::delay(uint64_t cpu_ticks) {
     uint64_t end = getTSC() + cpu_ticks;
-    while (getTSC() < end)
-        ;
+    while (getTSC() < end);
 }
 
 PalmyraOS::kernel::CPU::CPUIDOutput PalmyraOS::kernel::CPU::cpuid(uint32_t leaf, uint32_t subleaf) {
@@ -222,7 +221,7 @@ uint32_t PalmyraOS::kernel::CPU::detectCpuFrequency() {
     // Calculate the number of TSC ticks in the measurement interval
     uint64_t elapsed_tsc   = end_tsc - start_tsc;
 
-    CPU_frequency_         = elapsed_tsc / secondsMeasurement / 1e6;
+    CPU_frequency_         = static_cast<uint32_t>(elapsed_tsc / secondsMeasurement / 1e6);
     HSC_frequency_         = elapsed_ticks / secondsMeasurement;
 
     LOG_WARN("CPU (TSC)   frequency %d MHz", CPU_frequency_);

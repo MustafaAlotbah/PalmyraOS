@@ -262,9 +262,7 @@ namespace PalmyraOS::kernel {
 
         if (hpet_) {
             LOG_INFO("");
-            LOG_INFO("HPET Details:");
-            LOG_INFO("  Base Address: 0x%llX", hpet_->address);
-            LOG_INFO("  Minimum Tick: %u", hpet_->minimumTick);
+            logHPETDetails();
         }
 
         if (mcfg_) {
@@ -327,6 +325,69 @@ namespace PalmyraOS::kernel {
         if (fadt_->pmTimerBlock != 0) { LOG_INFO("  PM Timer: I/O Port 0x%04X (%u-bit)", fadt_->pmTimerBlock, fadt_->pmTimerLength == 4 ? 32 : 24); }
 
         LOG_INFO("  SCI Interrupt: %u", fadt_->sciInterrupt);
+    }
+
+    void ACPI::logHPETDetails() {
+        if (!hpet_) { return; }
+
+        LOG_INFO("HPET (High Precision Event Timer) Details:");
+
+        // Parse Event Timer Block ID
+        uint32_t blockID       = hpet_->eventTimerBlockID;
+        uint8_t hardwareRevID  = (blockID >> 0) & 0xFF;
+        uint8_t numComparators = ((blockID >> 8) & 0x1F) + 1;  // Bits 8-12, add 1
+        bool counterSize64bit  = (blockID >> 13) & 0x01;
+        bool legacyReplacement = (blockID >> 15) & 0x01;
+        uint16_t pciVendorID   = (blockID >> 16) & 0xFFFF;
+
+        LOG_INFO("  Event Timer Block ID: 0x%08X", blockID);
+        LOG_INFO("    Hardware Rev ID: 0x%02X", hardwareRevID);
+        LOG_INFO("    Number of Comparators: %u", numComparators);
+        LOG_INFO("    Counter Size: %u-bit", counterSize64bit ? 64 : 32);
+        LOG_INFO("    Legacy Replacement Capable: %s", legacyReplacement ? "Yes" : "No");
+        LOG_INFO("    PCI Vendor ID: 0x%04X", pciVendorID);
+
+        // Address information
+        const char* addressSpaceStr = "Unknown";
+        if (hpet_->addressSpaceID == 0) addressSpaceStr = "System Memory";
+        else if (hpet_->addressSpaceID == 1) addressSpaceStr = "System I/O";
+
+        LOG_INFO("  Base Address: 0x%016llX (%s)", hpet_->address, addressSpaceStr);
+        LOG_INFO("    Register Bit Width: %u", hpet_->registerBitWidth);
+        LOG_INFO("    Register Bit Offset: %u", hpet_->registerBitOffset);
+
+        // HPET number and timing
+        LOG_INFO("  HPET Number: %u", hpet_->hpetNumber);
+        LOG_INFO("  Minimum Tick: %u clock periods", hpet_->minimumTick);
+
+        // Page protection
+        uint8_t pageProtBits    = hpet_->pageProtection & 0x0F;
+        uint8_t oemAttributes   = (hpet_->pageProtection >> 4) & 0x0F;
+
+        const char* pageProtStr = "Unknown";
+        switch (pageProtBits) {
+            case 0: pageProtStr = "No guarantee"; break;
+            case 1: pageProtStr = "4KB page protected"; break;
+            case 2: pageProtStr = "64KB page protected"; break;
+            default: pageProtStr = "Reserved"; break;
+        }
+
+        LOG_INFO("  Page Protection: %s", pageProtStr);
+        LOG_INFO("  OEM Attributes: 0x%X", oemAttributes);
+
+        // Calculate approximate frequency (if minimum tick is available)
+        if (hpet_->minimumTick > 0) {
+            // HPET main counter increments at a rate of femtoseconds (10^-15 seconds)
+            // Frequency (Hz) = 10^15 / minimumTick
+            uint64_t femtosecondsPerTick = hpet_->minimumTick;
+
+            // Convert to approximate MHz for readability
+            // 1 tick per femtosecond = 10^15 Hz = 10^9 MHz
+            // So: MHz ≈ 10^9 / femtosecondsPerTick
+            uint32_t approxMHz           = 1000000000UL / femtosecondsPerTick;
+
+            LOG_INFO("  Approximate Frequency: ~%u MHz (based on %llu fs/tick)", approxMHz, femtosecondsPerTick);
+        }
     }
 
 }  // namespace PalmyraOS::kernel

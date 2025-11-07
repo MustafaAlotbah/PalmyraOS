@@ -3,6 +3,7 @@
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
 #include "core/acpi/ACPI.h"
+#include "core/acpi/HPET.h"
 #include "core/acpi/PowerManagement.h"
 #include "core/boot/multiboot2.h"
 #include "core/cpu.h"
@@ -258,6 +259,20 @@ void callConstructors() {
                 LOG_WARN("Power management initialization failed");
                 textRenderer << "Power management initialization failed!\n" << SWAP_BUFF();
             }
+
+            // Initialize HPET (High Precision Event Timer)
+            if (kernel::HPET::initialize()) {
+                LOG_INFO("HPET initialized successfully");
+                textRenderer << "HPET initialized (Frequency: " << kernel::HPET::getFrequency() << " Hz).. \n" << SWAP_BUFF();
+
+                // Enable HPET main counter (does NOT replace PIT)
+                kernel::HPET::enable();
+                LOG_INFO("HPET main counter enabled (PIT still active)");
+            }
+            else {
+                LOG_WARN("HPET initialization failed (will use PIT only)");
+                textRenderer << "HPET not available, using PIT.. \n" << SWAP_BUFF();
+            }
         }
         else {
             LOG_WARN("ACPI initialization failed");
@@ -319,11 +334,30 @@ void callConstructors() {
     kernel::RTC::initialize();
     textRenderer << "RTC is initialized.\n" << SWAP_BUFF();
 
-    // Measure Frequencies based on RTC
+    // Measure CPU frequency using HPET (or fall back to RTC if HPET not available)
     textRenderer << "Measuring CPU frequency.." << SWAP_BUFF();
     {
+
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-        PalmyraOS::kernel::CPU::initialize();
+
+        // Use HPET for measurement if available, otherwise fall back to RTC
+        if (kernel::HPET::isInitialized()) {
+            // Measure CPU TSC frequency directly using HPET (100ms measurement)
+            uint32_t cpuFreqMHz = kernel::HPET::measureCPUFrequency(100);
+            if (cpuFreqMHz > 0) {
+                kernel::CPU::setCPUFrequency(cpuFreqMHz);
+                LOG_INFO("CPU frequency measured: %u MHz (HPET)", cpuFreqMHz);
+            }
+            else {
+                LOG_WARN("HPET measurement failed, using RTC fallback");
+                kernel::CPU::initialize();  // Fallback to RTC-based measurement
+            }
+        }
+        else {
+            LOG_WARN("HPET not available, using RTC fallback");
+            kernel::CPU::initialize();  // Uses RTC-based measurement (2 seconds)
+        }
+
         PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
         textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
         textRenderer << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz] " << SWAP_BUFF();
@@ -381,10 +415,27 @@ void callConstructors() {
     kernel::initializeBinaries();
     textRenderer << " Done.\n" << SWAP_BUFF();
 
-    textRenderer << "Measuring CPU frequency.." << SWAP_BUFF();
+    textRenderer << "Re-measuring CPU frequency.." << SWAP_BUFF();
     {
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-        PalmyraOS::kernel::CPU::initialize();
+
+        // Use HPET for measurement if available, otherwise fall back to RTC
+        if (kernel::HPET::isInitialized()) {
+            // Measure CPU TSC frequency directly using HPET (100ms measurement)
+            uint32_t cpuFreqMHz = kernel::HPET::measureCPUFrequency(100);
+            if (cpuFreqMHz > 0) {
+                kernel::CPU::setCPUFrequency(cpuFreqMHz);
+                LOG_INFO("CPU frequency re-measured: %u MHz (HPET)", cpuFreqMHz);
+            }
+            else {
+                LOG_WARN("HPET re-measurement failed, using RTC fallback");
+                kernel::CPU::initialize();  // Fallback to RTC-based measurement
+            }
+        }
+        else {
+            kernel::CPU::initialize();  // Uses RTC-based measurement (2 seconds)
+        }
+
         PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
 
         textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();

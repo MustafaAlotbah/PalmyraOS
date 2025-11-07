@@ -8,10 +8,10 @@ namespace PalmyraOS::kernel {
     /**
      * @class ACPI
      * @brief Advanced Configuration and Power Interface (ACPI) manager
-     * 
+     *
      * This class provides access to ACPI tables for hardware discovery,
      * power management, and system configuration.
-     * 
+     *
      * Features:
      * - Parses RSDP, RSDT/XSDT
      * - Discovers and validates all ACPI tables
@@ -22,7 +22,7 @@ namespace PalmyraOS::kernel {
     public:
         /**
          * @brief Initialize ACPI from RSDP pointer
-         * 
+         *
          * @param rsdpAddress Physical address of RSDP (from Multiboot2 or BIOS scan)
          * @return True if ACPI was successfully initialized, false otherwise
          */
@@ -66,7 +66,7 @@ namespace PalmyraOS::kernel {
 
         /**
          * @brief Find a table by signature
-         * 
+         *
          * @param signature 4-character signature (e.g., "APIC", "FACP", "HPET")
          * @return Pointer to table header, or nullptr if not found
          */
@@ -92,6 +92,11 @@ namespace PalmyraOS::kernel {
          */
         static void logFADTDetails();
 
+        /**
+         * @brief Log detailed HPET information
+         */
+        static void logHPETDetails();
+
     private:
         // Initialization state
         static bool initialized_;
@@ -110,7 +115,7 @@ namespace PalmyraOS::kernel {
 
         /**
          * @brief Validate a checksum for a memory region
-         * 
+         *
          * @param data Pointer to data
          * @param length Length of data in bytes
          * @return True if checksum is valid (sum == 0), false otherwise
@@ -128,5 +133,4 @@ namespace PalmyraOS::kernel {
         static void parseMADTEntries();
     };
 
-} // namespace PalmyraOS::kernel
-
+}  // namespace PalmyraOS::kernel

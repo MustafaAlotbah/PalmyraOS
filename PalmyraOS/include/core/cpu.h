@@ -175,6 +175,9 @@ namespace PalmyraOS::kernel {
         static uint32_t getCPUFrequency() { return CPU_frequency_; }
         static uint32_t getHSCFrequency() { return HSC_frequency_; }
 
+        static void setCPUFrequency(uint32_t freq) { CPU_frequency_ = freq; }
+        static void setHSCFrequency(uint32_t freq) { HSC_frequency_ = freq; }
+
     private:
         static uint32_t CPU_frequency_;
         static uint32_t HSC_frequency_;

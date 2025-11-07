@@ -1,5 +1,6 @@
 #include "core/kernel.h"
 #include "core/Display.h"
+#include "core/acpi/HPET.h"
 #include "core/acpi/PowerManagement.h"
 #include "core/cpu.h"
 #include "core/files/Fat32FileSystem.h"
@@ -375,6 +376,17 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
         LOG_INFO("Mapping video memory by identity: %u frames", frameBufferFrames);
         LOG_INFO("Frame buffer size: %u bytes", frameBufferSize);
         kernel::kernelPagingDirectory_ptr->mapPages((void*) framebuffer_addr, (void*) framebuffer_addr, frameBufferFrames, PageFlags::Present | PageFlags::ReadWrite);
+    }
+
+    // Map HPET registers if initialized (get actual address from ACPI table)
+    if (HPET::isInitialized()) {
+        uintptr_t hpetPhysAddr = HPET::getPhysicalAddress();
+        if (hpetPhysAddr != 0) {
+            void* hpetAddr = reinterpret_cast<void*>(hpetPhysAddr);
+            kernel::kernelPagingDirectory_ptr->mapPages(hpetAddr, hpetAddr, 1, PageFlags::Present | PageFlags::ReadWrite);
+            LOG_INFO("Mapping HPET registers by identity: 1 page at 0x%p", hpetAddr);
+        }
+        else { LOG_WARN("HPET initialized but physical address is NULL"); }
     }
 
     // Switch to the new kernel paging directory and initialize paging
