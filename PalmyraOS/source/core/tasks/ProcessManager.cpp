@@ -152,20 +152,22 @@ void PalmyraOS::kernel::Process::initializePagingDirectory(Process::Mode mode, b
 
 void PalmyraOS::kernel::Process::initializeCPUState() {
     // Determine the data and code segment selectors based on the mode.
-    uint32_t dataSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelDataSegmentSelector() : gdt_ptr->getUserDataSegmentSelector();
+    uint32_t dataSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelDataSegmentSelector().withRPL(GDT::PrivilegeLevel::Ring0)
+                                                     : gdt_ptr->getUserDataSegmentSelector().withRPL(GDT::PrivilegeLevel::Ring3);
 
-    uint32_t codeSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelCodeSegmentSelector() : gdt_ptr->getUserCodeSegmentSelector();
+    uint32_t codeSegment     = mode_ == Mode::Kernel ? gdt_ptr->getKernelCodeSegmentSelector().withRPL(GDT::PrivilegeLevel::Ring0)
+                                                     : gdt_ptr->getUserCodeSegmentSelector().withRPL(GDT::PrivilegeLevel::Ring3);
 
     // Set the data segment selectors in the process's stack.
     // This sets the GS, FS, ES, DS, and SS segment registers.
-    stack_.gs                = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.fs                = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.es                = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.ds                = dataSegment | static_cast<uint32_t>(mode_);
-    stack_.ss                = dataSegment | static_cast<uint32_t>(mode_);  // Only for user mode
+    stack_.gs                = dataSegment;
+    stack_.fs                = dataSegment;
+    stack_.es                = dataSegment;
+    stack_.ds                = dataSegment;
+    stack_.ss                = dataSegment;  // Only for user mode
 
     // Set the code segment selector in the process's stack.
-    stack_.cs                = codeSegment | static_cast<uint32_t>(mode_);
+    stack_.cs                = codeSegment;
 
     // The general-purpose registers are initialized to 0 by default.
 

@@ -37,6 +37,6 @@ flush_gdt_table:
     ret
 
 flush_tss:
-    mov ax, 5*8     ; TSS at the 6th position of the table
+    mov ax, 5*8     ; TSS at the 6th position of the table (Every Descriptor is 8 bytes is 8 Bytes)
     ltr ax          ; Load Task Register (TSS)
     ret

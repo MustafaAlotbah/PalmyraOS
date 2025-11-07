@@ -51,13 +51,54 @@ namespace PalmyraOS::kernel::GDT {
     // Modern, self-describing enums for descriptor fields
     // ------------------------------------------------------------------
 
-    // CPU privilege levels (DPL field in descriptor)
+    // CPU privilege levels (DPL field in descriptor and RPL in selector)
     enum class PrivilegeLevel : uint8_t {
         Ring0 = 0,  // Kernel mode
         Ring1 = 1,  // Ring 1 (not used)
         Ring2 = 2,  // Ring 2 (not used)
         Ring3 = 3   // User mode
     };
+
+    // Table Indicator: which table to use for segment lookup
+    enum class TableIndicator : uint8_t {
+        GDT = 0,  // Use Global Descriptor Table
+        LDT = 1   // Use Local Descriptor Table
+    };
+
+    // ------------------------------------------------------------------
+    // Segment Selector Structure (16 bits)
+    // ------------------------------------------------------------------
+    // A segment selector is what you load into segment registers (CS, DS, SS, etc.)
+    // It points to a descriptor in either the GDT or LDT.
+    //
+    // Format (16 bits):
+    //   Bits 15-3: Index (13 bits) - Which descriptor entry (0-8191)
+    //   Bit 2:     TI (1 bit)      - Table Indicator (0=GDT, 1=LDT)
+    //   Bits 1-0:  RPL (2 bits)    - Requested Privilege Level (0-3)
+    //
+    // Example: 0x08 = 0000 0000 0000 1000
+    //          Index=1, TI=0 (GDT), RPL=00 (Ring 0) → Kernel Code Segment
+    union SegmentSelector {
+        uint16_t raw;  // Raw 16-bit value (e.g., 0x08, 0x10, 0x18, 0x1B, 0x23)
+
+        struct {
+            PrivilegeLevel rpl : 2;  // Requested Privilege Level (bits 0-1)
+            TableIndicator ti : 1;   // Table Indicator: 0=GDT, 1=LDT (bit 2)
+            uint16_t index : 13;     // Index into GDT/LDT (bits 3-15)
+        } __attribute__((packed));
+
+        // Constructors
+        constexpr SegmentSelector() : raw(0) {}
+        constexpr explicit SegmentSelector(uint16_t value) : raw(value) {}
+        constexpr SegmentSelector(uint16_t index_, TableIndicator ti_, PrivilegeLevel rpl_) : rpl(rpl_), ti(ti_), index(index_) {}
+
+        // Conversion operators
+        constexpr operator uint16_t() const { return raw; }
+
+        // Helper to change RPL (useful for ring transitions)
+        [[nodiscard]] constexpr SegmentSelector withRPL(PrivilegeLevel newRPL) const { return SegmentSelector((raw & 0xFFFC) | static_cast<uint16_t>(newRPL)); }
+    };
+    static_assert(sizeof(SegmentSelector) == 2, "SegmentSelector must be 2 bytes");
 
     // Descriptor type: System or Code/Data (S bit in descriptor)
     enum class SegmentKind : uint8_t {
@@ -183,28 +224,40 @@ namespace PalmyraOS::kernel::GDT {
         // Update the kernel stack pointer in TSS (used for privilege level switches)
         void setKernelStack(uint32_t esp);
 
-        // Function to retrieve the kernel code segment selector offset
-        [[nodiscard]] inline uint16_t getKernelCodeSegmentSelector() const {
-            // (uint8_t*)this : address of the table (class)
-            return ((uint32_t) &kernel_code_segment_selector - (uint32_t) this);
-            //     Address of the Descriptor               Addr of GDT
+        // Function to retrieve the kernel code segment selector
+        // Returns: Index into GDT with TI=GDT, RPL=Ring0
+        [[nodiscard]] inline SegmentSelector getKernelCodeSegmentSelector() const {
+            uint16_t offset = ((uint32_t) &kernel_code_segment_selector - (uint32_t) this);
+            return SegmentSelector(offset);  // Implicitly: Index from offset, TI=GDT(0), RPL=Ring0(0)
         }
 
-        // Function to retrieve the user code segment selector offset
-        [[nodiscard]] inline uint16_t getUserCodeSegmentSelector() const {
-            // (uint8_t*)this : address of the table (class)
-            return ((uint32_t) &user_code_segment_selector - (uint32_t) this);
-            //     Address of the Descriptor               Addr of GDT
+        // Function to retrieve the user code segment selector
+        // Returns: Index into GDT with TI=GDT, RPL=Ring3 (for user mode access)
+        [[nodiscard]] inline SegmentSelector getUserCodeSegmentSelector() const {
+            uint16_t offset = ((uint32_t) &user_code_segment_selector - (uint32_t) this);
+            return SegmentSelector(offset | static_cast<uint16_t>(PrivilegeLevel::Ring3));
         }
 
-        // Function to retrieve the kernel data segment selector offset
-        [[nodiscard]] inline uint16_t getKernelDataSegmentSelector() const { return ((uint32_t) &kernel_data_segment_selector - (uint32_t) this); }
+        // Function to retrieve the kernel data segment selector
+        // Returns: Index into GDT with TI=GDT, RPL=Ring0
+        [[nodiscard]] inline SegmentSelector getKernelDataSegmentSelector() const {
+            uint16_t offset = ((uint32_t) &kernel_data_segment_selector - (uint32_t) this);
+            return SegmentSelector(offset);
+        }
 
-        // Function to retrieve the user data segment selector offset
-        [[nodiscard]] inline uint16_t getUserDataSegmentSelector() const { return ((uint32_t) &user_data_segment_selector - (uint32_t) this); }
+        // Function to retrieve the user data segment selector
+        // Returns: Index into GDT with TI=GDT, RPL=Ring3 (for user mode access)
+        [[nodiscard]] inline SegmentSelector getUserDataSegmentSelector() const {
+            uint16_t offset = ((uint32_t) &user_data_segment_selector - (uint32_t) this);
+            return SegmentSelector(offset | static_cast<uint16_t>(PrivilegeLevel::Ring3));
+        }
 
-        // Function to retrieve the Task State Segment selector offset
-        [[nodiscard]] inline uint16_t getTaskStateSegmentSelector() const { return ((uint32_t) &task_state_descriptor - (uint32_t) this); }
+        // Function to retrieve the Task State Segment selector
+        // Returns: Index into GDT with TI=GDT, RPL=Ring0
+        [[nodiscard]] inline SegmentSelector getTaskStateSegmentSelector() const {
+            uint16_t offset = ((uint32_t) &task_state_descriptor - (uint32_t) this);
+            return SegmentSelector(offset);
+        }
 
     private:
         // Initialize the Task State Segment with the given stack pointer
