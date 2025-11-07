@@ -3,6 +3,7 @@
 #pragma once
 
 #include "boot/multiboot.h"
+#include "boot/multiboot2.h"
 #include "core/VBE.h"
 #include "core/definitions.h"
 #include "core/memory/KernelHeap.h"
@@ -59,12 +60,11 @@ namespace PalmyraOS::kernel {
     extern PalmyraOS::kernel::ATA* ata_secondary_slave;
 
     /**
-     * @brief Initializes the graphics system from VBE bootloader information.
-     * @param vbe_mode_info Pointer to VBE mode information.
-     * @param vbe_control_info Pointer to VBE control information.
+     * @brief Initializes the graphics system using Multiboot 2 information.
+     * @param mb2Info Multiboot 2 information structure containing framebuffer/VBE data
      * @return True if initialization is successful, false otherwise.
      */
-    bool initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_control_info_t* vbe_control_info);
+    bool initializeGraphics(const Multiboot2::MultibootInfo& mb2Info);
 
     /**
      * @brief Initializes the graphics system with explicit framebuffer information.
@@ -100,18 +100,18 @@ namespace PalmyraOS::kernel {
     bool initializeInterrupts();
 
     /**
-     * @brief Initializes the physical memory manager.
-     * @param x86_multiboot_info Pointer to multiboot information.
+     * @brief Initializes the physical memory manager using Multiboot 2 information.
+     * @param multiboot2_info Multiboot 2 information structure
      * @return True if initialization is successful, false otherwise.
      */
-    bool initializePhysicalMemory(multiboot_info_t* x86_multiboot_info);
+    bool initializePhysicalMemory(const Multiboot2::MultibootInfo& multiboot2_info);
 
     /**
-     * @brief Initializes the virtual memory manager.
-     * @param x86_multiboot_info Pointer to multiboot information.
+     * @brief Initializes the virtual memory manager using Multiboot 2 information.
+     * @param multiboot2_info Multiboot 2 information structure
      * @return True if initialization is successful, false otherwise.
      */
-    bool initializeVirtualMemory(multiboot_info_t* x86_multiboot_info);
+    bool initializeVirtualMemory(const Multiboot2::MultibootInfo& multiboot2_info);
 
     /**
      * @brief Tests the memory system.

@@ -1,9 +1,8 @@
-#include "core/Font.h"
 #include "core/FrameBuffer.h"
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
 #include "core/VBE.h"
-#include "core/boot/multiboot.h"
+#include "core/boot/multiboot2.h"
 #include "core/cpu.h"
 #include "core/kernel.h"
 #include "core/panic.h"
@@ -129,10 +128,11 @@ namespace Processes {
 
 
 /**
- * Kernel entry point called from the bootloader with multiboot information.
- * @param x86_multiboot_info Pointer to the multiboot information structure.
+ * Kernel entry point called from the bootloader with Multiboot 2 information.
+ * @param magic Multiboot 2 magic number (0x36d76289)
+ * @param multiboot_addr Physical address of Multiboot 2 info structure
  */
-extern "C" [[noreturn]] [[maybe_unused]] void kernelEntry(multiboot_info_t* x86_multiboot_info);
+extern "C" [[noreturn]] [[maybe_unused]] void kernelEntry(uint32_t magic, uint32_t multiboot_addr);
 
 //  Calls all constructors for global/static objects.
 void callConstructors() {
@@ -144,10 +144,13 @@ void callConstructors() {
 /**
  * Kernel entry function that is called from the bootloader.
  * Initializes VBE, sets up the kernel, and enters the main loop.
- * @param x86_multiboot_info Pointer to the multiboot information structure.
+ * @param magic Multiboot 2 magic number from EAX register
+ * @param multiboot_addr Physical address of Multiboot 2 info structure
  */
-[[noreturn]] void kernelEntry(multiboot_info_t* x86_multiboot_info) {
+[[noreturn]] void kernelEntry(uint32_t magic, uint32_t multiboot_addr) {
     using namespace PalmyraOS;
+    using namespace PalmyraOS::kernel::Multiboot2;
+
     constexpr uint64_t SHORT_DELAY = 2'500'000L;
 
     // ----------------------- Call Kernel Constructors -----------------------
@@ -162,17 +165,39 @@ void callConstructors() {
     kernel::initializeSerialPort(115200);
 
     LOG_INFO("Entered protected mode.");
-    LOG_INFO("Memory Lower: %d KiB", x86_multiboot_info->mem_lower);
-    LOG_INFO("Memory Upper: %d KiB", x86_multiboot_info->mem_upper);
+
+    // ----------------------- Validate Multiboot 2 -------------------------------------
+    if (!isMultiboot2(magic)) { kernel::kernelPanic("Invalid Multiboot magic! Expected 0x%X, got 0x%X", MULTIBOOT2_BOOTLOADER_MAGIC, magic); }
+
+    LOG_INFO("Multiboot 2 bootloader detected (magic: 0x%X)", magic);
+
+    // Parse Multiboot 2 information
+    MultibootInfo mb2Info(multiboot_addr);
+    if (!mb2Info.isValid()) { kernel::kernelPanic("Invalid Multiboot 2 info structure at 0x%X", multiboot_addr); }
+
+    // Log detailed Multiboot 2 information
+    logMultiboot2Info(mb2Info);
+
+    // Log memory information
+    const auto* memInfo = mb2Info.getBasicMemInfo();
+    if (memInfo) {
+        LOG_INFO("Memory Lower: %u KiB", memInfo->mem_lower);
+        LOG_INFO("Memory Upper: %u KiB", memInfo->mem_upper);
+    }
+
+    // Store ACPI RSDP for future ACPI implementation
+    const uint8_t* acpiRSDP = mb2Info.getACPIRSDP();
+    if (acpiRSDP) {
+        LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
+        // TODO: Store globally for ACPI initialization
+    }
 
     enable_sse();
     LOG_INFO("Enabled SSE.");
+    
     // ----------------------- Initialize Graphics ----------------------------
-
-    // Retrieve VBE mode information from the multiboot info structure
-    auto* vbe_mode_info    = (vbe_mode_info_t*) (uintptr_t) x86_multiboot_info->vbe_mode_info;
-    auto* vbe_control_info = (vbe_control_info_t*) (uintptr_t) x86_multiboot_info->vbe_control_info;
-    kernel::initializeGraphics(vbe_mode_info, vbe_control_info);
+    // Initialize graphics using native Multiboot 2 information
+    kernel::initializeGraphics(mb2Info);
     LOG_INFO("Initialized Graphics.");
 
     // ----------------------- Check BGA Graphics Adapter -----------------------
@@ -230,14 +255,14 @@ void callConstructors() {
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Physical Memory -------------------------------
-    textRenderer << "Initializing Physical Memory: " << x86_multiboot_info->mem_upper << " KiB\n" << SWAP_BUFF();
-    kernel::initializePhysicalMemory(x86_multiboot_info);
+    textRenderer << "Initializing Physical Memory: " << (memInfo ? memInfo->mem_upper : 0) << " KiB\n" << SWAP_BUFF();
+    kernel::initializePhysicalMemory(mb2Info);
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Virtual Memory -------------------------------
     textRenderer << "Initializing Virtual Memory..." << SWAP_BUFF();
     PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-    kernel::initializeVirtualMemory(x86_multiboot_info);
+    kernel::initializeVirtualMemory(mb2Info);
     PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
     textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);

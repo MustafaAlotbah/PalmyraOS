@@ -30,6 +30,18 @@
  * %lu         - Unsigned long (unsigned long)
  *               Example: sprintf(buf, "Ticks: %lu", 5000000): "Ticks: 5000000"
  *
+ * %lld        - Signed long long (int64_t)
+ *               Example: sprintf(buf, "BigNum: %lld", -9223372036854775807LL): "BigNum: -9223372036854775807"
+ *
+ * %llu        - Unsigned long long (uint64_t)
+ *               Example: sprintf(buf, "BigNum: %llu", 18446744073709551615ULL): "BigNum: 18446744073709551615"
+ *
+ * %llx        - Hexadecimal long long (lowercase) (uint64_t)
+ *               Example: sprintf(buf, "Addr: %llx", 0x123456789ABCDEFULL): "Addr: 123456789abcdef"
+ *
+ * %llX        - Hexadecimal long long (uppercase) (uint64_t)
+ *               Example: sprintf(buf, "Addr: %llX", 0x123456789ABCDEFULL): "Addr: 123456789ABCDEF"
+ *
  * %zu         - Size type unsigned (size_t)
  *               Example: sprintf(buf, "Size: %zu", sizeof(int)): "Size: 4"
  *
@@ -226,6 +238,20 @@ size_t vsprintf(char* str, const char* format, va_list args) {
                         traverse++;
                         uint64_t llu = va_arg(args, unsigned long long);
                         uitoa64(llu, num_str, 10, false);
+                        strcpy(out, num_str);
+                        out += strlen(num_str);
+                    }
+                    else if (*(traverse + 1) == 'x') {
+                        traverse++;
+                        uint64_t llx = va_arg(args, unsigned long long);
+                        uitoa64(llx, num_str, 16, false);
+                        strcpy(out, num_str);
+                        out += strlen(num_str);
+                    }
+                    else if (*(traverse + 1) == 'X') {
+                        traverse++;
+                        uint64_t llX = va_arg(args, unsigned long long);
+                        uitoa64(llX, num_str, 16, true);
                         strcpy(out, num_str);
                         out += strlen(num_str);
                     }

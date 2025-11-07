@@ -1,52 +1,75 @@
 ; Compile 32 bit instructions
 BITS 32
 
-; -------------------- MULTIBOOT HEADER --------------------
-; https://www.gnu.org/software/grub/manual/multiboot/multiboot.html
-; So that grub bootloader sees this binary as a 'bootloader'
-; Multiboot macros
-%define MB_MAGIC    0x1BADB002
-%define MB_FLAG_ALIGN    1 << 0
-%define MB_FLAG_MEMINFO  1 << 1
-%define MB_FLAG_CMDLINE  1 << 2
-%define MB_FLAG_GRAPHICS 1 << 16
-%define MB_FLAGS     (MB_FLAG_CMDLINE |  MB_FLAG_ALIGN | MB_FLAG_MEMINFO )
+; ============================================================================
+; MULTIBOOT 2 HEADER
+; ============================================================================
+; Multiboot 2 specification: 
+; https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
+;
+; The header must be 8-byte aligned and come before the first 32KB of the kernel
 
-; Calculate the checksum
-%define MB_CHECKSUM -(MB_MAGIC + MB_FLAGS)
+%define MB2_MAGIC           0xE85250D6         ; Multiboot 2 magic number
+%define MB2_ARCHITECTURE    0                  ; i386 protected mode
+%define MB2_HEADER_LENGTH   (multiboot2_header_end - multiboot2_header_start)
+%define MB2_CHECKSUM        -(MB2_MAGIC + MB2_ARCHITECTURE + MB2_HEADER_LENGTH)
 
-; Multiboot header structure
-section .multiboot align=4
-dd MB_MAGIC                  ; Magic number required by Multiboot
-dd MB_FLAGS                  ; Flags - 0x00040003 in this case
-dd MB_CHECKSUM               ; Checksum (must be 0 when added to the above two)
+; Multiboot 2 header tag types
+%define MB2_TAG_END             0
+%define MB2_TAG_INFO_REQUEST    1
+%define MB2_TAG_FRAMEBUFFER     5
 
-; Graphics mode specific fields (not typically required for basic setup but can be used for VBE)
-dd 0                         ; VbeControlInfo
-dd 0                         ; VbeModeInfo
-dd 0                         ; VbeMode
-dd 0                         ; VbeInterfaceSeg
-dd 0                         ; VbeInterfaceOff
+; Tag flags
+%define MB2_TAG_OPTIONAL        1
+%define MB2_TAG_REQUIRED        0
 
-; Screen width, height, depth (if you want GRUB to set a specific video mode)
-dd 0                         ; 0: Graphics, 1: Text Mode
+section .multiboot2 align=8
+multiboot2_header_start:
+    ; Required header fields (16 bytes)
+    dd MB2_MAGIC                               ; Magic: 0xE85250D6
+    dd MB2_ARCHITECTURE                        ; Architecture: 0 (i386 protected mode)
+    dd MB2_HEADER_LENGTH                       ; Header length
+    dd MB2_CHECKSUM                            ; Checksum: -(magic + arch + length)
 
-; If an unsupported resolution provided, GRUB falls back to 640x480
-; dd 1600                      ; Screen width requested
-; dd 1200                       ; Screen height requested
+    ; -------- Tag: Information Request --------
+    ; Request specific tags from bootloader
+    align 8
+information_request_tag_start:
+    dw MB2_TAG_INFO_REQUEST                    ; Type: Information request
+    dw MB2_TAG_OPTIONAL                        ; Flags: Optional
+    dd information_request_tag_end - information_request_tag_start  ; Size
+    ; Requested tags (list of tag types we want)
+    dd 4                                       ; Basic memory info
+    dd 6                                       ; Memory map
+    dd 8                                       ; Framebuffer
+    dd 14                                      ; ACPI old RSDP
+    dd 15                                      ; ACPI new RSDP
+information_request_tag_end:
 
-; dd 1280                      ; Screen width requested
-; dd 1024                       ; Screen height requested
+    ; -------- Tag: Framebuffer Request --------
+    ; Request specific video mode from bootloader
+    align 8
+framebuffer_tag_start:
+    dw MB2_TAG_FRAMEBUFFER                     ; Type: Framebuffer
+    dw MB2_TAG_OPTIONAL                        ; Flags: Optional (fallback to defaults)
+    dd framebuffer_tag_end - framebuffer_tag_start  ; Size
+    dd 1024                                    ; Width: 1024 pixels
+    dd 768                                     ; Height: 768 pixels
+    dd 32                                      ; Depth: 32 bits per pixel (ARGB)
+framebuffer_tag_end:
 
-dd 1024                     ; Screen width requested
-dd 768                       ; Screen height requested
+    ; -------- Tag: End (Required) --------
+    ; Marks the end of the header tags
+    align 8
+end_tag_start:
+    dw MB2_TAG_END                             ; Type: End
+    dw MB2_TAG_REQUIRED                        ; Flags: Required
+    dd end_tag_end - end_tag_start             ; Size: 8 bytes
+end_tag_end:
 
-; dd 800                      ; Screen width requested
-; dd 600                       ; Screen height requested
+multiboot2_header_end:
 
-dd 32                        ; Bits per pixel
-
-; ----------------------------------------------------------
+; ============================================================================
 
 ; Globals
 GLOBAL kernel_start:function
@@ -57,9 +80,9 @@ GLOBAL enable_protected_mode:function
 ; Externs from CPP
 EXTERN kernelEntry
 
-multiboot_info_struct   dd 0
-multiboot_info_high     dd 0
-multiboot_info_low      dd 0
+; Multiboot 2 info storage
+multiboot2_magic        dd 0
+multiboot2_info_addr    dd 0
 
 ; Stack grows down!
 ; Leave empty 4 MByte before the kernel stack starts
@@ -70,19 +93,31 @@ kernel_stack_start:
 
 section .text
 kernel_start:
-    ; at the start:
+    ; ========================================================================
+    ; Multiboot 2 Entry Point
+    ; ========================================================================
+    ; When bootloader calls this function:
+    ;   EAX = Multiboot 2 magic number (0x36d76289)
+    ;   EBX = Physical address of Multiboot 2 info structure
+    ;   CS  = 32-bit read/execute code segment with offset 0 and limit 0xFFFFFFFF
+    ;   DS,ES,FS,GS,SS = 32-bit read/write data segment with offset 0 and limit 0xFFFFFFFF
+    ;   A20 gate = enabled
+    ;   CR0 = PE bit set, PG bit clear
+    ;   EFLAGS = VM and IF bits clear
+    ; ========================================================================
 
-    ; multiboot_info_struct := ebx (temporarily)
-    mov dword [multiboot_info_struct], ebx
+    ; Save Multiboot 2 magic number and info structure address
+    mov dword [multiboot2_magic], eax
+    mov dword [multiboot2_info_addr], ebx
 
-    ; set up the stack pointer (esp) 4MB after memory start.
-    ; Before calling C++ functions (hence push/pop to stack)
-    ; esp := kernel_stack_start
-    mov dword esp, kernel_stack_start     
+    ; Set up the stack pointer (ESP) to the top of our 4MB stack
+    ; Stack grows downward, so we point to the highest address
+    mov esp, kernel_stack_start
 
-
-    ; start the kernel and pass pointer to multiboot info
-    push ebx
+    ; Pass Multiboot 2 parameters to kernelEntry(uint32_t magic, uint32_t addr)
+    ; C calling convention: arguments pushed right-to-left
+    push ebx        ; Second parameter: Multiboot 2 info address
+    push eax        ; First parameter: Multiboot 2 magic number
     call kernelEntry
 
 ; endless loop

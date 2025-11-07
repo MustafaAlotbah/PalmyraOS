@@ -11,6 +11,7 @@
 #include "core/peripherals/Logger.h"
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/elf.h"
+#include "libs/memory.h"
 #include "tests/allocatorTests.h"
 #include "tests/pagingTests.h"
 #include <algorithm>
@@ -45,23 +46,70 @@ namespace PalmyraOS::kernel {
 
 }  // namespace PalmyraOS::kernel
 
-bool PalmyraOS::kernel::initializeGraphics(vbe_mode_info_t* vbe_mode_info, vbe_control_info_t* vbe_control_info) {
+bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2Info) {
     /**
-     * @brief Initializes the graphics subsystem.
+     * @brief Initializes the graphics subsystem using Multiboot 2 information.
      *
-     * This function allocates memory and initializes various components
-     * necessary for the graphics subsystem, including the VBE object,
-     * the font manager, the brush, and the text renderer.
+     * This function extracts VBE or framebuffer information from Multiboot 2,
+     * allocates memory, and initializes various graphics components including
+     * the VBE object, font manager, brush, and text renderer.
      *
-     * @param vbe_mode_info Pointer to the VBE mode information structure.
-     * @param vbe_control_info Pointer to the VBE control information structure.
+     * @param mb2Info Multiboot 2 information structure
      * @return True if the graphics subsystem is successfully initialized, false otherwise.
      */
 
-    // Calculate the size of the VBE buffer
+    using namespace Multiboot2;
+
+    // Allocate VBE structures on the heap
+    vbe_mode_info_t* vbe_mode_info       = (vbe_mode_info_t*) kernel::kmalloc(sizeof(vbe_mode_info_t));
+    vbe_control_info_t* vbe_control_info = (vbe_control_info_t*) kernel::kmalloc(sizeof(vbe_control_info_t));
+
+    if (!vbe_mode_info || !vbe_control_info) {
+        LOG_ERROR("Failed to allocate VBE structures");
+        return false;
+    }
+
+    // Try to get VBE information first (preferred)
+    const auto* vbeTag = mb2Info.getVBE();
+    if (vbeTag) {
+        // VBE information available - copy it
+        memcpy(vbe_mode_info, &vbeTag->vbe_mode_info, sizeof(vbe_mode_info_t));
+        memcpy(vbe_control_info, &vbeTag->vbe_control_info, sizeof(vbe_control_info_t));
+        LOG_INFO("Graphics: Using VBE mode 0x%X", vbeTag->vbe_mode);
+    }
+    else {
+        // Fall back to framebuffer information
+        const auto* fbTag = mb2Info.getFramebuffer();
+        if (!fbTag) {
+            LOG_ERROR("No graphics information provided by bootloader");
+            return false;
+        }
+
+        // Convert Multiboot 2 framebuffer to VBE mode info
+        vbe_mode_info->width       = fbTag->common.framebuffer_width;
+        vbe_mode_info->height      = fbTag->common.framebuffer_height;
+        vbe_mode_info->framebuffer = static_cast<uint32_t>(fbTag->common.framebuffer_addr);
+        vbe_mode_info->pitch       = fbTag->common.framebuffer_pitch;
+        vbe_mode_info->bpp         = fbTag->common.framebuffer_bpp;
+
+        // Set memory model based on framebuffer type
+        if (fbTag->common.framebuffer_type == static_cast<uint8_t>(FramebufferType::RGB)) {
+            vbe_mode_info->memory_model = 6;  // Direct Color (packed pixel)
+        }
+        else {
+            vbe_mode_info->memory_model = 4;  // Packed pixel
+        }
+
+        // Zero out control info (not available without VBE)
+        memset(vbe_control_info, 0, sizeof(vbe_control_info_t));
+
+        LOG_INFO("Graphics: Using framebuffer %ux%u @ %u bpp", vbe_mode_info->width, vbe_mode_info->height, vbe_mode_info->bpp);
+    }
+
+    // Calculate the size of the VBE back buffer
     uint32_t VBE_buffer_size = vbe_mode_info->width * vbe_mode_info->height * sizeof(uint32_t);
 
-    // initialize VBE and framebuffer
+    // Initialize VBE and framebuffer
     {
         // Allocate memory for the VBE object
         kernel::vbe_ptr = (VBE*) kernel::kmalloc(sizeof(VBE));
@@ -269,49 +317,82 @@ bool PalmyraOS::kernel::initializeInterrupts() {
     return true;
 }
 
-bool PalmyraOS::kernel::initializePhysicalMemory(multiboot_info_t* x86_multiboot_info) {
+bool PalmyraOS::kernel::initializePhysicalMemory(const Multiboot2::MultibootInfo& mb2Info) {
     /**
-     * @brief Initializes the physical memory manager.
+     * @brief Initializes the physical memory manager using Multiboot 2 information.
      *
      * This function reserves all kernel space and some additional safe space,
      * initializes the physical memory system, and reserves the video memory.
      *
-     * @param x86_multiboot_info Pointer to the multiboot information structure.
+     * @param mb2Info Multiboot 2 information structure
      * @return True if the physical memory manager is successfully initialized, false otherwise.
      */
 
+    using namespace Multiboot2;
+
+    // Get memory information from Multiboot 2
+    const auto* memInfo = mb2Info.getBasicMemInfo();
+    if (!memInfo) {
+        LOG_ERROR("No memory information provided by bootloader");
+        return false;
+    }
+
     // Reserve all kernel space and add some safe space
     // This method automatically reserves all kmalloc()ed space + SafeSpace
-    PalmyraOS::kernel::PhysicalMemory::initialize(SafeSpace, x86_multiboot_info->mem_upper * 1024);
+    // mem_upper is in kilobytes, convert to bytes by multiplying by 1024
+    PalmyraOS::kernel::PhysicalMemory::initialize(SafeSpace, memInfo->mem_upper * 1024);
 
     // Reserve video memory to prevent other frames from overwriting it
     {
-        // Number of frames/pages needed for the buffer
-        auto* vbe_mode_info        = (vbe_mode_info_t*) (uintptr_t) x86_multiboot_info->vbe_mode_info;
-        uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
-        uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
+        // Get framebuffer address from VBE or framebuffer tag
+        uint32_t framebuffer_addr = 0;
+        const auto* vbeTag        = mb2Info.getVBE();
+        if (vbeTag) {
+            // Cast VBE mode info block to vbe_mode_info_t
+            const auto* vbe_mode = reinterpret_cast<const vbe_mode_info_t*>(&vbeTag->vbe_mode_info);
+            framebuffer_addr     = vbe_mode->framebuffer;
+        }
+        else {
+            const auto* fbTag = mb2Info.getFramebuffer();
+            if (fbTag) { framebuffer_addr = static_cast<uint32_t>(fbTag->common.framebuffer_addr); }
+        }
 
-        for (int i = 0; i < frameBufferFrames; ++i) { PalmyraOS::kernel::PhysicalMemory::reserveFrame((void*) (vbe_mode_info->framebuffer + (i << PAGE_BITS))); }
+        if (framebuffer_addr != 0) {
+            // Number of frames/pages needed for the buffer
+            uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
+            uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
+
+            for (int i = 0; i < frameBufferFrames; ++i) { PalmyraOS::kernel::PhysicalMemory::reserveFrame((void*) (framebuffer_addr + (i << PAGE_BITS))); }
+        }
     }
     return true;
 }
 
-bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_info) {
+bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo& mb2Info) {
     /**
-     * @brief Initializes the virtual memory manager.
+     * @brief Initializes the virtual memory manager using Multiboot 2 information.
      *
      * This function initializes the kernel paging directory, maps the kernel and video memory by identity,
      * switches to the new kernel paging directory, and initializes the paging system.
      *
-     * @param x86_multiboot_info Pointer to the multiboot information structure.
+     * @param mb2Info Multiboot 2 information structure
      * @return True if the virtual memory manager is successfully initialized, false otherwise.
      */
+
+    using namespace Multiboot2;
 
     /* Here we assume physical memory has been initialized, hence we do not use kmalloc anymore
      * Instead, we use PhysicalMemory::allocateFrames()
      */
 
-    auto& textRenderer                = *kernel::textRenderer_ptr;
+    auto& textRenderer  = *kernel::textRenderer_ptr;
+
+    // Get memory information from Multiboot 2
+    const auto* memInfo = mb2Info.getBasicMemInfo();
+    if (!memInfo) {
+        LOG_ERROR("No memory information provided by bootloader");
+        return false;
+    }
 
     // Initialize and ensure kernel directory is aligned ~ 8 KiB = 3 frames
     uint32_t PagingDirectoryFrames    = (sizeof(PagingDirectory) >> PAGE_BITS) + 1;
@@ -332,22 +413,32 @@ bool PalmyraOS::kernel::initializeVirtualMemory(multiboot_info_t* x86_multiboot_
     textRenderer << "Tables.." << SWAP_BUFF();
     kernel::CPU::delay(2'500'000'000L);
     // Initialize all kernel's directory tables, to avoid Recursive Page Table Mapping Problem
-    size_t max_pages = (x86_multiboot_info->mem_upper >> 12) + 1;  // Kilobytes to 4 Megabytes
+    size_t max_pages = (memInfo->mem_upper >> 12) + 1;  // Kilobytes to 4 Megabytes
     for (int i = 0; i < max_pages; ++i) { kernel::kernelPagingDirectory_ptr->getTable(i, PageFlags::Present | PageFlags::ReadWrite); }
 
     // Map video memory by identity
     textRenderer << "Video.." << SWAP_BUFF();
     kernel::CPU::delay(2'500'000'000L);
-    auto* vbe_mode_info = (vbe_mode_info_t*) (uintptr_t) x86_multiboot_info->vbe_mode_info;
-    {
+
+    // Get framebuffer address from VBE or framebuffer tag
+    uint32_t framebuffer_addr = 0;
+    const auto* vbeTag        = mb2Info.getVBE();
+    if (vbeTag) {
+        // Cast VBE mode info block to vbe_mode_info_t
+        const auto* vbe_mode = reinterpret_cast<const vbe_mode_info_t*>(&vbeTag->vbe_mode_info);
+        framebuffer_addr     = vbe_mode->framebuffer;
+    }
+    else {
+        const auto* fbTag = mb2Info.getFramebuffer();
+        if (fbTag) { framebuffer_addr = static_cast<uint32_t>(fbTag->common.framebuffer_addr); }
+    }
+
+    if (framebuffer_addr != 0) {
         uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
         uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
         LOG_INFO("Mapping video memory by identity: %u frames", frameBufferFrames);
         LOG_INFO("Frame buffer size: %u bytes", frameBufferSize);
-        kernel::kernelPagingDirectory_ptr->mapPages((void*) vbe_mode_info->framebuffer,
-                                                    (void*) vbe_mode_info->framebuffer,
-                                                    frameBufferFrames,
-                                                    PageFlags::Present | PageFlags::ReadWrite);
+        kernel::kernelPagingDirectory_ptr->mapPages((void*) framebuffer_addr, (void*) framebuffer_addr, frameBufferFrames, PageFlags::Present | PageFlags::ReadWrite);
     }
 
     // Switch to the new kernel paging directory and initialize paging

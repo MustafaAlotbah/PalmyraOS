@@ -25,7 +25,7 @@ SECTIONS {
     .text ALIGN(4096) : {
 
         __mem_multiboot_start = .;
-        KEEP(*(.multiboot))   /* Multiboot header (see bootloader.asm) */
+        KEEP(*(.multiboot2))  /* Multiboot 2 header (see bootloader.asm) */
         __mem_multiboot_end = .;
 
         __mem_rodata_start = .;
