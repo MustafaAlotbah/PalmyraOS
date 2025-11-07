@@ -128,4 +128,20 @@ namespace PalmyraOS::kernel {
 
     void initializeBinaries();
 
+    /**
+     * @brief Reboot the system
+     *
+     * Attempts to reboot using ACPI reset register, keyboard controller, or triple fault.
+     * @return Does not return on success, false otherwise.
+     */
+    bool reboot();
+
+    /**
+     * @brief Shutdown the system (power off)
+     *
+     * Attempts to shutdown using ACPI S5 state, APM, or CPU halt.
+     * @return Does not return on success, false otherwise.
+     */
+    bool shutdown();
+
 }  // namespace PalmyraOS::kernel

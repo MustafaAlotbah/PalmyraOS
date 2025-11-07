@@ -41,6 +41,7 @@ void PalmyraOS::kernel::SystemCallsManager::initialize() {
     systemCallHandlers_[POSIX_INT_GETGID]             = &SystemCallsManager::handleGetGID;
     systemCallHandlers_[POSIX_INT_GETEUID32]          = &SystemCallsManager::handleGetEUID;
     systemCallHandlers_[POSIX_INT_GETEGID32]          = &SystemCallsManager::handleGetEUID;
+    systemCallHandlers_[POSIX_INT_REBOOT]             = &SystemCallsManager::handleReboot;
 
     // VFS
     systemCallHandlers_[POSIX_INT_OPEN]               = &SystemCallsManager::handleOpen;
@@ -1109,4 +1110,74 @@ void PalmyraOS::kernel::SystemCallsManager::handleSetThreadArea(PalmyraOS::kerne
 
     // Make the process think it was successful TODO far-future implement TLS and threading inside processes
     regs->eax = (uint32_t) 0;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleReboot(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int reboot(int magic, int magic2, int cmd, void *arg)
+
+    // Extract arguments from registers
+    uint32_t magic  = regs->ebx;          // Must be LINUX_REBOOT_MAGIC1
+    uint32_t magic2 = regs->ecx;          // Must be one of LINUX_REBOOT_MAGIC2*
+    uint32_t cmd    = regs->edx;          // Command (RESTART, POWER_OFF, etc.)
+    void* arg       = (void*) regs->esi;  // Optional argument (unused for now)
+
+    LOG_INFO("SYSCALL reboot(magic=0x%X, magic2=0x%X, cmd=0x%X)", magic, magic2, cmd);
+
+    // Validate magic numbers (Linux compatibility)
+    if (magic != LINUX_REBOOT_MAGIC1) {
+        LOG_ERROR("reboot: Invalid magic1 (0x%X != 0x%X)", magic, LINUX_REBOOT_MAGIC1);
+        regs->eax = -EINVAL;
+        return;
+    }
+
+    // Check if magic2 is one of the valid values
+    bool validMagic2 = (magic2 == LINUX_REBOOT_MAGIC2) || (magic2 == LINUX_REBOOT_MAGIC2A) || (magic2 == LINUX_REBOOT_MAGIC2B) || (magic2 == LINUX_REBOOT_MAGIC2C);
+
+    if (!validMagic2) {
+        LOG_ERROR("reboot: Invalid magic2 (0x%X)", magic2);
+        regs->eax = -EINVAL;
+        return;
+    }
+
+    // Execute the appropriate command
+    switch (cmd) {
+        case LINUX_REBOOT_CMD_RESTART:
+            LOG_INFO("Reboot: RESTART requested");
+            kernel::reboot();
+            // Does not return
+            break;
+
+        case LINUX_REBOOT_CMD_POWER_OFF:
+            LOG_INFO("Reboot: POWER_OFF requested");
+            kernel::shutdown();
+            // Does not return
+            break;
+
+        case LINUX_REBOOT_CMD_HALT:
+            LOG_INFO("Reboot: HALT requested");
+            kernel::shutdown();  // Treat halt as shutdown
+            // Does not return
+            break;
+
+        case LINUX_REBOOT_CMD_RESTART2:
+            LOG_WARN("Reboot: RESTART2 with custom command not supported, using regular restart");
+            kernel::reboot();
+            // Does not return
+            break;
+
+        case LINUX_REBOOT_CMD_CAD_ON:
+        case LINUX_REBOOT_CMD_CAD_OFF:
+            // Ctrl-Alt-Del enable/disable - not applicable for now
+            LOG_WARN("Reboot: CAD_ON/OFF command ignored (not supported)");
+            regs->eax = 0;  // Success (no-op)
+            return;
+
+        default:
+            LOG_ERROR("Reboot: Unknown command 0x%X", cmd);
+            regs->eax = -EINVAL;
+            return;
+    }
+
+    // Should never reach here for RESTART/POWER_OFF/HALT
+    regs->eax = 0;
 }

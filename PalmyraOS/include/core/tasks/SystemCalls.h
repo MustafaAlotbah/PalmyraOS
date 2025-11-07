@@ -58,6 +58,8 @@ namespace PalmyraOS::kernel {
         static void handleGetEUID(interrupts::CPURegisters* regs);
         static void handleGetEGID(interrupts::CPURegisters* regs);
 
+        static void handleReboot(interrupts::CPURegisters* regs);
+
         static KMap<uint32_t, SystemCallHandler> systemCallHandlers_;
     };
 

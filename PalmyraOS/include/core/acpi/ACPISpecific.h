@@ -83,10 +83,10 @@ namespace PalmyraOS::kernel::acpi {
      * Contains information about fixed register blocks for power management, timers, etc.
      */
     struct FADT {
-        ACPISDTHeader header;   // Signature: "FACP"
-        uint32_t firmwareCtrl;  // Physical address of FACS
-        uint32_t dsdt;          // Physical address of DSDT
-        uint8_t reserved;
+        ACPISDTHeader header;        // Signature: "FACP"
+        uint32_t firmwareCtrl;       // Physical address of FACS
+        uint32_t dsdt;               // Physical address of DSDT
+        uint8_t reserved;            // Reserved
         uint8_t preferredPMProfile;  // Preferred power management profile
         uint16_t sciInterrupt;       // SCI interrupt vector
         uint32_t smiCommandPort;     // SMI command port
@@ -136,11 +136,11 @@ namespace PalmyraOS::kernel::acpi {
         uint8_t addressSpaceID;      // 0 = System memory, 1 = System I/O
         uint8_t registerBitWidth;    // Bit width of register
         uint8_t registerBitOffset;   // Bit offset of register
-        uint8_t reserved;
-        uint64_t address;        // Physical address of HPET
-        uint8_t hpetNumber;      // HPET sequence number
-        uint16_t minimumTick;    // Minimum clock ticks
-        uint8_t pageProtection;  // Page protection and OEM attribute
+        uint8_t reserved;            // Reserved
+        uint64_t address;            // Physical address of HPET
+        uint8_t hpetNumber;          // HPET sequence number
+        uint16_t minimumTick;        // Minimum clock ticks
+        uint8_t pageProtection;      // Page protection and OEM attribute
     } __attribute__((packed));
 
     /**

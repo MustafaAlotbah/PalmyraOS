@@ -3,6 +3,7 @@
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
 #include "core/acpi/ACPI.h"
+#include "core/acpi/PowerManagement.h"
 #include "core/boot/multiboot2.h"
 #include "core/cpu.h"
 #include "core/kernel.h"
@@ -186,20 +187,6 @@ void callConstructors() {
         LOG_INFO("Memory Upper: %u KiB", memInfo->mem_upper);
     }
 
-    // ----------------------- Initialize ACPI -------------------------------------
-    const uint8_t* acpiRSDP = multiboot2_info.getACPIRSDP();
-    if (acpiRSDP) {
-        LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
-
-        if (kernel::ACPI::initialize(acpiRSDP)) {
-            LOG_INFO("ACPI initialized successfully (version %u.0)", kernel::ACPI::getACPIVersion() == 0 ? 1 : kernel::ACPI::getACPIVersion());
-
-            // Log all discovered ACPI tables
-            kernel::ACPI::logAllTables();
-        }
-        else { LOG_WARN("ACPI initialization failed"); }
-    }
-    else { LOG_WARN("No ACPI support - RSDP not provided by bootloader"); }
 
     enable_sse();
     LOG_INFO("Enabled SSE.");
@@ -245,6 +232,42 @@ void callConstructors() {
 
     // dereference graphics tools
     auto& textRenderer = *kernel::textRenderer_ptr;
+    textRenderer << "Initialized Graphics.\n" << SWAP_BUFF();
+
+
+    // ----------------------- Initialize ACPI -------------------------------------
+    const uint8_t* acpiRSDP = multiboot2_info.getACPIRSDP();
+    textRenderer << "Initializing ACPI..." << SWAP_BUFF();
+    if (acpiRSDP) {
+        LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
+        textRenderer << "ACPI RSDP provided by bootloader.. " << SWAP_BUFF();
+
+        if (kernel::ACPI::initialize(acpiRSDP)) {
+            LOG_INFO("ACPI initialized successfully (version %u.0)", kernel::ACPI::getACPIVersion() == 0 ? 1 : kernel::ACPI::getACPIVersion());
+            textRenderer << "ACPI initialized successfully (version " << kernel::ACPI::getACPIVersion() << ".0).. " << SWAP_BUFF();
+
+            // Log all discovered ACPI tables
+            kernel::ACPI::logAllTables();
+
+            // Initialize power management
+            if (kernel::PowerManagement::initialize()) {
+                LOG_INFO("Power management initialized");
+                textRenderer << "Power management initialized.. \n" << SWAP_BUFF();
+            }
+            else {
+                LOG_WARN("Power management initialization failed");
+                textRenderer << "Power management initialization failed!\n" << SWAP_BUFF();
+            }
+        }
+        else {
+            LOG_WARN("ACPI initialization failed");
+            textRenderer << "ACPI initialization failed!\n" << SWAP_BUFF();
+        }
+    }
+    else {
+        LOG_WARN("No ACPI support - RSDP not provided by bootloader");
+        textRenderer << "No ACPI support - RSDP not provided by bootloader!\n" << SWAP_BUFF();
+    }
 
 
     // ----------------------- Initialize Global Descriptor Tables -------------
@@ -315,7 +338,6 @@ void callConstructors() {
         kernel::CPU::delay(SHORT_DELAY);
     }
     textRenderer << " Done.\n" << SWAP_BUFF();
-
 
     // ----------------------- Initialize Tasks -------------------------------
 

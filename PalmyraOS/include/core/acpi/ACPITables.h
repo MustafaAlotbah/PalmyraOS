@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include "core/definitions.h"
 
 namespace PalmyraOS::kernel::acpi {
 

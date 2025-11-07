@@ -78,6 +78,11 @@ namespace PalmyraOS::kernel {
         static void logAllTables();
 
         /**
+         * @brief Log complete ACPI table header information
+         */
+        static void logTableHeader(const acpi::ACPISDTHeader* header, uint64_t address);
+
+        /**
          * @brief Log detailed MADT information
          */
         static void logMADTDetails();

@@ -369,9 +369,36 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             return;
         }
 
-        // ECHO
+        // EXIT
         if (tokens[0] == "exit") {
             _exit(0);
+            return;
+        }
+
+        // REBOOT
+        if (tokens[0] == "reboot") {
+            output.append("Rebooting system...\n", 20);
+            // Use Linux-compatible reboot syscall
+            reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART, nullptr);
+            // Should not return
+            return;
+        }
+
+        // SHUTDOWN (or POWEROFF)
+        if (tokens[0] == "shutdown" || tokens[0] == "poweroff") {
+            output.append("Shutting down system...\n", 24);
+            // Use Linux-compatible reboot syscall with power off command
+            reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, nullptr);
+            // Should not return
+            return;
+        }
+
+        // HALT
+        if (tokens[0] == "halt") {
+            output.append("Halting system...\n", 18);
+            // Use Linux-compatible reboot syscall with halt command
+            reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_HALT, nullptr);
+            // Should not return
             return;
         }
 

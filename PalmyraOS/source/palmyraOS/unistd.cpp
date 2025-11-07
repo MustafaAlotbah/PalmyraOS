@@ -391,3 +391,15 @@ int rmdir(const char* pathname) {
     asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(path_reg) : "memory");
     return result;
 }
+
+int reboot(int magic, int magic2, int cmd, void* arg) {
+    int result;
+    register uint32_t syscall_no asm("eax") = POSIX_INT_REBOOT;
+    register int magic_reg asm("ebx")       = magic;
+    register int magic2_reg asm("ecx")      = magic2;
+    register int cmd_reg asm("edx")         = cmd;
+    register void* arg_reg asm("esi")       = arg;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(magic_reg), "r"(magic2_reg), "r"(cmd_reg), "r"(arg_reg) : "memory");
+    return result;
+}

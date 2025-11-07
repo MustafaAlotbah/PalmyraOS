@@ -174,6 +174,41 @@ namespace PalmyraOS::kernel {
         return nullptr;
     }
 
+    void ACPI::logTableHeader(const acpi::ACPISDTHeader* header, uint64_t address) {
+        if (!header) return;
+
+        // Format signature as null-terminated string
+        char sig[5]   = {header->signature[0], header->signature[1], header->signature[2], header->signature[3], '\0'};
+
+        // Format OEM ID (6 bytes, may not be null-terminated)
+        char oemID[7] = {0};
+        for (int i = 0; i < 6 && header->oemID[i] != '\0'; ++i) { oemID[i] = header->oemID[i]; }
+
+        // Format OEM Table ID (8 bytes, may not be null-terminated)
+        char oemTableID[9] = {0};
+        for (int i = 0; i < 8 && header->oemTableID[i] != '\0'; ++i) { oemTableID[i] = header->oemTableID[i]; }
+
+        // Format Creator ID as 4-character ASCII string
+        char creatorID[5] = {(char) ((header->creatorID >> 0) & 0xFF),
+                             (char) ((header->creatorID >> 8) & 0xFF),
+                             (char) ((header->creatorID >> 16) & 0xFF),
+                             (char) ((header->creatorID >> 24) & 0xFF),
+                             '\0'};
+
+        bool valid        = header->validate();
+
+        LOG_INFO("  [%s] Table Header:", sig);
+        LOG_INFO("    Address: 0x%llX", address);
+        LOG_INFO("    Length: %u bytes", header->length);
+        LOG_INFO("    Revision: %u", header->revision);
+        LOG_INFO("    Checksum: 0x%02X %s", header->checksum, valid ? "(VALID)" : "(INVALID)");
+        LOG_INFO("    OEM ID: '%s'", oemID);
+        LOG_INFO("    OEM Table ID: '%s'", oemTableID);
+        LOG_INFO("    OEM Revision: 0x%08X (%u)", header->oemRevision, header->oemRevision);
+        LOG_INFO("    Creator ID: '%s'", creatorID);
+        LOG_INFO("    Creator Revision: 0x%08X (%u)", header->creatorRevision, header->creatorRevision);
+    }
+
     void ACPI::logAllTables() {
         if (!initialized_) {
             LOG_WARN("ACPI: Not initialized");
@@ -192,17 +227,15 @@ namespace PalmyraOS::kernel {
         LOG_INFO("");
         LOG_INFO("Discovered Tables:");
 
-        // Iterate through all tables and log them
+        // Iterate through all tables and log them with full headers
         if (xsdt_ != nullptr) {
             uint32_t entryCount     = xsdt_->getEntryCount();
             const uint64_t* entries = xsdt_->getEntries();
 
             for (uint32_t i = 0; i < entryCount; ++i) {
                 const auto* header = reinterpret_cast<const acpi::ACPISDTHeader*>(static_cast<uintptr_t>(entries[i]));
-                char sig[5]        = {header->signature[0], header->signature[1], header->signature[2], header->signature[3], '\0'};
-                bool valid         = header->validate();
-
-                LOG_INFO("  [%s] at 0x%016llX (%u bytes) %s", sig, entries[i], header->length, valid ? "VALID" : "INVALID");
+                LOG_INFO("");
+                logTableHeader(header, entries[i]);
             }
         }
         else if (rsdt_ != nullptr) {
@@ -211,10 +244,8 @@ namespace PalmyraOS::kernel {
 
             for (uint32_t i = 0; i < entryCount; ++i) {
                 const auto* header = reinterpret_cast<const acpi::ACPISDTHeader*>(static_cast<uintptr_t>(entries[i]));
-                char sig[5]        = {header->signature[0], header->signature[1], header->signature[2], header->signature[3], '\0'};
-                bool valid         = header->validate();
-
-                LOG_INFO("  [%s] at 0x%08X (%u bytes) %s", sig, entries[i], header->length, valid ? "VALID" : "INVALID");
+                LOG_INFO("");
+                logTableHeader(header, static_cast<uint64_t>(entries[i]));
             }
         }
 

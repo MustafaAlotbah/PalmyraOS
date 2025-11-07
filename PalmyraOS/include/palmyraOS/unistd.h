@@ -46,6 +46,7 @@
 #define POSIX_INT_RMDIR 40
 #define POSIX_INT_BRK 45
 #define POSIX_INT_IOCTL 54
+#define POSIX_INT_REBOOT 88  // Linux compatible reboot syscall
 #define POSIX_INT_MMAP 90
 #define POSIX_INT_YIELD 158
 #define POSIX_INT_GETUID 199
@@ -61,6 +62,21 @@
 /* From Linux */
 #define LINUX_INT_GETDENTS 141
 #define LINUX_INT_PRCTL 384
+
+/* Linux reboot() magic numbers and commands */
+#define LINUX_REBOOT_MAGIC1 0xfee1dead
+#define LINUX_REBOOT_MAGIC2 0x07011995   // Mustafa Alotbah' birthday
+#define LINUX_REBOOT_MAGIC2A 0x05121996  // Alternative magic
+#define LINUX_REBOOT_MAGIC2B 0x16041998  // Alternative magic
+#define LINUX_REBOOT_MAGIC2C 0x20112000  // Alternative magic
+
+/* Linux reboot commands */
+#define LINUX_REBOOT_CMD_RESTART 0x01234567    // Restart system
+#define LINUX_REBOOT_CMD_HALT 0xCDEF0123       // Halt system (stop CPU)
+#define LINUX_REBOOT_CMD_POWER_OFF 0x4321FEDC  // Power off system
+#define LINUX_REBOOT_CMD_RESTART2 0xA1B2C3D4   // Restart with command string
+#define LINUX_REBOOT_CMD_CAD_ON 0x89ABCDEF     // Enable Ctrl-Alt-Del
+#define LINUX_REBOOT_CMD_CAD_OFF 0x00000000    // Disable Ctrl-Alt-Del
 
 
 /* mmap protection flags */
@@ -325,3 +341,22 @@ int unlink(const char* pathname);
  * @return 0 on success, or -1 if an error occurred.
  */
 int rmdir(const char* pathname);
+
+/**
+ * @brief Reboot or power off the system (Linux compatible)
+ *
+ * This is the Linux-compatible reboot syscall. It requires two magic numbers
+ * for safety and a command specifying the action.
+ *
+ * @param magic Must be LINUX_REBOOT_MAGIC1 (0xfee1dead)
+ * @param magic2 Must be one of LINUX_REBOOT_MAGIC2* values
+ * @param cmd Command to execute (LINUX_REBOOT_CMD_*)
+ * @param arg Optional argument for RESTART2 command
+ * @return Does not return on success, -1 on error
+ *
+ * Commands:
+ * - LINUX_REBOOT_CMD_RESTART: Restart the system
+ * - LINUX_REBOOT_CMD_POWER_OFF: Power off the system
+ * - LINUX_REBOOT_CMD_HALT: Halt the system (stop CPU)
+ */
+int reboot(int magic, int magic2, int cmd, void* arg);

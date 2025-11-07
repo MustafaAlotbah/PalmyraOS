@@ -1,5 +1,6 @@
 #include "core/kernel.h"
 #include "core/Display.h"
+#include "core/acpi/PowerManagement.h"
 #include "core/cpu.h"
 #include "core/files/Fat32FileSystem.h"
 #include "core/files/VirtualFileSystem.h"
@@ -752,4 +753,40 @@ void PalmyraOS::kernel::initializeBinaries() {
 
     // Set the test inode at "/bin/terminal"
     vfs::VirtualFileSystem::setInodeByPath(KString("/bin/terminal.elf"), terminalNode);
+}
+
+bool PalmyraOS::kernel::reboot() {
+    /**
+     * @brief Reboot the system using ACPI or legacy methods
+     *
+     * This function attempts to reboot the system using various methods:
+     * 1. ACPI reset register (if available)
+     * 2. Keyboard controller reset (legacy)
+     * 3. Triple fault (last resort)
+     */
+
+    if (PowerManagement::isInitialized()) {
+        LOG_INFO("PowerManagement: Attempting reboot...");
+        PowerManagement::reboot();
+    }
+    LOG_ERROR("PowerManagement not initialized, cannot reboot");
+    return false;
+}
+
+bool PalmyraOS::kernel::shutdown() {
+    /**
+     * @brief Shutdown the system using ACPI or legacy methods
+     *
+     * This function attempts to shutdown the system using various methods:
+     * 1. ACPI S5 state (if available)
+     * 2. APM shutdown (legacy)
+     * 3. Halt CPU (if all else fails)
+     */
+
+    if (PowerManagement::isInitialized()) {
+        LOG_INFO("PowerManagement: Attempting shutdown...");
+        PowerManagement::shutdown();
+    }
+    LOG_ERROR("PowerManagement not initialized, cannot shutdown");
+    return false;
 }
