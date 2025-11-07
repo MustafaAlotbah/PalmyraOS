@@ -1,5 +1,5 @@
 
-#include "core/VBE.h"
+#include "core/Display.h"
 #include "libs/stdio.h"  // snprintf
 #include "libs/stdlib.h"
 #include "libs/string.h"
@@ -363,50 +363,50 @@ void PalmyraOS::kernel::TextRenderer::setFont(PalmyraOS::Font& font) { font_ = &
 /// region PalmyraOS::kernel::VBE
 
 
-PalmyraOS::kernel::VBE::VBE(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer)
+PalmyraOS::kernel::Display::Display(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer)
     : frameBuffer_(mode_->width, mode_->height, (uint32_t*) (uintptr_t) mode_->framebuffer, backBuffer), vbe_mode_info_(*mode_), vbe_control_info_(*control_) {
     vbe_mode_info_t& vbe_mode_info = *mode_;
     vbe_control_info_t& control    = *control_;
 }
 
-PalmyraOS::kernel::FrameBuffer& PalmyraOS::kernel::VBE::getFrameBuffer() { return frameBuffer_; }
+PalmyraOS::kernel::FrameBuffer& PalmyraOS::kernel::Display::getFrameBuffer() { return frameBuffer_; }
 
-void PalmyraOS::kernel::VBE::swapBuffers() { frameBuffer_.swapBuffers(); }
+void PalmyraOS::kernel::Display::swapBuffers() { frameBuffer_.swapBuffers(); }
 
-size_t PalmyraOS::kernel::VBE::getWidth() const { return vbe_mode_info_.width; }
+size_t PalmyraOS::kernel::Display::getWidth() const { return vbe_mode_info_.width; }
 
-size_t PalmyraOS::kernel::VBE::getHeight() const { return vbe_mode_info_.height; }
+size_t PalmyraOS::kernel::Display::getHeight() const { return vbe_mode_info_.height; }
 
-size_t PalmyraOS::kernel::VBE::getVideoMemorySize() const {
+size_t PalmyraOS::kernel::Display::getVideoMemorySize() const {
     //	return vbe_control_info_.video_memory * 64 * 1024; // video_memory is in 64KB blocks
     return vbe_mode_info_.width * vbe_mode_info_.height * vbe_mode_info_.bpp / 8;  // bytes
 }
 
-size_t PalmyraOS::kernel::VBE::getColorDepth() const { return vbe_mode_info_.bpp; }
+size_t PalmyraOS::kernel::Display::getColorDepth() const { return vbe_mode_info_.bpp; }
 
-uint16_t PalmyraOS::kernel::VBE::getWindowAttributes() const { return vbe_mode_info_.attributes; }
+uint16_t PalmyraOS::kernel::Display::getWindowAttributes() const { return vbe_mode_info_.attributes; }
 
-bool PalmyraOS::kernel::VBE::isModeSupported() const { return (vbe_mode_info_.attributes & 0x0001) != 0; }
+bool PalmyraOS::kernel::Display::isModeSupported() const { return (vbe_mode_info_.attributes & 0x0001) != 0; }
 
 // Check if optional hardware functions are available
-bool PalmyraOS::kernel::VBE::isOptionalHardwareSupported() const { return (vbe_mode_info_.attributes & 0x0002) != 0; }
+bool PalmyraOS::kernel::Display::isOptionalHardwareSupported() const { return (vbe_mode_info_.attributes & 0x0002) != 0; }
 
 // Check if the mode is supported for BIOS output functions
-bool PalmyraOS::kernel::VBE::isBiosOutputSupported() const { return (vbe_mode_info_.attributes & 0x0004) != 0; }
+bool PalmyraOS::kernel::Display::isBiosOutputSupported() const { return (vbe_mode_info_.attributes & 0x0004) != 0; }
 
 // Check if the mode is a color mode
-bool PalmyraOS::kernel::VBE::isColorMode() const { return (vbe_mode_info_.attributes & 0x0008) != 0; }
+bool PalmyraOS::kernel::Display::isColorMode() const { return (vbe_mode_info_.attributes & 0x0008) != 0; }
 
 // Check if the mode is a graphics mode
-bool PalmyraOS::kernel::VBE::isGraphicsMode() const { return (vbe_mode_info_.attributes & 0x0010) != 0; }
+bool PalmyraOS::kernel::Display::isGraphicsMode() const { return (vbe_mode_info_.attributes & 0x0010) != 0; }
 
 // Check if the mode supports VGA-compatible windowed memory paging
-bool PalmyraOS::kernel::VBE::isVGACompatibleWindowedMemoryPagingSupported() const { return (vbe_mode_info_.attributes & 0x0020) != 0; }
+bool PalmyraOS::kernel::Display::isVGACompatibleWindowedMemoryPagingSupported() const { return (vbe_mode_info_.attributes & 0x0020) != 0; }
 
 // Get the type of memory model (e.g., text, CGA, linear)
-uint8_t PalmyraOS::kernel::VBE::getMemoryModel() const { return vbe_mode_info_.memory_model; }
+uint8_t PalmyraOS::kernel::Display::getMemoryModel() const { return vbe_mode_info_.memory_model; }
 
-const char* PalmyraOS::kernel::VBE::listVideoModes() const {
+const char* PalmyraOS::kernel::Display::listVideoModes() const {
     // Pointer to the array of video mode pointers
     auto* video_modes = reinterpret_cast<uint16_t*>(vbe_control_info_.video_modes);
 

@@ -1,10 +1,11 @@
 
 #include "core/panic.h"
+#include "core/Display.h"
 #include "core/Font.h"
-#include "core/VBE.h"
 #include "core/kernel.h"
 #include "core/peripherals/Logger.h"
 #include "libs/stdio.h"
+
 
 #include <cstdarg>  // Include for va_list and related functions
 
@@ -20,7 +21,7 @@ extern "C" void disable_paging();
     disable_interrupts();
 
     // reference system variables
-    auto& vbe = *PalmyraOS::kernel::vbe_ptr;
+    auto& vbe = *PalmyraOS::kernel::display_ptr;
 
     // render some information
     kernel::Brush brush(vbe.getFrameBuffer());
@@ -64,8 +65,7 @@ extern "C" void disable_paging();
     LOG_ERROR(message);
 
     // halt
-    while (true)
-        ;
+    while (true);
 }
 
 void PalmyraOS::kernel::kernelPanic(const char* format, ...) {

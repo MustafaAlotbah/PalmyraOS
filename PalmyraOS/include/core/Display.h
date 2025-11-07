@@ -20,7 +20,7 @@ namespace PalmyraOS::kernel {
     /**
      * Class representing the VBE (VESA BIOS Extensions) interface for graphics.
      */
-    class VBE {
+    class Display {
     public:
         /**
          * Constructor to initialize VBE with mode and control information, and a back buffer.
@@ -28,7 +28,7 @@ namespace PalmyraOS::kernel {
          * @param control Pointer to the VBE control information.
          * @param backBuffer Pointer to the back buffer.
          */
-        VBE(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer);
+        Display(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer);
 
         /**
          * Swap the front and back buffers.
@@ -63,7 +63,7 @@ namespace PalmyraOS::kernel {
 
         FrameBuffer& getFrameBuffer();
 
-        REMOVE_COPY(VBE);
+        REMOVE_COPY(Display);
 
     private:
         FrameBuffer frameBuffer_;               // Frame buffer object

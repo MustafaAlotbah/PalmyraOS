@@ -13,9 +13,9 @@
 #include <cstddef>        // size_t
 
 // TODO: move these to libs (or put them in palmyraOS)
+#include "core/Display.h"      // for Brush, TextRenderer
 #include "core/Font.h"         // For Fonts
 #include "core/FrameBuffer.h"  // FrameBuffer
-#include "core/VBE.h"          // for Brush, TextRenderer
 
 
 // ============ APP LAUNCHER STRUCTURE ============

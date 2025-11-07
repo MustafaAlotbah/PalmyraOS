@@ -1,5 +1,5 @@
 #include "core/kernel.h"
-#include "core/VBE.h"
+#include "core/Display.h"
 #include "core/cpu.h"
 #include "core/files/Fat32FileSystem.h"
 #include "core/files/VirtualFileSystem.h"
@@ -23,7 +23,7 @@
 namespace PalmyraOS::kernel {
 
     // Graphics
-    PalmyraOS::kernel::VBE* vbe_ptr                             = nullptr;
+    PalmyraOS::kernel::Display* display_ptr                     = nullptr;
     PalmyraOS::kernel::Brush* brush_ptr                         = nullptr;
     PalmyraOS::kernel::TextRenderer* textRenderer_ptr           = nullptr;
 
@@ -112,11 +112,11 @@ bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2I
     // Initialize VBE and framebuffer
     {
         // Allocate memory for the VBE object
-        kernel::vbe_ptr = (VBE*) kernel::kmalloc(sizeof(VBE));
-        if (kernel::vbe_ptr == nullptr) return false;
+        kernel::display_ptr = (Display*) kernel::kmalloc(sizeof(Display));
+        if (kernel::display_ptr == nullptr) return false;
 
         // Construct the VBE object in the allocated memory
-        new (kernel::vbe_ptr) VBE(vbe_mode_info, vbe_control_info, (uint32_t*) kernel::kmalloc(VBE_buffer_size));
+        new (kernel::display_ptr) Display(vbe_mode_info, vbe_control_info, (uint32_t*) kernel::kmalloc(VBE_buffer_size));
     }
 
     // Initialize the font manager
@@ -129,7 +129,7 @@ bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2I
         if (kernel::brush_ptr == nullptr) return false;
 
         // Construct the brush object in the allocated memory
-        new (kernel::brush_ptr) Brush(kernel::vbe_ptr->getFrameBuffer());
+        new (kernel::brush_ptr) Brush(kernel::display_ptr->getFrameBuffer());
     }
 
     // Initialize kernel's text renderer
@@ -139,7 +139,7 @@ bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2I
         if (kernel::textRenderer_ptr == nullptr) return false;
 
         // Construct the text renderer object in the allocated memory
-        new (kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Arial12);
+        new (kernel::textRenderer_ptr) TextRenderer(kernel::display_ptr->getFrameBuffer(), Font::Arial12);
     }
 
     // Everything is initialized successfully
@@ -205,14 +205,14 @@ bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16
         }
 
         // Initialize the VBE object with our framebuffer information
-        kernel::vbe_ptr = (VBE*) kernel::kmalloc(sizeof(VBE));
-        if (kernel::vbe_ptr == nullptr) {
+        kernel::display_ptr = (Display*) kernel::kmalloc(sizeof(Display));
+        if (kernel::display_ptr == nullptr) {
             LOG_ERROR("Failed to allocate VBE object");
             return false;
         }
 
         // Construct the VBE object with the back buffer we allocated
-        new (kernel::vbe_ptr) VBE(mode_info, control_info, backBuffer);
+        new (kernel::display_ptr) Display(mode_info, control_info, backBuffer);
     }
 
     // Initialize the font manager
@@ -226,7 +226,7 @@ bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16
             return false;
         }
 
-        new (kernel::brush_ptr) Brush(kernel::vbe_ptr->getFrameBuffer());
+        new (kernel::brush_ptr) Brush(kernel::display_ptr->getFrameBuffer());
     }
 
     // Initialize kernel's text renderer
@@ -237,7 +237,7 @@ bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16
             return false;
         }
 
-        new (kernel::textRenderer_ptr) TextRenderer(kernel::vbe_ptr->getFrameBuffer(), Font::Poppins12);
+        new (kernel::textRenderer_ptr) TextRenderer(kernel::display_ptr->getFrameBuffer(), Font::Poppins12);
     }
 
     LOG_INFO("Graphics initialized with framebuffer: %ux%u @ %u bpp at 0x%X", width, height, bpp, framebufferAddress);
@@ -272,7 +272,7 @@ void PalmyraOS::kernel::clearScreen(bool drawLogo) {
     }
 
     // Swap the buffers to update the display
-    vbe_ptr->swapBuffers();
+    display_ptr->swapBuffers();
 }
 
 bool PalmyraOS::kernel::initializeGlobalDescriptorTable() {
@@ -359,7 +359,7 @@ bool PalmyraOS::kernel::initializePhysicalMemory(const Multiboot2::MultibootInfo
 
         if (framebuffer_addr != 0) {
             // Number of frames/pages needed for the buffer
-            uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
+            uint32_t frameBufferSize   = display_ptr->getVideoMemorySize();
             uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
 
             for (int i = 0; i < frameBufferFrames; ++i) { PalmyraOS::kernel::PhysicalMemory::reserveFrame((void*) (framebuffer_addr + (i << PAGE_BITS))); }
@@ -434,7 +434,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
     }
 
     if (framebuffer_addr != 0) {
-        uint32_t frameBufferSize   = vbe_ptr->getVideoMemorySize();
+        uint32_t frameBufferSize   = display_ptr->getVideoMemorySize();
         uint32_t frameBufferFrames = (frameBufferSize >> PAGE_BITS) + 1;
         LOG_INFO("Mapping video memory by identity: %u frames", frameBufferFrames);
         LOG_INFO("Frame buffer size: %u bytes", frameBufferSize);

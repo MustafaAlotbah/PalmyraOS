@@ -1,7 +1,7 @@
+#include "core/Display.h"
 #include "core/FrameBuffer.h"
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
-#include "core/VBE.h"
 #include "core/boot/multiboot2.h"
 #include "core/cpu.h"
 #include "core/kernel.h"
@@ -172,21 +172,21 @@ void callConstructors() {
     LOG_INFO("Multiboot 2 bootloader detected (magic: 0x%X)", magic);
 
     // Parse Multiboot 2 information
-    MultibootInfo mb2Info(multiboot_addr);
-    if (!mb2Info.isValid()) { kernel::kernelPanic("Invalid Multiboot 2 info structure at 0x%X", multiboot_addr); }
+    MultibootInfo multiboot2_info(multiboot_addr);
+    if (!multiboot2_info.isValid()) { kernel::kernelPanic("Invalid Multiboot 2 info structure at 0x%X", multiboot_addr); }
 
     // Log detailed Multiboot 2 information
-    logMultiboot2Info(mb2Info);
+    logMultiboot2Info(multiboot2_info);
 
     // Log memory information
-    const auto* memInfo = mb2Info.getBasicMemInfo();
+    const auto* memInfo = multiboot2_info.getBasicMemInfo();
     if (memInfo) {
         LOG_INFO("Memory Lower: %u KiB", memInfo->mem_lower);
         LOG_INFO("Memory Upper: %u KiB", memInfo->mem_upper);
     }
 
     // Store ACPI RSDP for future ACPI implementation
-    const uint8_t* acpiRSDP = mb2Info.getACPIRSDP();
+    const uint8_t* acpiRSDP = multiboot2_info.getACPIRSDP();
     if (acpiRSDP) {
         LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
         // TODO: Store globally for ACPI initialization
@@ -194,10 +194,10 @@ void callConstructors() {
 
     enable_sse();
     LOG_INFO("Enabled SSE.");
-    
+
     // ----------------------- Initialize Graphics ----------------------------
     // Initialize graphics using native Multiboot 2 information
-    kernel::initializeGraphics(mb2Info);
+    kernel::initializeGraphics(multiboot2_info);
     LOG_INFO("Initialized Graphics.");
 
     // ----------------------- Check BGA Graphics Adapter -----------------------
@@ -256,13 +256,13 @@ void callConstructors() {
 
     // ----------------------- Initialize Physical Memory -------------------------------
     textRenderer << "Initializing Physical Memory: " << (memInfo ? memInfo->mem_upper : 0) << " KiB\n" << SWAP_BUFF();
-    kernel::initializePhysicalMemory(mb2Info);
+    kernel::initializePhysicalMemory(multiboot2_info);
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Virtual Memory -------------------------------
     textRenderer << "Initializing Virtual Memory..." << SWAP_BUFF();
     PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-    kernel::initializeVirtualMemory(mb2Info);
+    kernel::initializeVirtualMemory(multiboot2_info);
     PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
     textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);

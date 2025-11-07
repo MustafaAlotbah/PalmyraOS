@@ -98,7 +98,7 @@ void PalmyraOS::kernel::WindowManager::initialize() {
     deletedWindows_           = heapManager.createInstance<KQueue<uint32_t>>();
 
 
-    FrameBuffer& screenBuffer = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
+    FrameBuffer& screenBuffer = PalmyraOS::kernel::display_ptr->getFrameBuffer();
 
     mouseX_                   = screenBuffer.getWidth() / 2;
     mouseY_                   = screenBuffer.getHeight() / 2;
@@ -126,7 +126,7 @@ void PalmyraOS::kernel::WindowManager::closeWindow(uint32_t id) {
 }
 
 void PalmyraOS::kernel::WindowManager::queueMouseEvent(MouseEvent event) {
-    FrameBuffer& screenBuffer = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
+    FrameBuffer& screenBuffer = PalmyraOS::kernel::display_ptr->getFrameBuffer();
     size_t screenWidth        = screenBuffer.getWidth();
     size_t screenHeight       = screenBuffer.getHeight();
 
@@ -171,7 +171,7 @@ void PalmyraOS::kernel::WindowManager::queueKeyboardEvent(KeyboardEvent event) {
 }
 
 void PalmyraOS::kernel::WindowManager::composite() {
-    FrameBuffer& screenBuffer  = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
+    FrameBuffer& screenBuffer  = PalmyraOS::kernel::display_ptr->getFrameBuffer();
     TextRenderer& textRenderer = *kernel::textRenderer_ptr;
 
 
@@ -361,7 +361,7 @@ void PalmyraOS::kernel::WindowManager::updateDragging() {
     if (!window) return;
 
     // Clamp window position within screen bounds
-    FrameBuffer& screenBuffer = PalmyraOS::kernel::vbe_ptr->getFrameBuffer();
+    FrameBuffer& screenBuffer = PalmyraOS::kernel::display_ptr->getFrameBuffer();
 
     // Update window position based on mouse movement and offset
     int newX                  = mouseX_ - dragState_.offsetX;

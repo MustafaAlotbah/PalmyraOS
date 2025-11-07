@@ -278,8 +278,8 @@ namespace PalmyraOS::kernel::vfs {
             char modesStr[64];
 
             // Get framebuffer dimensions from VBE
-            uint16_t width  = kernel::vbe_ptr->getFrameBuffer().getWidth();
-            uint16_t height = kernel::vbe_ptr->getFrameBuffer().getHeight();
+            uint16_t width  = kernel::display_ptr->getFrameBuffer().getWidth();
+            uint16_t height = kernel::display_ptr->getFrameBuffer().getHeight();
 
             // Format as Linux standard: "U:1920x1080p-60"
             int written     = snprintf(modesStr, sizeof(modesStr), "U:%ux%up-60\n", width, height);

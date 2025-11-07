@@ -4,7 +4,7 @@
 
 #include "boot/multiboot.h"
 #include "boot/multiboot2.h"
-#include "core/VBE.h"
+#include "core/Display.h"
 #include "core/definitions.h"
 #include "core/memory/KernelHeap.h"
 #include "core/memory/paging.h"
@@ -45,7 +45,7 @@ namespace PalmyraOS::kernel {
      * Pointer to the VBE (VESA BIOS Extensions) object.
      * This global pointer is used to access VBE functions and information.
      */
-    extern PalmyraOS::kernel::VBE* vbe_ptr;
+    extern PalmyraOS::kernel::Display* display_ptr;
 
     extern PalmyraOS::kernel::Brush* brush_ptr;
     extern PalmyraOS::kernel::TextRenderer* textRenderer_ptr;
