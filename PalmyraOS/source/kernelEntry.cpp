@@ -208,7 +208,14 @@ void callConstructors() {
             LOG_INFO("BGA initialized successfully at %dx%dx%d", width, height, bpp);
 
             // Reinitialize graphics with BGA framebuffer
-            if (kernel::initializeGraphicsWithFramebuffer(kernel::BGA::getWidth(), kernel::BGA::getHeight(), kernel::BGA::getFramebufferAddress(), kernel::BGA::getBpp())) {
+            // Calculate pitch: BGA uses linear framebuffer with pitch = width * (bpp / 8)
+            uint16_t bgaWidth  = kernel::BGA::getWidth();
+            uint16_t bgaHeight = kernel::BGA::getHeight();
+            uint16_t bgaBpp    = kernel::BGA::getBpp();
+            uint32_t bgaFb     = kernel::BGA::getFramebufferAddress();
+            uint16_t bgaPitch  = bgaWidth * (bgaBpp / 8);
+
+            if (kernel::initializeGraphicsWithFramebuffer(bgaWidth, bgaHeight, bgaFb, bgaPitch, static_cast<uint8_t>(bgaBpp))) {
                 LOG_INFO("Graphics reinitialized with BGA framebuffer");
             }
             else { LOG_ERROR("Failed to reinitialize graphics with BGA framebuffer"); }

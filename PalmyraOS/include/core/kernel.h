@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "boot/multiboot.h"
+// #include "boot/multiboot.h"
 #include "boot/multiboot2.h"
 #include "core/Display.h"
 #include "core/definitions.h"
@@ -42,8 +42,8 @@ namespace PalmyraOS::kernel {
     constexpr uint32_t SafeSpace                 = 32 * 1024 * 1024;
 
     /**
-     * Pointer to the VBE (VESA BIOS Extensions) object.
-     * This global pointer is used to access VBE functions and information.
+     * Pointer to the Display driver object.
+     * Provides access to graphics/display functions for rendering output.
      */
     extern PalmyraOS::kernel::Display* display_ptr;
 
@@ -69,17 +69,18 @@ namespace PalmyraOS::kernel {
     /**
      * @brief Initializes the graphics system with explicit framebuffer information.
      *
-     * This function is used when graphics information is not available from the
-     * bootloader (e.g., when BGA is detected at runtime). It allocates memory
-     * for the back buffer and initializes all graphics components.
+     * This function is the common initialization path used by both Multiboot2-based
+     * initialization and direct hardware detection (e.g., BGA). It allocates memory
+     * for the Display object, back buffer, and initializes all graphics components.
      *
      * @param width Framebuffer width in pixels
      * @param height Framebuffer height in pixels
      * @param framebufferAddress Physical address of the framebuffer
+     * @param pitch Bytes per scanline (stride)
      * @param bpp Bits per pixel (8, 16, 24, or 32)
      * @return True if initialization is successful, false otherwise.
      */
-    bool initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t bpp);
+    bool initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t pitch, uint8_t bpp);
 
     /**
      * @brief Clears the screen and optionally draws the logo.

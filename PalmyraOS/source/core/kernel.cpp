@@ -50,31 +50,34 @@ bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2I
     /**
      * @brief Initializes the graphics subsystem using Multiboot 2 information.
      *
-     * This function extracts VBE or framebuffer information from Multiboot 2,
-     * allocates memory, and initializes various graphics components including
-     * the VBE object, font manager, brush, and text renderer.
+     * This function extracts display parameters from Multiboot 2 and delegates
+     * to initializeGraphicsWithFramebuffer() for the actual initialization.
      *
      * @param mb2Info Multiboot 2 information structure
      * @return True if the graphics subsystem is successfully initialized, false otherwise.
      */
 
-    using namespace Multiboot2;
-
-    // Allocate VBE structures on the heap
-    vbe_mode_info_t* vbe_mode_info       = (vbe_mode_info_t*) kernel::kmalloc(sizeof(vbe_mode_info_t));
-    vbe_control_info_t* vbe_control_info = (vbe_control_info_t*) kernel::kmalloc(sizeof(vbe_control_info_t));
-
-    if (!vbe_mode_info || !vbe_control_info) {
-        LOG_ERROR("Failed to allocate VBE structures");
-        return false;
-    }
+    // Extract display parameters from Multiboot 2
+    uint16_t width       = 0;
+    uint16_t height      = 0;
+    uint32_t framebuffer = 0;
+    uint16_t pitch       = 0;
+    uint8_t bitsPerPixel = 0;
 
     // Try to get VBE information first (preferred)
-    const auto* vbeTag = mb2Info.getVBE();
+    const auto* vbeTag   = mb2Info.getVBE();
     if (vbeTag) {
-        // VBE information available - copy it
-        memcpy(vbe_mode_info, &vbeTag->vbe_mode_info, sizeof(vbe_mode_info_t));
-        memcpy(vbe_control_info, &vbeTag->vbe_control_info, sizeof(vbe_control_info_t));
+        // VBE information available - extract fields directly from VBE mode info block
+        // VBE 3.0 specification defines the following offsets:
+        const uint8_t* vbe_block = vbeTag->vbe_mode_info.external_specification;
+
+        // Extract fields from specific offsets according to VBE spec
+        pitch                    = *reinterpret_cast<const uint16_t*>(&vbe_block[16]);  // BytesPerScanLine
+        width                    = *reinterpret_cast<const uint16_t*>(&vbe_block[18]);  // XResolution
+        height                   = *reinterpret_cast<const uint16_t*>(&vbe_block[20]);  // YResolution
+        bitsPerPixel             = vbe_block[25];                                       // BitsPerPixel
+        framebuffer              = *reinterpret_cast<const uint32_t*>(&vbe_block[40]);  // PhysBasePtr
+
         LOG_INFO("Graphics: Using VBE mode 0x%X", vbeTag->vbe_mode);
     }
     else {
@@ -85,78 +88,32 @@ bool PalmyraOS::kernel::initializeGraphics(const Multiboot2::MultibootInfo& mb2I
             return false;
         }
 
-        // Convert Multiboot 2 framebuffer to VBE mode info
-        vbe_mode_info->width       = fbTag->common.framebuffer_width;
-        vbe_mode_info->height      = fbTag->common.framebuffer_height;
-        vbe_mode_info->framebuffer = static_cast<uint32_t>(fbTag->common.framebuffer_addr);
-        vbe_mode_info->pitch       = fbTag->common.framebuffer_pitch;
-        vbe_mode_info->bpp         = fbTag->common.framebuffer_bpp;
+        // Extract display parameters from framebuffer tag
+        width        = fbTag->common.framebuffer_width;
+        height       = fbTag->common.framebuffer_height;
+        framebuffer  = static_cast<uint32_t>(fbTag->common.framebuffer_addr);
+        pitch        = fbTag->common.framebuffer_pitch;
+        bitsPerPixel = fbTag->common.framebuffer_bpp;
 
-        // Set memory model based on framebuffer type
-        if (fbTag->common.framebuffer_type == static_cast<uint8_t>(FramebufferType::RGB)) {
-            vbe_mode_info->memory_model = 6;  // Direct Color (packed pixel)
-        }
-        else {
-            vbe_mode_info->memory_model = 4;  // Packed pixel
-        }
-
-        // Zero out control info (not available without VBE)
-        memset(vbe_control_info, 0, sizeof(vbe_control_info_t));
-
-        LOG_INFO("Graphics: Using framebuffer %ux%u @ %u bpp", vbe_mode_info->width, vbe_mode_info->height, vbe_mode_info->bpp);
+        LOG_INFO("Graphics: Using framebuffer %ux%u @ %u bpp", width, height, bitsPerPixel);
     }
 
-    // Calculate the size of the VBE back buffer
-    uint32_t VBE_buffer_size = vbe_mode_info->width * vbe_mode_info->height * sizeof(uint32_t);
-
-    // Initialize VBE and framebuffer
-    {
-        // Allocate memory for the VBE object
-        kernel::display_ptr = (Display*) kernel::kmalloc(sizeof(Display));
-        if (kernel::display_ptr == nullptr) return false;
-
-        // Construct the VBE object in the allocated memory
-        new (kernel::display_ptr) Display(vbe_mode_info, vbe_control_info, (uint32_t*) kernel::kmalloc(VBE_buffer_size));
-    }
-
-    // Initialize the font manager
-    FontManager::initialize();
-
-    // Initialize kernel's brush
-    {
-        // Allocate memory for the brush object
-        kernel::brush_ptr = (Brush*) kernel::kmalloc(sizeof(Brush));
-        if (kernel::brush_ptr == nullptr) return false;
-
-        // Construct the brush object in the allocated memory
-        new (kernel::brush_ptr) Brush(kernel::display_ptr->getFrameBuffer());
-    }
-
-    // Initialize kernel's text renderer
-    {
-        // Allocate memory for the text renderer object
-        kernel::textRenderer_ptr = (TextRenderer*) kernel::kmalloc(sizeof(TextRenderer));
-        if (kernel::textRenderer_ptr == nullptr) return false;
-
-        // Construct the text renderer object in the allocated memory
-        new (kernel::textRenderer_ptr) TextRenderer(kernel::display_ptr->getFrameBuffer(), Font::Arial12);
-    }
-
-    // Everything is initialized successfully
-    return true;
+    // Delegate to the common initialization function
+    return initializeGraphicsWithFramebuffer(width, height, framebuffer, pitch, bitsPerPixel);
 }
 
-bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t bpp) {
+bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t pitch, uint8_t bpp) {
     /**
      * @brief Initializes the graphics subsystem with explicit framebuffer information.
      *
-     * This function is used when graphics information is provided directly (e.g., from BGA)
-     * rather than from the bootloader. It creates a VBE-compatible mode info structure,
-     * allocates memory for the back buffer, and initializes all graphics components.
+     * This function is used when graphics information is provided directly (e.g., from BGA or Multiboot2).
+     * It allocates memory for the Display object and back buffer, then initializes all graphics components
+     * including font manager, brush, and text renderer.
      *
      * @param width Framebuffer width in pixels
      * @param height Framebuffer height in pixels
      * @param framebufferAddress Physical address of the framebuffer
+     * @param pitch Bytes per scanline (stride)
      * @param bpp Bits per pixel (8, 16, 24, or 32)
      * @return True if initialization is successful, false otherwise.
      */
@@ -165,54 +122,32 @@ bool PalmyraOS::kernel::initializeGraphicsWithFramebuffer(uint16_t width, uint16
     uint16_t bytesPerPixel = bpp / 8;
     if (bytesPerPixel == 0) bytesPerPixel = 1;  // Minimum 1 byte per pixel
 
-    // Calculate the size of the framebuffer (front buffer at hardware address)
-    uint32_t framebufferSize = width * height * bytesPerPixel;
+    // Calculate the size of the back buffer
+    uint32_t backBufferSize = width * height * sizeof(uint32_t);
 
-    // Allocate memory for the back buffer (same size as framebuffer)
-    uint32_t* backBuffer     = (uint32_t*) kernel::kmalloc(framebufferSize);
+    // Allocate memory for the back buffer
+    uint32_t* backBuffer    = (uint32_t*) kernel::kmalloc(backBufferSize);
     if (backBuffer == nullptr) {
-        LOG_ERROR("Failed to allocate %u bytes for graphics back buffer", framebufferSize);
+        LOG_ERROR("Failed to allocate %u bytes for graphics back buffer", backBufferSize);
         return false;
     }
 
     // Zero-initialize the back buffer
     for (uint32_t i = 0; i < width * height; ++i) { backBuffer[i] = 0; }
 
-    LOG_DEBUG("Graphics back buffer allocated: %ux%u @ %u bpp (%u bytes)", width, height, bpp, framebufferSize);
+    LOG_DEBUG("Graphics back buffer allocated: %ux%u @ %u bpp (%u bytes)", width, height, bpp, backBufferSize);
 
-    // Create a temporary VBE mode info structure for the graphics system
-    // We'll use the VBE class as a graphics abstraction layer even though it's not truly VBE
+    // Initialize Display with direct parameters
     {
-        // Allocate memory for a vbe_mode_info_t structure
-        vbe_mode_info_t* mode_info = (vbe_mode_info_t*) kernel::kmalloc(sizeof(vbe_mode_info_t));
-        if (mode_info == nullptr) {
-            LOG_ERROR("Failed to allocate vbe_mode_info_t structure");
-            return false;
-        }
-
-        // Fill in the mode info structure with our framebuffer details
-        mode_info->width                 = width;
-        mode_info->height                = height;
-        mode_info->bpp                   = bpp;
-        mode_info->framebuffer           = framebufferAddress;
-        mode_info->attributes            = 0x0091;  // Supported, graphics mode, linear framebuffer
-
-        // Allocate memory for a vbe_control_info_t structure (minimal)
-        vbe_control_info_t* control_info = (vbe_control_info_t*) kernel::kmalloc(sizeof(vbe_control_info_t));
-        if (control_info == nullptr) {
-            LOG_ERROR("Failed to allocate vbe_control_info_t structure");
-            return false;
-        }
-
-        // Initialize the VBE object with our framebuffer information
+        // Allocate memory for the Display object
         kernel::display_ptr = (Display*) kernel::kmalloc(sizeof(Display));
         if (kernel::display_ptr == nullptr) {
-            LOG_ERROR("Failed to allocate VBE object");
+            LOG_ERROR("Failed to allocate Display object");
             return false;
         }
 
-        // Construct the VBE object with the back buffer we allocated
-        new (kernel::display_ptr) Display(mode_info, control_info, backBuffer);
+        // Construct the Display object with direct parameters
+        new (kernel::display_ptr) Display(width, height, framebufferAddress, pitch, bpp, backBuffer);
     }
 
     // Initialize the font manager
@@ -348,9 +283,9 @@ bool PalmyraOS::kernel::initializePhysicalMemory(const Multiboot2::MultibootInfo
         uint32_t framebuffer_addr = 0;
         const auto* vbeTag        = mb2Info.getVBE();
         if (vbeTag) {
-            // Cast VBE mode info block to vbe_mode_info_t
-            const auto* vbe_mode = reinterpret_cast<const vbe_mode_info_t*>(&vbeTag->vbe_mode_info);
-            framebuffer_addr     = vbe_mode->framebuffer;
+            // Extract framebuffer address directly from VBE mode info block (offset 40)
+            const uint8_t* vbe_block = vbeTag->vbe_mode_info.external_specification;
+            framebuffer_addr         = *reinterpret_cast<const uint32_t*>(&vbe_block[40]);
         }
         else {
             const auto* fbTag = mb2Info.getFramebuffer();
@@ -424,9 +359,9 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
     uint32_t framebuffer_addr = 0;
     const auto* vbeTag        = mb2Info.getVBE();
     if (vbeTag) {
-        // Cast VBE mode info block to vbe_mode_info_t
-        const auto* vbe_mode = reinterpret_cast<const vbe_mode_info_t*>(&vbeTag->vbe_mode_info);
-        framebuffer_addr     = vbe_mode->framebuffer;
+        // Extract framebuffer address directly from VBE mode info block (offset 40)
+        const uint8_t* vbe_block = vbeTag->vbe_mode_info.external_specification;
+        framebuffer_addr         = *reinterpret_cast<const uint32_t*>(&vbe_block[40]);
     }
     else {
         const auto* fbTag = mb2Info.getFramebuffer();

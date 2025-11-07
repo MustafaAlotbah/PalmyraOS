@@ -1,6 +1,5 @@
 #pragma once
 
-#include "boot/multiboot.h"
 #include "core/Font.h"
 #include "core/FrameBuffer.h"
 #include "core/definitions.h"
@@ -18,57 +17,65 @@
 namespace PalmyraOS::kernel {
 
     /**
-     * Class representing the VBE (VESA BIOS Extensions) interface for graphics.
+     * Generic display driver for managing graphics output.
+     * Works with any framebuffer source (VBE, UEFI GOP, Multiboot2, etc.)
      */
     class Display {
     public:
         /**
-         * Constructor to initialize VBE with mode and control information, and a back buffer.
-         * @param mode Pointer to the VBE mode information.
-         * @param control Pointer to the VBE control information.
-         * @param backBuffer Pointer to the back buffer.
+         * Constructor to initialize display with direct parameters.
+         * @param width Display width in pixels
+         * @param height Display height in pixels
+         * @param framebufferAddress Physical address of the framebuffer
+         * @param pitch Bytes per scanline (stride)
+         * @param bitsPerPixel Bits per pixel (8, 16, 24, or 32)
+         * @param backBuffer Pointer to the back buffer for double buffering
          */
-        Display(vbe_mode_info_t* mode_, vbe_control_info_t* control_, uint32_t* backBuffer);
+        Display(uint16_t width, uint16_t height, uint32_t framebufferAddress, uint16_t pitch, uint8_t bitsPerPixel, uint32_t* backBuffer);
 
         /**
          * Swap the front and back buffers.
          */
         void swapBuffers();
 
+        /**
+         * Get display width in pixels.
+         * @return Display width
+         */
         [[nodiscard]] size_t getWidth() const;
+
+        /**
+         * Get display height in pixels.
+         * @return Display height
+         */
         [[nodiscard]] size_t getHeight() const;
 
         /**
-         * Get the size of the video memory provided by hardware.
-         * @return The video memory size.
+         * Get the size of the video memory in bytes.
+         * @return Video memory size
          */
         [[nodiscard]] size_t getVideoMemorySize() const;
 
         /**
          * Get the color depth (bits per pixel).
-         * @return The color depth.
+         * @return Bits per pixel
          */
         [[nodiscard]] size_t getColorDepth() const;
-        [[nodiscard]] uint16_t getWindowAttributes() const;
-        [[nodiscard]] uint8_t getMemoryModel() const;
-        [[nodiscard]] const char* listVideoModes() const;
 
-        // Individual attribute checks
-        [[nodiscard]] bool isModeSupported() const;
-        [[nodiscard]] bool isOptionalHardwareSupported() const;
-        [[nodiscard]] bool isBiosOutputSupported() const;
-        [[nodiscard]] bool isColorMode() const;
-        [[nodiscard]] bool isGraphicsMode() const;
-        [[nodiscard]] bool isVGACompatibleWindowedMemoryPagingSupported() const;
-
+        /**
+         * Get reference to the framebuffer.
+         * @return FrameBuffer reference
+         */
         FrameBuffer& getFrameBuffer();
 
         REMOVE_COPY(Display);
 
     private:
-        FrameBuffer frameBuffer_;               // Frame buffer object
-        vbe_mode_info_t& vbe_mode_info_;        // VBE mode information reference
-        vbe_control_info_t& vbe_control_info_;  // VBE control information reference
+        FrameBuffer frameBuffer_;  // Frame buffer object
+        uint16_t width_;           // Display width in pixels
+        uint16_t height_;          // Display height in pixels
+        uint8_t bitsPerPixel_;     // Bits per pixel (color depth)
+        uint16_t pitch_;           // Bytes per scanline
     };
 
     /**
