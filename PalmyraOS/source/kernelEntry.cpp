@@ -2,6 +2,7 @@
 #include "core/FrameBuffer.h"
 #include "core/Interrupts.h"
 #include "core/SystemClock.h"
+#include "core/acpi/ACPI.h"
 #include "core/boot/multiboot2.h"
 #include "core/cpu.h"
 #include "core/kernel.h"
@@ -185,12 +186,20 @@ void callConstructors() {
         LOG_INFO("Memory Upper: %u KiB", memInfo->mem_upper);
     }
 
-    // Store ACPI RSDP for future ACPI implementation
+    // ----------------------- Initialize ACPI -------------------------------------
     const uint8_t* acpiRSDP = multiboot2_info.getACPIRSDP();
     if (acpiRSDP) {
         LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
-        // TODO: Store globally for ACPI initialization
+
+        if (kernel::ACPI::initialize(acpiRSDP)) {
+            LOG_INFO("ACPI initialized successfully (version %u.0)", kernel::ACPI::getACPIVersion() == 0 ? 1 : kernel::ACPI::getACPIVersion());
+
+            // Log all discovered ACPI tables
+            kernel::ACPI::logAllTables();
+        }
+        else { LOG_WARN("ACPI initialization failed"); }
     }
+    else { LOG_WARN("No ACPI support - RSDP not provided by bootloader"); }
 
     enable_sse();
     LOG_INFO("Enabled SSE.");

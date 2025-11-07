@@ -77,7 +77,7 @@ namespace PalmyraOS::kernel::GDT {
     //   Bits 1-0:  RPL (2 bits)    - Requested Privilege Level (0-3)
     //
     // Example: 0x08 = 0000 0000 0000 1000
-    //          Index=1, TI=0 (GDT), RPL=00 (Ring 0) → Kernel Code Segment
+    //          Index=1, TI=0 (GDT), RPL=00 (Ring 0) -> Kernel Code Segment
     union SegmentSelector {
         uint16_t raw;  // Raw 16-bit value (e.g., 0x08, 0x10, 0x18, 0x1B, 0x23)
 

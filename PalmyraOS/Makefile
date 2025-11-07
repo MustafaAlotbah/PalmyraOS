@@ -13,6 +13,7 @@ SUBDIRS := \
 	source/tests \
 	source/core/ \
 	source/core/boot/ \
+	source/core/acpi/ \
 	source/core/peripherals/ \
 	source/core/memory \
 	source/core/std \

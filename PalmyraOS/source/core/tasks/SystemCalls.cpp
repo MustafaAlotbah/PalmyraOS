@@ -186,7 +186,7 @@ void PalmyraOS::kernel::SystemCallsManager::handleOpen(PalmyraOS::kernel::interr
 
     // TODO: enhance code readability
     if (inode) {
-        // O_CREAT | O_EXCL on existing file → EEXIST
+        // O_CREAT | O_EXCL on existing file -> EEXIST
         if ((flags & O_CREAT) && (flags & O_EXCL)) {
             regs->eax = -EEXIST;
             return;
