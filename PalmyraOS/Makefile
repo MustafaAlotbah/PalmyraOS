@@ -21,6 +21,7 @@ SUBDIRS := \
 	source/core/tasks \
 	source/core/files \
 	source/core/files/partitions \
+	source/core/network/ \
 	source/userland/systemWidgets \
 	source/userland/tests
 

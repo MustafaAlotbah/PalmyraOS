@@ -180,7 +180,7 @@ namespace PalmyraOS::kernel {
             return 0;
         }
 
-        LOG_INFO("HPET: Professional TSC frequency measurement (%u ms)...", measurementTimeMs);
+        LOG_INFO("HPET: TSC frequency measurement (%u ms)...", measurementTimeMs);
 
         // Perform multiple measurements for accuracy and consistency
         uint32_t results[3];

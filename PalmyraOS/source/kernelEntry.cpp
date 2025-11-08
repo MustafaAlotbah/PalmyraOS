@@ -342,7 +342,13 @@ void callConstructors() {
     //	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
 
 
-
+    // ----------------------- Initialize PCIe Drivers (AFTER paging!) -------------------------------
+    // Now that paging is enabled and heap manager is ready, we can enumerate devices
+    // and initialize drivers that require DMA buffers and dynamic memory allocation.
+    textRenderer << "Initializing PCIe drivers..." << SWAP_BUFF();
+    kernel::initializePCIeDrivers();
+    textRenderer << " Done.\n" << SWAP_BUFF();
+    kernel::CPU::delay(SHORT_DELAY);
 
 
     // ----------------------- Virtual File System -------------------------------

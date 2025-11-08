@@ -11,6 +11,8 @@
 #include "core/files/partitions/MasterBootRecord.h"
 #include "core/files/partitions/VirtualDisk.h"
 #include "core/memory/paging.h"
+#include "core/network/NetworkManager.h"
+#include "core/network/PCnetDriver.h"
 #include "core/panic.h"
 #include "core/pcie/PCIe.h"
 #include "core/peripherals/Logger.h"
@@ -457,6 +459,89 @@ void PalmyraOS::kernel::testMemory() {
 
     //	if (!Tests::Allocator::testQueue())
     //		kernel::kernelPanic("Testing Allocator Queue failed!");
+}
+
+void PalmyraOS::kernel::initializePCIeDrivers() {
+    /**
+     * @brief Initialize PCIe-based drivers (network, storage, etc.)
+     *
+     * IMPORTANT: This function MUST be called AFTER paging is enabled!
+     * It uses the heap manager to allocate memory for device structures and DMA buffers.
+     *
+     * Prerequisites:
+     * - Paging enabled
+     * - Heap manager initialized
+     * - ACPI initialized (for MCFG table)
+     * - PCIe::initialize() called (for base address setup)
+     */
+
+    auto& textRenderer = *kernel::textRenderer_ptr;
+
+    LOG_INFO("Initializing PCIe drivers (requires paging + heap)");
+
+    // Enumerate all PCI Express devices (uses heap to store device list)
+    if (!PCIe::isInitialized()) {
+        LOG_ERROR("PCIe not initialized - cannot enumerate devices");
+        return;
+    }
+
+    PCIe::enumerateDevices();
+    LOG_INFO("PCIe: Enumerated %u devices", PCIe::getDeviceCount());
+
+    // Initialize Network Manager
+    if (!NetworkManager::initialize()) {
+        LOG_ERROR("Failed to initialize NetworkManager");
+        return;
+    }
+
+    LOG_INFO("NetworkManager initialized successfully");
+
+    // Scan for network devices
+    bool foundNetwork = false;
+    for (uint8_t bus = 0; bus <= 63; ++bus) {
+        for (uint8_t dev = 0; dev < 32; ++dev) {
+            if (!PCIe::deviceExists(bus, dev, 0)) continue;
+
+            uint16_t vendorID = PCIe::readConfig16(bus, dev, 0, 0x00);
+            uint16_t deviceID = PCIe::readConfig16(bus, dev, 0, 0x02);
+
+            // Check for AMD PCnet (Vendor: 0x1022, Device: 0x2000)
+            if (vendorID == 0x1022 && deviceID == 0x2000) {
+                LOG_INFO("Found AMD PCnet at [%02X:%02X.0]", bus, dev);
+
+                // Create and initialize PCnet driver (inject heap manager dependency)
+                auto* pcnet = heapManager.createInstance<PCnetDriver>(bus, dev, 0, &heapManager);
+                if (pcnet && pcnet->initialize()) {
+                    // Register with NetworkManager
+                    if (NetworkManager::registerInterface(pcnet)) {
+                        // Configure network interface (default static IP)
+                        pcnet->setIPAddress(0xC0A80165);   // 192.168.1.101
+                        pcnet->setSubnetMask(0xFFFFFF00);  // 255.255.255.0
+                        pcnet->setGateway(0xC0A80101);     // 192.168.1.1
+
+                        // Enable interface
+                        if (pcnet->enable()) {
+                            LOG_INFO("Network interface 'eth0' enabled");
+                            foundNetwork = true;
+                        }
+                        else { LOG_ERROR("Failed to enable network interface"); }
+                    }
+                    else { LOG_ERROR("Failed to register network interface"); }
+                }
+                else {
+                    if (pcnet) heapManager.free(pcnet);
+                    LOG_ERROR("Failed to initialize PCnet driver");
+                }
+                break;
+            }
+        }
+        if (foundNetwork) break;
+    }
+
+    // Display network interface statistics
+    NetworkManager::listInterfaces();
+
+    if (!foundNetwork) { LOG_WARN("No supported network adapters found"); }
 }
 
 void PalmyraOS::kernel::initializeDrivers() {
