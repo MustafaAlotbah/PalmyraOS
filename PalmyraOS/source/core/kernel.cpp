@@ -1,5 +1,7 @@
 #include "core/kernel.h"
 #include "core/Display.h"
+#include "core/acpi/ACPI.h"
+#include "core/acpi/ACPISpecific.h"
 #include "core/acpi/HPET.h"
 #include "core/acpi/PowerManagement.h"
 #include "core/cpu.h"
@@ -10,6 +12,7 @@
 #include "core/files/partitions/VirtualDisk.h"
 #include "core/memory/paging.h"
 #include "core/panic.h"
+#include "core/pcie/PCIe.h"
 #include "core/peripherals/Logger.h"
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/elf.h"
@@ -387,6 +390,26 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
             LOG_INFO("Mapping HPET registers by identity: 1 page at 0x%p", hpetAddr);
         }
         else { LOG_WARN("HPET initialized but physical address is NULL"); }
+    }
+
+    // Map PCIe configuration space if available (get actual address from ACPI MCFG table)
+    if (ACPI::isInitialized() && ACPI::getMCFG() != nullptr) {
+        const auto* mcfg       = ACPI::getMCFG();
+        uint32_t headerSize    = sizeof(acpi::ACPISDTHeader) + sizeof(uint64_t);
+        const auto* allocation = reinterpret_cast<const acpi::MCFGAllocation*>(reinterpret_cast<const uint8_t*>(mcfg) + headerSize);
+
+        uintptr_t pcieBaseAddr = static_cast<uintptr_t>(allocation->baseAddress);
+        uint32_t busCount      = (allocation->endBusNumber - allocation->startBusNumber) + 1;
+
+        // Each bus needs 1 MB (32 devices * 8 functions * 4KB)
+        // Round up to nearest 4KB page boundary
+        uint32_t totalPages    = (busCount * 1024 * 1024) / 4096;
+
+        if (pcieBaseAddr != 0) {
+            void* pcieAddr = reinterpret_cast<void*>(pcieBaseAddr);
+            kernel::kernelPagingDirectory_ptr->mapPages(pcieAddr, pcieAddr, totalPages, PageFlags::Present | PageFlags::ReadWrite);
+            LOG_INFO("Mapping PCIe configuration space by identity: %u pages (%u MB) at 0x%p", totalPages, busCount, pcieAddr);
+        }
     }
 
     // Switch to the new kernel paging directory and initialize paging

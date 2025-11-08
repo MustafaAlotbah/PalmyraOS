@@ -122,7 +122,8 @@ namespace PalmyraOS::kernel {
      */
     void testMemory();
 
-    void initializeDrivers();
+    void initializeDrivers();      // ATA/IDE drivers
+    void initializePCIeDrivers();  // PCIe drivers (network, etc.) - MUST be called AFTER paging!
 
     void initializePartitions();
 

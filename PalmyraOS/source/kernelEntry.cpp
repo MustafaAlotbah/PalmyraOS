@@ -9,6 +9,7 @@
 #include "core/cpu.h"
 #include "core/kernel.h"
 #include "core/panic.h"
+#include "core/pcie/PCIe.h"
 #include "core/peripherals/Keyboard.h"
 #include "core/peripherals/Logger.h"
 #include "core/peripherals/Mouse.h"
@@ -273,6 +274,22 @@ void callConstructors() {
                 LOG_WARN("HPET initialization failed (will use PIT only)");
                 textRenderer << "HPET not available, using PIT.. \n" << SWAP_BUFF();
             }
+
+            // Initialize PCIe (PCI Express Configuration Space) - DISCOVERY ONLY, NO HEAP!
+            // This just reads the MCFG table and sets up the base address for configuration space access.
+            // Actual device enumeration and driver initialization happens AFTER paging is enabled.
+            if (kernel::PCIe::initialize()) {
+                LOG_INFO("PCIe configuration space initialized (base address from MCFG)");
+                textRenderer << "PCIe configuration space ready.. \n" << SWAP_BUFF();
+
+                // Enumerate all PCI Express devices
+                kernel::PCIe::enumerateDevices();
+                textRenderer << "PCIe: Found " << kernel::PCIe::getDeviceCount() << " devices.. \n" << SWAP_BUFF();
+            }
+            else {
+                LOG_WARN("PCIe initialization failed (MCFG table not found or invalid)");
+                textRenderer << "PCIe not available.. \n" << SWAP_BUFF();
+            }
         }
         else {
             LOG_WARN("ACPI initialization failed");
@@ -323,6 +340,9 @@ void callConstructors() {
 
     //	kernel::testMemory();
     //	textRenderer << "Passed Heap Tests\n" << SWAP_BUFF();
+
+
+
 
 
     // ----------------------- Virtual File System -------------------------------

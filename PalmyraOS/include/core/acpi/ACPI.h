@@ -97,6 +97,11 @@ namespace PalmyraOS::kernel {
          */
         static void logHPETDetails();
 
+        /**
+         * @brief Log detailed MCFG information
+         */
+        static void logMCFGDetails();
+
     private:
         // Initialization state
         static bool initialized_;

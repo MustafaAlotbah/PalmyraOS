@@ -267,8 +267,7 @@ namespace PalmyraOS::kernel {
 
         if (mcfg_) {
             LOG_INFO("");
-            LOG_INFO("MCFG Details:");
-            LOG_INFO("  PCI Express Configuration Space found");
+            logMCFGDetails();
         }
 
         LOG_INFO("================================================");
@@ -387,6 +386,39 @@ namespace PalmyraOS::kernel {
             uint32_t approxMHz           = 1000000000UL / femtosecondsPerTick;
 
             LOG_INFO("  Approximate Frequency: ~%u MHz (based on %llu fs/tick)", approxMHz, femtosecondsPerTick);
+        }
+    }
+
+    void ACPI::logMCFGDetails() {
+        if (!mcfg_) return;
+
+        LOG_INFO("MCFG (PCI Express Memory Mapped Configuration) Details:");
+
+        // Calculate number of allocation entries
+        uint32_t headerSize = sizeof(acpi::ACPISDTHeader) + sizeof(uint64_t);  // header + reserved
+        uint32_t entrySize  = sizeof(acpi::MCFGAllocation);
+        uint32_t numEntries = (mcfg_->header.length - headerSize) / entrySize;
+
+        LOG_INFO("  Number of Configuration Space Allocations: %u", numEntries);
+
+        // Parse each allocation entry
+        const uint8_t* dataStart = reinterpret_cast<const uint8_t*>(mcfg_) + headerSize;
+
+        for (uint32_t i = 0; i < numEntries; ++i) {
+            const acpi::MCFGAllocation* allocation = reinterpret_cast<const acpi::MCFGAllocation*>(dataStart + (i * entrySize));
+
+            LOG_INFO("  Allocation %u:", i);
+            LOG_INFO("    Base Address: 0x%016llX", allocation->baseAddress);
+            LOG_INFO("    PCI Segment Group: %u", allocation->pciSegmentGroup);
+            LOG_INFO("    Start Bus Number: %u", allocation->startBusNumber);
+            LOG_INFO("    End Bus Number: %u", allocation->endBusNumber);
+            LOG_INFO("    Bus Count: %u buses", (allocation->endBusNumber - allocation->startBusNumber) + 1);
+
+            // Calculate the size of this configuration space
+            // Each bus has 32 devices, each device has 8 functions, each function has 4KB of config space
+            uint32_t busCount          = (allocation->endBusNumber - allocation->startBusNumber) + 1;
+            uint32_t configSpaceSizeMB = (busCount * 32 * 8 * 4096) / (1024 * 1024);
+            LOG_INFO("    Configuration Space Size: %u MB", configSpaceSizeMB);
         }
     }
 
