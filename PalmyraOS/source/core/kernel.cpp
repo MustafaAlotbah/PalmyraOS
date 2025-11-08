@@ -17,6 +17,7 @@
 #include "core/network/IPv4.h"
 #include "core/network/NetworkManager.h"
 #include "core/network/PCnetDriver.h"
+#include "core/network/UDP.h"
 #include "core/panic.h"
 #include "core/pcie/PCIe.h"
 #include "core/peripherals/Logger.h"
@@ -600,34 +601,6 @@ void PalmyraOS::kernel::initializeNetworkProtocols() {
     textRenderer << "\n" << SWAP_BUFF();
     CPU::delay(2'500'000'000L);
 
-    // ----------------------- Initialize DNS -------
-    textRenderer << "Initializing DNS..." << SWAP_BUFF();
-    {
-        if (DNS::initialize()) {
-            LOG_INFO("DNS: Initialized");
-            textRenderer << " Done (attempting to resolve google.com)." << SWAP_BUFF();
-
-            // Try to resolve google.com
-            uint32_t google_ip;
-            if (DNS::resolveDomain("google.com", &google_ip)) {
-                uint8_t ip_bytes[4] = {static_cast<uint8_t>((google_ip >> 24) & 0xFF),
-                                       static_cast<uint8_t>((google_ip >> 16) & 0xFF),
-                                       static_cast<uint8_t>((google_ip >> 8) & 0xFF),
-                                       static_cast<uint8_t>(google_ip & 0xFF)};
-                LOG_INFO("DNS: Successfully resolved google.com to %u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
-            }
-            else { LOG_WARN("DNS: Failed to resolve google.com (may require UDP/IP implementation)"); }
-
-            DNS::logCache();
-        }
-        else {
-            LOG_ERROR("DNS: Initialization failed");
-            textRenderer << " FAILED.\n" << SWAP_BUFF();
-        }
-    }
-    textRenderer << "\n" << SWAP_BUFF();
-    CPU::delay(2'500'000'000L);
-
     // ----------------------- Initialize IPv4 -------
     textRenderer << "Initializing IPv4..." << SWAP_BUFF();
     {
@@ -654,6 +627,21 @@ void PalmyraOS::kernel::initializeNetworkProtocols() {
     textRenderer << "\n" << SWAP_BUFF();
     CPU::delay(2'500'000'000L);
 
+    // ----------------------- Initialize UDP -------
+    textRenderer << "Initializing UDP..." << SWAP_BUFF();
+    {
+        if (UDP::initialize()) {
+            LOG_INFO("UDP: Initialized successfully");
+            textRenderer << " Done." << SWAP_BUFF();
+        }
+        else {
+            LOG_ERROR("UDP: Initialization failed");
+            textRenderer << " FAILED.\n" << SWAP_BUFF();
+        }
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
     // ----------------------- Initialize ICMP -------
     textRenderer << "Initializing ICMP..." << SWAP_BUFF();
     {
@@ -667,6 +655,20 @@ void PalmyraOS::kernel::initializeNetworkProtocols() {
         }
     }
     textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
+    // ----------------------- Initialize DNS (requires IPv4 for server detection) -------
+    textRenderer << "Initializing DNS..." << SWAP_BUFF();
+    {
+        if (DNS::initialize()) {
+            LOG_INFO("DNS: Initialized");
+            textRenderer << " Done.\n" << SWAP_BUFF();
+        }
+        else {
+            LOG_ERROR("DNS: Initialization failed");
+            textRenderer << " FAILED.\n" << SWAP_BUFF();
+        }
+    }
     CPU::delay(2'500'000'000L);
 }
 
@@ -801,6 +803,59 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
         LOG_INFO("   ARP Protocol: OPERATIONAL");
         LOG_INFO("   ICMP Protocol: OPERATIONAL");
         LOG_INFO("  Network Connectivity: See test results above");
+        LOG_INFO("========================================");
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
+    // ----------------------- DNS Resolution Tests -------
+    textRenderer << "Testing DNS hostname resolution...\n" << SWAP_BUFF();
+    {
+        LOG_INFO("========================================");
+        LOG_INFO("DNS Resolution Test Suite");
+        LOG_INFO("========================================");
+
+        const char* testDomains[]           = {"google.com", "github.com", "cloudflare.com"};
+        constexpr uint8_t TEST_DOMAIN_COUNT = 3;
+
+        uint32_t successfulResolutions      = 0;
+
+        for (uint8_t i = 0; i < TEST_DOMAIN_COUNT; ++i) {
+            LOG_INFO("");
+            LOG_INFO("TEST %u/%u: Resolving '%s'", i + 1, TEST_DOMAIN_COUNT, testDomains[i]);
+
+            uint32_t resolvedIP = 0;
+            if (DNS::resolveDomain(testDomains[i], &resolvedIP)) {
+                uint8_t ipBytes[4] = {static_cast<uint8_t>((resolvedIP >> 24) & 0xFF),
+                                      static_cast<uint8_t>((resolvedIP >> 16) & 0xFF),
+                                      static_cast<uint8_t>((resolvedIP >> 8) & 0xFF),
+                                      static_cast<uint8_t>(resolvedIP & 0xFF)};
+
+                LOG_INFO(" PASSED: %s -> %u.%u.%u.%u", testDomains[i], ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3]);
+                textRenderer << "  [" << (i + 1) << "/" << TEST_DOMAIN_COUNT << "] " << testDomains[i] << ": " << ipBytes[0] << "." << ipBytes[1] << "." << ipBytes[2] << "."
+                             << ipBytes[3] << "\n"
+                             << SWAP_BUFF();
+                successfulResolutions++;
+            }
+            else {
+                LOG_WARN("✗ FAILED: Could not resolve %s", testDomains[i]);
+                textRenderer << "  [" << (i + 1) << "/" << TEST_DOMAIN_COUNT << "] " << testDomains[i] << ": TIMEOUT\n" << SWAP_BUFF();
+            }
+
+            CPU::delay(1000);  // Small delay between queries
+        }
+
+        // Display DNS cache
+        LOG_INFO("");
+        DNS::logCache();
+
+        // Summary
+        LOG_INFO("");
+        LOG_INFO("========================================");
+        LOG_INFO("DNS Test Summary:");
+        LOG_INFO("  Successful: %u/%u", successfulResolutions, TEST_DOMAIN_COUNT);
+        LOG_INFO("  Failed: %u/%u", TEST_DOMAIN_COUNT - successfulResolutions, TEST_DOMAIN_COUNT);
+        LOG_INFO("  Cache entries: %u/%u", successfulResolutions, DNS::CACHE_SIZE);
         LOG_INFO("========================================");
     }
     textRenderer << "\n" << SWAP_BUFF();

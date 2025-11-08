@@ -103,7 +103,7 @@ namespace PalmyraOS::kernel {
             if (entry && entry->valid && !isCacheEntryExpired(entry)) {
                 LOG_INFO("ARP: Resolution successful on attempt %u/%u", attemptNumber + 1, MAX_REQUEST_RETRIES);
                 memcpy(outMAC, entry->macAddress, ethernet::MAC_ADDRESS_SIZE);
-                LOG_INFO("ARP: Resolved %u.%u.%u.%u → %02X:%02X:%02X:%02X:%02X:%02X",
+                LOG_INFO("ARP: Resolved %u.%u.%u.%u -> %02X:%02X:%02X:%02X:%02X:%02X",
                          ip_bytes[0],
                          ip_bytes[1],
                          ip_bytes[2],

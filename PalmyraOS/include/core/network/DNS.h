@@ -172,10 +172,17 @@ namespace PalmyraOS::kernel {
          * @param domainName Domain name to query
          * @param dnsServer DNS server address
          * @return true if query sent successfully
-         *
-         * @note Currently returns false (requires UDP/IP implementation)
          */
         static bool sendDNSQuery(const char* domainName, uint32_t dnsServer);
+
+        /**
+         * @brief Handle DNS response (called from UDP handler)
+         *
+         * @param responseData DNS response packet
+         * @param responseLength Response length
+         * @param serverIP Server that sent the response
+         */
+        static void handleDNSResponse(const uint8_t* responseData, uint32_t responseLength, uint32_t serverIP);
 
         /**
          * @brief Encode domain name to DNS format

@@ -3,6 +3,7 @@
 #include "core/network/Ethernet.h"
 #include "core/network/ICMP.h"
 #include "core/network/NetworkManager.h"
+#include "core/network/UDP.h"
 #include "core/peripherals/Logger.h"
 #include "libs/memory.h"
 #include "libs/string.h"
@@ -205,14 +206,27 @@ namespace PalmyraOS::kernel {
     // ==================== Helper Methods ====================
 
     bool IPv4::routePacket(uint32_t sourceIP, uint8_t protocol, const uint8_t* payload, uint32_t payloadLength) {
-        LOG_DEBUG("IPv4: Routing packet protocol=%u", protocol);
+        // Route packet to appropriate protocol handler based on protocol field
+        LOG_DEBUG("IPv4: Routing packet (protocol=%u, length=%u bytes)", protocol, payloadLength);
 
-        if (protocol == PROTOCOL_ICMP) { return ICMP::handleICMPPacket(payload, payloadLength, sourceIP); }
+        switch (protocol) {
+            case PROTOCOL_ICMP: return ICMP::handleICMPPacket(payload, payloadLength, sourceIP);
 
-        // TODO: UDP and TCP routing
+            case PROTOCOL_UDP:
+                LOG_INFO("IPv4: Dispatching UDP packet (%u bytes) from %u.%u.%u.%u",
+                         payloadLength,
+                         (sourceIP >> 24) & 0xFF,
+                         (sourceIP >> 16) & 0xFF,
+                         (sourceIP >> 8) & 0xFF,
+                         sourceIP & 0xFF);
+                return UDP::handleUDPPacket(payload, payloadLength, sourceIP, localIP_);
 
-        LOG_DEBUG("IPv4: Unsupported protocol %u", protocol);
-        return false;
+            case PROTOCOL_TCP:
+                // TODO: TCP routing when implemented
+                return false;
+
+            default: LOG_DEBUG("IPv4: Unknown protocol %u", protocol); return false;  // Unsupported protocol
+        }
     }
 
     const char* IPv4::ipToString(uint32_t ip, char* buffer) {
