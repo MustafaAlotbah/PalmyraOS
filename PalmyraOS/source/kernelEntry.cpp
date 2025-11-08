@@ -350,6 +350,11 @@ void callConstructors() {
     textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);
 
+    // ----------------------- Initialize Network Protocols -------
+    kernel::initializeNetworkProtocols();
+
+    // ----------------------- Test Network Connectivity -------
+    kernel::testNetworkConnectivity();
 
     // ----------------------- Virtual File System -------------------------------
 

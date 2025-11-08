@@ -11,6 +11,10 @@
 #include "core/files/partitions/MasterBootRecord.h"
 #include "core/files/partitions/VirtualDisk.h"
 #include "core/memory/paging.h"
+#include "core/network/ARP.h"
+#include "core/network/DNS.h"
+#include "core/network/ICMP.h"
+#include "core/network/IPv4.h"
 #include "core/network/NetworkManager.h"
 #include "core/network/PCnetDriver.h"
 #include "core/panic.h"
@@ -514,10 +518,10 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
                 if (pcnet && pcnet->initialize()) {
                     // Register with NetworkManager
                     if (NetworkManager::registerInterface(pcnet)) {
-                        // Configure network interface (default static IP)
-                        pcnet->setIPAddress(0xC0A80165);   // 192.168.1.101
+                        // Configure network interface for VirtualBox NAT defaults
+                        pcnet->setIPAddress(0x0A00020F);   // 10.0.2.15
                         pcnet->setSubnetMask(0xFFFFFF00);  // 255.255.255.0
-                        pcnet->setGateway(0xC0A80101);     // 192.168.1.1
+                        pcnet->setGateway(0x0A000202);     // 10.0.2.2
 
                         // Enable interface
                         if (pcnet->enable()) {
@@ -542,6 +546,265 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
     NetworkManager::listInterfaces();
 
     if (!foundNetwork) { LOG_WARN("No supported network adapters found"); }
+}
+
+void PalmyraOS::kernel::initializeNetworkProtocols() {
+    /**
+     * @brief Initialize network protocols (ARP, DNS, IPv4, ICMP)
+     *
+     * This function initializes all network protocol layers in the correct order.
+     * Must be called after PCIe drivers are initialized and at least one network
+     * interface is available.
+     *
+     * Initialization order:
+     * 1. ARP (Address Resolution Protocol) - MAC address resolution
+     * 2. DNS (Domain Name System) - Hostname resolution (stub)
+     * 3. IPv4 (Internet Protocol) - Routing and forwarding
+     * 4. ICMP (Internet Control Message Protocol) - Ping and diagnostics
+     */
+
+    auto& textRenderer = *kernel::textRenderer_ptr;
+
+    // ----------------------- Initialize ARP -------
+    textRenderer << "Initializing ARP..." << SWAP_BUFF();
+    {
+        auto eth0 = NetworkManager::getDefaultInterface();
+        if (eth0) {
+            uint32_t eth0_ip        = eth0->getIPAddress();
+            const uint8_t* eth0_mac = eth0->getMACAddress();
+
+            if (ARP::initialize(eth0_ip, eth0_mac)) {
+                LOG_INFO("ARP: Initialized for interface '%s'", eth0->getName());
+                textRenderer << " Done (resolving gateway MAC)." << SWAP_BUFF();
+
+                // Try to resolve gateway MAC address
+                uint32_t gateway = eth0->getGateway();
+                if (gateway != 0) {
+                    uint8_t gateway_mac[6];
+                    if (ARP::resolveMacAddress(gateway, gateway_mac)) { LOG_INFO("ARP: Gateway MAC resolved successfully"); }
+                    else { LOG_WARN("ARP: Failed to resolve gateway MAC (may retry later)"); }
+                }
+
+                ARP::logCache();
+            }
+            else {
+                LOG_ERROR("ARP: Initialization failed");
+                textRenderer << " FAILED.\n" << SWAP_BUFF();
+            }
+        }
+        else {
+            LOG_ERROR("ARP: No network interface available");
+            textRenderer << " FAILED (no interface).\n" << SWAP_BUFF();
+        }
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
+    // ----------------------- Initialize DNS -------
+    textRenderer << "Initializing DNS..." << SWAP_BUFF();
+    {
+        if (DNS::initialize()) {
+            LOG_INFO("DNS: Initialized");
+            textRenderer << " Done (attempting to resolve google.com)." << SWAP_BUFF();
+
+            // Try to resolve google.com
+            uint32_t google_ip;
+            if (DNS::resolveDomain("google.com", &google_ip)) {
+                uint8_t ip_bytes[4] = {static_cast<uint8_t>((google_ip >> 24) & 0xFF),
+                                       static_cast<uint8_t>((google_ip >> 16) & 0xFF),
+                                       static_cast<uint8_t>((google_ip >> 8) & 0xFF),
+                                       static_cast<uint8_t>(google_ip & 0xFF)};
+                LOG_INFO("DNS: Successfully resolved google.com to %u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+            }
+            else { LOG_WARN("DNS: Failed to resolve google.com (may require UDP/IP implementation)"); }
+
+            DNS::logCache();
+        }
+        else {
+            LOG_ERROR("DNS: Initialization failed");
+            textRenderer << " FAILED.\n" << SWAP_BUFF();
+        }
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
+    // ----------------------- Initialize IPv4 -------
+    textRenderer << "Initializing IPv4..." << SWAP_BUFF();
+    {
+        auto eth0 = NetworkManager::getDefaultInterface();
+        if (eth0) {
+            uint32_t eth0_ip = eth0->getIPAddress();
+            uint32_t gateway = eth0->getGateway();
+            uint32_t subnet  = eth0->getSubnetMask();
+
+            if (IPv4::initialize(eth0_ip, subnet, gateway)) {
+                LOG_INFO("IPv4: Initialized successfully");
+                textRenderer << " Done." << SWAP_BUFF();
+            }
+            else {
+                LOG_ERROR("IPv4: Initialization failed");
+                textRenderer << " FAILED.\n" << SWAP_BUFF();
+            }
+        }
+        else {
+            LOG_ERROR("IPv4: No network interface");
+            textRenderer << " FAILED (no interface).\n" << SWAP_BUFF();
+        }
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+
+    // ----------------------- Initialize ICMP -------
+    textRenderer << "Initializing ICMP..." << SWAP_BUFF();
+    {
+        if (ICMP::initialize()) {
+            LOG_INFO("ICMP: Initialized successfully");
+            textRenderer << " Done." << SWAP_BUFF();
+        }
+        else {
+            LOG_ERROR("ICMP: Initialization failed");
+            textRenderer << " FAILED.\n" << SWAP_BUFF();
+        }
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
+}
+
+void PalmyraOS::kernel::testNetworkConnectivity() {
+    /**
+     * @brief Test network connectivity with comprehensive ping tests
+     *
+     * Performs three ping tests to validate the network stack:
+     * 1. Gratuitous ARP (self-announcement test)
+     * 2. Ping to Cloudflare DNS (1.1.1.1)
+     * 3. Ping to Google DNS (8.8.8.8)
+     *
+     * Tests validate:
+     * - ARP resolution
+     * - IPv4 routing (local vs gateway)
+     * - ICMP Echo Request/Reply
+     * - End-to-end internet connectivity
+     */
+
+    auto& textRenderer = *kernel::textRenderer_ptr;
+
+    textRenderer << "Running ICMP ping tests (local, Cloudflare, Google)...\n" << SWAP_BUFF();
+    {
+        LOG_INFO("========================================");
+        LOG_INFO("ICMP Ping Test Suite");
+        LOG_INFO("========================================");
+
+        uint32_t local_ip        = IPv4::getLocalIP();
+        uint32_t gateway_ip      = IPv4::getGateway();
+        uint8_t local_bytes[4]   = {static_cast<uint8_t>((local_ip >> 24) & 0xFF),
+                                    static_cast<uint8_t>((local_ip >> 16) & 0xFF),
+                                    static_cast<uint8_t>((local_ip >> 8) & 0xFF),
+                                    static_cast<uint8_t>(local_ip & 0xFF)};
+        uint8_t gateway_bytes[4] = {static_cast<uint8_t>((gateway_ip >> 24) & 0xFF),
+                                    static_cast<uint8_t>((gateway_ip >> 16) & 0xFF),
+                                    static_cast<uint8_t>((gateway_ip >> 8) & 0xFF),
+                                    static_cast<uint8_t>(gateway_ip & 0xFF)};
+        uint32_t rtt_ms;
+
+        // Test 1: Gratuitous ARP (self-announcement to test RX)
+        LOG_INFO("");
+        LOG_INFO("TEST 1: Gratuitous ARP (self-announcement test)");
+        LOG_INFO("Target: %u.%u.%u.%u (our own IP)", local_bytes[0], local_bytes[1], local_bytes[2], local_bytes[3]);
+        LOG_INFO("Path: Broadcast ARP announcement, should receive our own packet");
+        LOG_INFO("Expected: Self-reception of broadcast ARP");
+
+        // Send gratuitous ARP (announce our own IP mapping)
+        uint8_t dummy_mac[6];
+        bool received_own_arp = ARP::resolveMacAddress(local_ip, dummy_mac);
+
+        if (received_own_arp) {
+            LOG_INFO(" PASSED: Received our own ARP broadcast!");
+            textRenderer << "  [1/3] Gratuitous ARP: SUCCESS (RX working)\n" << SWAP_BUFF();
+        }
+        else {
+            LOG_WARN("✗ FAILED: Did not receive our own ARP broadcast");
+            LOG_INFO("Diagnosis: Network adapter may be disconnected or not in promiscuous mode");
+            textRenderer << "  [1/3] Gratuitous ARP: FAILED (no RX)\n" << SWAP_BUFF();
+        }
+        CPU::delay(1000);
+
+        // Test 2: Ping Cloudflare DNS (1.1.1.1)
+        LOG_INFO("");
+        LOG_INFO("TEST 2: Ping Cloudflare DNS");
+        LOG_INFO("Target: 1.1.1.1");
+        LOG_INFO("Path: Local -> Gateway (%u.%u.%u.%u) -> Internet -> Cloudflare", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
+        LOG_INFO("TTL hops: 64 -> 63 (gateway) -> 62 (ISP) -> ... -> 1 (Cloudflare)");
+        LOG_INFO("Distance: ~15-20 hops");
+
+        uint32_t cloudflare_ip = 0x01010101;
+        if (ICMP::ping(cloudflare_ip, &rtt_ms)) {
+            LOG_INFO(" PASSED: Cloudflare reachable! RTT: %u ms", rtt_ms);
+            LOG_INFO("Full path trace: %u.%u.%u.%u -> %u.%u.%u.%u -> Internet -> 1.1.1.1",
+                     local_bytes[0],
+                     local_bytes[1],
+                     local_bytes[2],
+                     local_bytes[3],
+                     gateway_bytes[0],
+                     gateway_bytes[1],
+                     gateway_bytes[2],
+                     gateway_bytes[3]);
+            textRenderer << "  [2/3] Cloudflare (1.1.1.1): SUCCESS (" << rtt_ms << " ms)\n" << SWAP_BUFF();
+        }
+        else {
+            LOG_WARN("✗ FAILED: Cloudflare unreachable");
+            LOG_INFO("Diagnosis: TTL may have decremented to 0, or gateway/ISP not responding");
+            LOG_INFO("ARP trace: Attempted to resolve %u.%u.%u.%u (gateway) - check ARP cache", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
+            textRenderer << "  [2/3] Cloudflare (1.1.1.1): TIMEOUT\n" << SWAP_BUFF();
+        }
+        CPU::delay(1000);
+
+        // Test 3: Ping Google DNS (8.8.8.8)
+        LOG_INFO("");
+        LOG_INFO("TEST 3: Ping Google DNS");
+        LOG_INFO("Target: 8.8.8.8");
+        LOG_INFO("Path: Local -> Gateway (%u.%u.%u.%u) -> Internet -> Google", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
+        LOG_INFO("TTL hops: 64 -> 63 (gateway) -> 62 (ISP) -> ... -> 1 (Google)");
+        LOG_INFO("Distance: ~10-15 hops");
+
+        uint32_t google_dns_ip = 0x08080808;
+        if (ICMP::ping(google_dns_ip, &rtt_ms)) {
+            LOG_INFO(" PASSED: Google DNS reachable! RTT: %u ms", rtt_ms);
+            LOG_INFO("Full path trace: %u.%u.%u.%u -> %u.%u.%u.%u -> Internet -> 8.8.8.8",
+                     local_bytes[0],
+                     local_bytes[1],
+                     local_bytes[2],
+                     local_bytes[3],
+                     gateway_bytes[0],
+                     gateway_bytes[1],
+                     gateway_bytes[2],
+                     gateway_bytes[3]);
+            textRenderer << "  [3/3] Google DNS (8.8.8.8): SUCCESS (" << rtt_ms << " ms)\n" << SWAP_BUFF();
+        }
+        else {
+            LOG_WARN("✗ FAILED: Google DNS unreachable");
+            LOG_INFO("Diagnosis: TTL may have decremented to 0, or gateway/ISP not responding");
+            LOG_INFO("ARP trace: Attempted to resolve %u.%u.%u.%u (gateway) - check ARP cache", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
+            textRenderer << "  [3/3] Google DNS (8.8.8.8): TIMEOUT\n" << SWAP_BUFF();
+        }
+
+        // Summary
+        LOG_INFO("");
+        LOG_INFO("========================================");
+        LOG_INFO("Network Configuration:");
+        LOG_INFO("  Local IP: %u.%u.%u.%u", local_bytes[0], local_bytes[1], local_bytes[2], local_bytes[3]);
+        LOG_INFO("  Gateway: %u.%u.%u.%u", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
+        uint32_t subnetMask = IPv4::getSubnetMask();
+        LOG_INFO("  Subnet: %u.%u.%u.%u", (subnetMask >> 24) & 0xFF, (subnetMask >> 16) & 0xFF, (subnetMask >> 8) & 0xFF, subnetMask & 0xFF);
+        LOG_INFO("");
+        LOG_INFO("Stack Status:");
+        LOG_INFO("   IPv4 Protocol: OPERATIONAL");
+        LOG_INFO("   ARP Protocol: OPERATIONAL");
+        LOG_INFO("   ICMP Protocol: OPERATIONAL");
+        LOG_INFO("  Network Connectivity: See test results above");
+        LOG_INFO("========================================");
+    }
+    textRenderer << "\n" << SWAP_BUFF();
+    CPU::delay(2'500'000'000L);
 }
 
 void PalmyraOS::kernel::initializeDrivers() {

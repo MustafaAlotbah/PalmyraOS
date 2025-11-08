@@ -334,7 +334,7 @@ namespace PalmyraOS::kernel {
          * Layout (little-endian):
          * - [0:3]: Buffer address (32-bit physical)
          * - [4:5]: Buffer length in 2's complement form
-         *          Example: 60 bytes → -60 = 0xFFC4
+         *          Example: 60 bytes -> -60 = 0xFFC4
          * - [6:7]: Status flags (see enum DescriptorStatus)
          * - [8:11]: Miscellaneous flags and error info
          * - [12:15]: Reserved

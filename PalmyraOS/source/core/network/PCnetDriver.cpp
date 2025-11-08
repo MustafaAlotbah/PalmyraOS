@@ -1,4 +1,8 @@
 #include "core/network/PCnetDriver.h"
+#include "core/kernel.h"
+#include "core/network/ARP.h"
+#include "core/network/Ethernet.h"
+#include "core/network/IPv4.h"
 #include "core/pcie/PCIe.h"
 #include "core/peripherals/Logger.h"
 #include "core/port.h"
@@ -216,7 +220,12 @@ namespace PalmyraOS::kernel {
     // ==================== DMA Buffer Management ====================
 
     bool PCnetDriver::allocateBuffers() {
-        // Helper lambda: align pointer to 16-byte boundary (required for DMA)
+        // Helper: identity-mapped DMA allocation (returns physical==virtual)
+        auto allocPages = [](size_t bytes) -> void* {
+            uint32_t pages = static_cast<uint32_t>((bytes + 4095) / 4096);
+            return PalmyraOS::kernel::kernelPagingDirectory_ptr ? PalmyraOS::kernel::kernelPagingDirectory_ptr->allocatePages(pages) : nullptr;
+        };
+        // Helper: align pointer to 16-byte boundary (required for DMA)
         auto alignTo16 = [](void* ptr) -> void* {
             uintptr_t addr    = reinterpret_cast<uintptr_t>(ptr);
             uintptr_t aligned = (addr + 15) & ~0xF;  // Round up to 16-byte boundary
@@ -224,7 +233,7 @@ namespace PalmyraOS::kernel {
         };
 
         // Allocate Initialization Block (4-byte aligned minimum)
-        initBlockRaw_ = getHeapManager()->alloc(sizeof(InitBlock));
+        initBlockRaw_ = allocPages(sizeof(InitBlock));
         if (!initBlockRaw_) {
             LOG_ERROR("PCnet: Failed to allocate initialization block");
             return false;
@@ -233,7 +242,7 @@ namespace PalmyraOS::kernel {
         memset(initBlock_, 0, sizeof(InitBlock));
 
         // Allocate TX ring with alignment (16-byte aligned REQUIRED)
-        txRingRaw_ = getHeapManager()->alloc(sizeof(TxDescriptor) * TX_RING_SIZE + 16);
+        txRingRaw_ = allocPages(sizeof(TxDescriptor) * TX_RING_SIZE + 16);
         if (!txRingRaw_) {
             LOG_ERROR("PCnet: Failed to allocate TX ring");
             return false;
@@ -242,7 +251,7 @@ namespace PalmyraOS::kernel {
         memset(txRing_, 0, sizeof(TxDescriptor) * TX_RING_SIZE);
 
         // Allocate RX ring with alignment (16-byte aligned REQUIRED)
-        rxRingRaw_ = getHeapManager()->alloc(sizeof(RxDescriptor) * RX_RING_SIZE + 16);
+        rxRingRaw_ = allocPages(sizeof(RxDescriptor) * RX_RING_SIZE + 16);
         if (!rxRingRaw_) {
             LOG_ERROR("PCnet: Failed to allocate RX ring");
             return false;
@@ -258,7 +267,7 @@ namespace PalmyraOS::kernel {
 
         // Allocate TX packet buffers
         for (uint8_t i = 0; i < TX_RING_SIZE; ++i) {
-            txBuffers_[i] = static_cast<uint8_t*>(getHeapManager()->alloc(BUFFER_SIZE));
+            txBuffers_[i] = static_cast<uint8_t*>(allocPages(BUFFER_SIZE));
             if (!txBuffers_[i]) {
                 LOG_ERROR("PCnet: Failed to allocate TX buffer %u", i);
                 return false;
@@ -268,7 +277,7 @@ namespace PalmyraOS::kernel {
 
         // Allocate RX packet buffers
         for (uint8_t i = 0; i < RX_RING_SIZE; ++i) {
-            rxBuffers_[i] = static_cast<uint8_t*>(getHeapManager()->alloc(BUFFER_SIZE));
+            rxBuffers_[i] = static_cast<uint8_t*>(allocPages(BUFFER_SIZE));
             if (!rxBuffers_[i]) {
                 LOG_ERROR("PCnet: Failed to allocate RX buffer %u", i);
                 return false;
@@ -284,42 +293,16 @@ namespace PalmyraOS::kernel {
     }
 
     void PCnetDriver::freeBuffers() {
-        // Free TX packet buffers
-        for (uint8_t i = 0; i < TX_RING_SIZE; ++i) {
-            if (txBuffers_[i]) {
-                getHeapManager()->free(txBuffers_[i]);
-                txBuffers_[i] = nullptr;
-            }
-        }
-
-        // Free RX packet buffers
-        for (uint8_t i = 0; i < RX_RING_SIZE; ++i) {
-            if (rxBuffers_[i]) {
-                getHeapManager()->free(rxBuffers_[i]);
-                rxBuffers_[i] = nullptr;
-            }
-        }
-
-        // Free TX ring (use raw pointer for correct cleanup!)
-        if (txRingRaw_) {
-            getHeapManager()->free(txRingRaw_);
-            txRing_    = nullptr;
-            txRingRaw_ = nullptr;
-        }
-
-        // Free RX ring (use raw pointer for correct cleanup!)
-        if (rxRingRaw_) {
-            getHeapManager()->free(rxRingRaw_);
-            rxRing_    = nullptr;
-            rxRingRaw_ = nullptr;
-        }
-
-        // Free initialization block (use raw pointer!)
-        if (initBlockRaw_) {
-            getHeapManager()->free(initBlockRaw_);
-            initBlock_    = nullptr;
-            initBlockRaw_ = nullptr;
-        }
+        // DMA buffers were allocated via identity-mapped page allocations.
+        // For now, skip freeing (persist for driver lifetime) and just clear pointers.
+        for (uint8_t i = 0; i < TX_RING_SIZE; ++i) { txBuffers_[i] = nullptr; }
+        for (uint8_t i = 0; i < RX_RING_SIZE; ++i) { rxBuffers_[i] = nullptr; }
+        txRing_       = nullptr;
+        rxRing_       = nullptr;
+        txRingRaw_    = nullptr;
+        rxRingRaw_    = nullptr;
+        initBlock_    = nullptr;
+        initBlockRaw_ = nullptr;
     }
 
     // ==================== Descriptor Ring Setup ====================
@@ -390,6 +373,10 @@ namespace PalmyraOS::kernel {
             return false;
         }
 
+        // Enforce Ethernet minimum frame size (driver-side padding)
+        uint32_t txLen = length;
+        if (txLen < ethernet::MIN_FRAME_SIZE) { txLen = ethernet::MIN_FRAME_SIZE; }
+
         // Check if current TX descriptor is available (CPU must own it)
         if (txRing_[currentTx_].status & DESC_OWN) {
             LOG_WARN("PCnet: TX ring full");
@@ -399,17 +386,32 @@ namespace PalmyraOS::kernel {
 
         // Copy packet to TX buffer
         memcpy(txBuffers_[currentTx_], data, length);
+        if (txLen > length) {
+            // Zero-pad remainder to meet minimum Ethernet frame size
+            memset(txBuffers_[currentTx_] + length, 0, txLen - length);
+        }
 
         // Setup TX descriptor
-        txRing_[currentTx_].length = static_cast<uint16_t>(-length);  // 2's complement
+        txRing_[currentTx_].length = static_cast<uint16_t>(-static_cast<int16_t>(txLen));  // 2's complement of actual TX length
         txRing_[currentTx_].misc   = 0;
         txRing_[currentTx_].status = DESC_OWN | DESC_STP | DESC_ENP;  // Give to NIC
 
         // Signal NIC: Transmit Demand
         writeCSR(CSR0, readCSR(CSR0) | TDMD);
 
-        // Update statistics (success)
-        updateStatistics(length, true, false);
+        // Optional: brief poll for TX descriptor ownership to clear (TX complete)
+        // This is diagnostic and should be removed in high-throughput paths
+        {
+            const uint8_t descIndex = currentTx_;
+            for (uint32_t i = 0; i < 10000; ++i) {
+                if ((txRing_[descIndex].status & DESC_OWN) == 0) {
+                    break;  // NIC returned ownership
+                }
+            }
+        }
+
+        // Update statistics (success) with actual transmitted length
+        updateStatistics(txLen, true, false);
 
         // Advance to next descriptor (round-robin)
         currentTx_ = (currentTx_ + 1) % TX_RING_SIZE;
@@ -491,9 +493,12 @@ namespace PalmyraOS::kernel {
         // Read interrupt status
         uint32_t csr0 = readCSR(CSR0);
 
-        // Handle RX interrupt
+        // ALWAYS poll for received packets (for ARP polling)
+        // In a real OS, this would only be called on actual interrupts
+        processReceivedPackets();
+
+        // Handle RX interrupt (clear flag if set)
         if (csr0 & RINT) {
-            processReceivedPackets();
             writeCSR(CSR0, csr0 | RINT);  // Clear RX interrupt
         }
 
@@ -513,36 +518,51 @@ namespace PalmyraOS::kernel {
     // ==================== Received Packet Processing ====================
 
     void PCnetDriver::processReceivedPackets() {
-        while (!(rxRing_[currentRx_].status & DESC_OWN)) {
-            // Descriptor owned by CPU - packet received
-            uint16_t status = rxRing_[currentRx_].status;
+        uint32_t packetsProcessedCount = 0;
 
-            if (status & DESC_ERR) {
-                // RX error
-                LOG_WARN("PCnet: RX error on descriptor %u", currentRx_);
+        // Process all RX descriptors owned by CPU (hardware has released ownership)
+        while (!(rxRing_[currentRx_].status & DESC_OWN)) {
+            const uint16_t descriptorStatus = rxRing_[currentRx_].status;
+            const uint32_t frameLength      = rxRing_[currentRx_].misc & 0xFFF;  // Extract 12-bit length
+
+            // Check for hardware-reported errors
+            if (descriptorStatus & DESC_ERR) {
+                LOG_WARN("PCnet: Receive error on descriptor %u (status=0x%04X)", currentRx_, descriptorStatus);
                 updateStatistics(0, false, true);
             }
-            else if ((status & (DESC_STP | DESC_ENP)) == (DESC_STP | DESC_ENP)) {
-                // Complete packet (Start of Packet and End of Packet set)
-                uint32_t length = rxRing_[currentRx_].misc & 0xFFF;  // Extract length
+            // Process complete packet (both STP and ENP flags set)
+            else if ((descriptorStatus & (DESC_STP | DESC_ENP)) == (DESC_STP | DESC_ENP)) {
+                // Validate Ethernet frame length (14-byte header min, 1518-byte max)
+                constexpr uint32_t ETHERNET_MIN_FRAME_LENGTH = 14;
+                constexpr uint32_t ETHERNET_MAX_FRAME_LENGTH = 1518;
 
-                // Validate frame length (must be within Ethernet range)
-                if (length >= MIN_FRAME_SIZE && length <= MAX_FRAME_SIZE) {
-                    LOG_DEBUG("PCnet: Received packet (%u bytes)", length);
-                    updateStatistics(length, false, false);
-                    // TODO: Pass packet to network stack
+                if (frameLength >= ETHERNET_MIN_FRAME_LENGTH && frameLength <= ETHERNET_MAX_FRAME_LENGTH) {
+                    const uint8_t* receivedFrameBuffer = rxBuffers_[currentRx_];
+
+                    if (receivedFrameBuffer != nullptr) {
+                        // Extract EtherType from Ethernet header (bytes 12-13, network byte order)
+                        const uint16_t etherType = static_cast<uint16_t>((receivedFrameBuffer[12] << 8) | receivedFrameBuffer[13]);
+
+                        // Dispatch to protocol handler based on EtherType
+                        if (etherType == ethernet::ETHERTYPE_ARP) { ARP::handleARPPacket(receivedFrameBuffer, frameLength); }
+                        else if (etherType == ethernet::ETHERTYPE_IPV4) { IPv4::handleIPv4Packet(receivedFrameBuffer, frameLength); }
+
+                        // Update interface statistics (successful packet reception)
+                        updateStatistics(frameLength, false, false);
+                        packetsProcessedCount++;
+                    }
                 }
                 else {
-                    LOG_WARN("PCnet: Invalid packet length (%u bytes)", length);
+                    LOG_WARN("PCnet: Invalid frame length (%u bytes, expected %u-%u)", frameLength, ETHERNET_MIN_FRAME_LENGTH, ETHERNET_MAX_FRAME_LENGTH);
                     updateStatistics(0, false, true);
                 }
             }
 
-            // Give descriptor back to NIC
+            // Return descriptor ownership to NIC for buffer reuse
             rxRing_[currentRx_].status = DESC_OWN;
             rxRing_[currentRx_].misc   = 0;
 
-            // Advance to next descriptor (round-robin)
+            // Advance to next descriptor (circular buffer with wraparound)
             currentRx_                 = (currentRx_ + 1) % RX_RING_SIZE;
         }
     }
