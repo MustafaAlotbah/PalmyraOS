@@ -1,4 +1,5 @@
 #include "core/kernel.h"
+#include "core/BootConsole.h"
 #include "core/Display.h"
 #include "core/acpi/ACPI.h"
 #include "core/acpi/ACPISpecific.h"
@@ -315,7 +316,7 @@ bool PalmyraOS::kernel::initializePhysicalMemory(const Multiboot2::MultibootInfo
     return true;
 }
 
-bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo& mb2Info) {
+bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo& mb2Info, BootConsole& console) {
     /**
      * @brief Initializes the virtual memory manager using Multiboot 2 information.
      *
@@ -323,6 +324,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
      * switches to the new kernel paging directory, and initializes the paging system.
      *
      * @param mb2Info Multiboot 2 information structure
+     * @param console Boot console for logging
      * @return True if the virtual memory manager is successfully initialized, false otherwise.
      */
 
@@ -331,8 +333,6 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
     /* Here we assume physical memory has been initialized, hence we do not use kmalloc anymore
      * Instead, we use PhysicalMemory::allocateFrames()
      */
-
-    auto& textRenderer  = *kernel::textRenderer_ptr;
 
     // Get memory information from Multiboot 2
     const auto* memInfo = mb2Info.getBasicMemInfo();
@@ -350,21 +350,21 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
 
     // Map kernel space by identity
     {
-        textRenderer << "Kernel.." << SWAP_BUFF();
+        console << "Kernel.." << SWAP_BUFF();
         kernel::CPU::delay(2'500'000'000L);
         auto kernelSpace       = (uint32_t) PhysicalMemory::allocateFrame();
         kernel::kernelLastPage = kernelSpace >> PAGE_BITS;
         kernel::kernelPagingDirectory_ptr->mapPages(nullptr, nullptr, kernel::kernelLastPage, PageFlags::Present | PageFlags::ReadWrite);
     }
 
-    textRenderer << "Tables.." << SWAP_BUFF();
+    console << "Tables.." << SWAP_BUFF();
     kernel::CPU::delay(2'500'000'000L);
     // Initialize all kernel's directory tables, to avoid Recursive Page Table Mapping Problem
     size_t max_pages = (memInfo->mem_upper >> 12) + 1;  // Kilobytes to 4 Megabytes
     for (int i = 0; i < max_pages; ++i) { kernel::kernelPagingDirectory_ptr->getTable(i, PageFlags::Present | PageFlags::ReadWrite); }
 
     // Map video memory by identity
-    textRenderer << "Video.." << SWAP_BUFF();
+    console << "Video.." << SWAP_BUFF();
     kernel::CPU::delay(2'500'000'000L);
 
     // Get framebuffer address from VBE or framebuffer tag
@@ -420,7 +420,7 @@ bool PalmyraOS::kernel::initializeVirtualMemory(const Multiboot2::MultibootInfo&
     }
 
     // Switch to the new kernel paging directory and initialize paging
-    textRenderer << "switching.." << SWAP_BUFF();
+    console << "switching.." << SWAP_BUFF();
     kernel::CPU::delay(2'500'000'000L);
     PalmyraOS::kernel::PagingManager::switchPageDirectory(kernel::kernelPagingDirectory_ptr);
     PalmyraOS::kernel::PagingManager::initialize();
@@ -466,7 +466,7 @@ void PalmyraOS::kernel::testMemory() {
     //		kernel::kernelPanic("Testing Allocator Queue failed!");
 }
 
-void PalmyraOS::kernel::initializePCIeDrivers() {
+void PalmyraOS::kernel::initializePCIeDrivers(BootConsole& console) {
     /**
      * @brief Initialize PCIe-based drivers (network, storage, etc.)
      *
@@ -480,9 +480,9 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
      * - PCIe::initialize() called (for base address setup)
      */
 
-    auto& textRenderer = *kernel::textRenderer_ptr;
-
     LOG_INFO("Initializing PCIe drivers (requires paging + heap)");
+
+    console << "  - Enumerating PCIe devices...\n" << SWAP_BUFF();
 
     // Enumerate all PCI Express devices (uses heap to store device list)
     if (!PCIe::isInitialized()) {
@@ -493,6 +493,8 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
     PCIe::enumerateDevices();
     LOG_INFO("PCIe: Enumerated %u devices", PCIe::getDeviceCount());
 
+    console << "  - Found " << PCIe::getDeviceCount() << " PCIe devices\n" << SWAP_BUFF();
+
     // Initialize Network Manager
     if (!NetworkManager::initialize()) {
         LOG_ERROR("Failed to initialize NetworkManager");
@@ -500,6 +502,8 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
     }
 
     LOG_INFO("NetworkManager initialized successfully");
+
+    console << "  - NetworkManager initialized\n" << SWAP_BUFF();
 
     // Scan for network devices
     bool foundNetwork = false;
@@ -528,6 +532,7 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
                         if (pcnet->enable()) {
                             LOG_INFO("Network interface 'eth0' enabled");
                             foundNetwork = true;
+                            console << "  - AMD PCnet network adapter initialized (eth0)\n" << SWAP_BUFF();
                         }
                         else { LOG_ERROR("Failed to enable network interface"); }
                     }
@@ -549,9 +554,9 @@ void PalmyraOS::kernel::initializePCIeDrivers() {
     if (!foundNetwork) { LOG_WARN("No supported network adapters found"); }
 }
 
-void PalmyraOS::kernel::initializeNetworkProtocols() {
+void PalmyraOS::kernel::initializeNetworkProtocols(BootConsole& console) {
     /**
-     * @brief Initialize network protocols (ARP, DNS, IPv4, ICMP)
+     * @brief Initialize network protocols (ARP, DNS, IPv4, ICMP, UDP)
      *
      * This function initializes all network protocol layers in the correct order.
      * Must be called after PCIe drivers are initialized and at least one network
@@ -559,120 +564,71 @@ void PalmyraOS::kernel::initializeNetworkProtocols() {
      *
      * Initialization order:
      * 1. ARP (Address Resolution Protocol) - MAC address resolution
-     * 2. DNS (Domain Name System) - Hostname resolution (stub)
-     * 3. IPv4 (Internet Protocol) - Routing and forwarding
+     * 2. IPv4 (Internet Protocol) - Routing and forwarding
+     * 3. UDP (User Datagram Protocol) - Transport layer
      * 4. ICMP (Internet Control Message Protocol) - Ping and diagnostics
+     * 5. DNS (Domain Name System) - Hostname resolution over UDP
      */
 
-    auto& textRenderer = *kernel::textRenderer_ptr;
+    // ----------------------- Initialize Network Protocols -------
+    console << "Initializing network protocols (ARP, IPv4, UDP, ICMP, DNS)...\n" << SWAP_BUFF();
 
-    // ----------------------- Initialize ARP -------
-    textRenderer << "Initializing ARP..." << SWAP_BUFF();
     {
         auto eth0 = NetworkManager::getDefaultInterface();
         if (eth0) {
             uint32_t eth0_ip        = eth0->getIPAddress();
             const uint8_t* eth0_mac = eth0->getMACAddress();
+            uint32_t gateway        = eth0->getGateway();
+            uint32_t subnet         = eth0->getSubnetMask();
 
+            // Initialize ARP
             if (ARP::initialize(eth0_ip, eth0_mac)) {
                 LOG_INFO("ARP: Initialized for interface '%s'", eth0->getName());
-                textRenderer << " Done (resolving gateway MAC)." << SWAP_BUFF();
+                console << "  - ARP initialized\n" << SWAP_BUFF();
 
-                // Try to resolve gateway MAC address
-                uint32_t gateway = eth0->getGateway();
+                // Pre-cache gateway MAC
                 if (gateway != 0) {
                     uint8_t gateway_mac[6];
                     if (ARP::resolveMacAddress(gateway, gateway_mac)) { LOG_INFO("ARP: Gateway MAC resolved successfully"); }
-                    else { LOG_WARN("ARP: Failed to resolve gateway MAC (may retry later)"); }
                 }
-
                 ARP::logCache();
             }
-            else {
-                LOG_ERROR("ARP: Initialization failed");
-                textRenderer << " FAILED.\n" << SWAP_BUFF();
-            }
-        }
-        else {
-            LOG_ERROR("ARP: No network interface available");
-            textRenderer << " FAILED (no interface).\n" << SWAP_BUFF();
-        }
-    }
-    textRenderer << "\n" << SWAP_BUFF();
-    CPU::delay(2'500'000'000L);
+            else { LOG_ERROR("ARP: Initialization failed"); }
 
-    // ----------------------- Initialize IPv4 -------
-    textRenderer << "Initializing IPv4..." << SWAP_BUFF();
-    {
-        auto eth0 = NetworkManager::getDefaultInterface();
-        if (eth0) {
-            uint32_t eth0_ip = eth0->getIPAddress();
-            uint32_t gateway = eth0->getGateway();
-            uint32_t subnet  = eth0->getSubnetMask();
-
+            // Initialize IPv4
             if (IPv4::initialize(eth0_ip, subnet, gateway)) {
                 LOG_INFO("IPv4: Initialized successfully");
-                textRenderer << " Done." << SWAP_BUFF();
+                console << "  - IPv4 initialized\n" << SWAP_BUFF();
             }
-            else {
-                LOG_ERROR("IPv4: Initialization failed");
-                textRenderer << " FAILED.\n" << SWAP_BUFF();
+            else { LOG_ERROR("IPv4: Initialization failed"); }
+
+            // Initialize UDP
+            if (UDP::initialize()) {
+                LOG_INFO("UDP: Initialized successfully");
+                console << "  - UDP initialized\n" << SWAP_BUFF();
             }
-        }
-        else {
-            LOG_ERROR("IPv4: No network interface");
-            textRenderer << " FAILED (no interface).\n" << SWAP_BUFF();
-        }
-    }
-    textRenderer << "\n" << SWAP_BUFF();
-    CPU::delay(2'500'000'000L);
+            else { LOG_ERROR("UDP: Initialization failed"); }
 
-    // ----------------------- Initialize UDP -------
-    textRenderer << "Initializing UDP..." << SWAP_BUFF();
-    {
-        if (UDP::initialize()) {
-            LOG_INFO("UDP: Initialized successfully");
-            textRenderer << " Done." << SWAP_BUFF();
-        }
-        else {
-            LOG_ERROR("UDP: Initialization failed");
-            textRenderer << " FAILED.\n" << SWAP_BUFF();
-        }
-    }
-    textRenderer << "\n" << SWAP_BUFF();
-    CPU::delay(2'500'000'000L);
+            // Initialize ICMP
+            if (ICMP::initialize()) {
+                LOG_INFO("ICMP: Initialized successfully");
+                console << "  - ICMP initialized\n" << SWAP_BUFF();
+            }
+            else { LOG_ERROR("ICMP: Initialization failed"); }
 
-    // ----------------------- Initialize ICMP -------
-    textRenderer << "Initializing ICMP..." << SWAP_BUFF();
-    {
-        if (ICMP::initialize()) {
-            LOG_INFO("ICMP: Initialized successfully");
-            textRenderer << " Done." << SWAP_BUFF();
+            // Initialize DNS (requires IPv4 to detect DNS server)
+            if (DNS::initialize()) {
+                LOG_INFO("DNS: Initialized");
+                console << "  - DNS initialized\n" << SWAP_BUFF();
+            }
+            else { LOG_ERROR("DNS: Initialization failed"); }
         }
-        else {
-            LOG_ERROR("ICMP: Initialization failed");
-            textRenderer << " FAILED.\n" << SWAP_BUFF();
-        }
+        else { LOG_ERROR("No network interface available for protocol initialization"); }
     }
-    textRenderer << "\n" << SWAP_BUFF();
-    CPU::delay(2'500'000'000L);
-
-    // ----------------------- Initialize DNS (requires IPv4 for server detection) -------
-    textRenderer << "Initializing DNS..." << SWAP_BUFF();
-    {
-        if (DNS::initialize()) {
-            LOG_INFO("DNS: Initialized");
-            textRenderer << " Done.\n" << SWAP_BUFF();
-        }
-        else {
-            LOG_ERROR("DNS: Initialization failed");
-            textRenderer << " FAILED.\n" << SWAP_BUFF();
-        }
-    }
-    CPU::delay(2'500'000'000L);
+    CPU::delay(1'000'000'000L);
 }
 
-void PalmyraOS::kernel::testNetworkConnectivity() {
+void PalmyraOS::kernel::testNetworkConnectivity(BootConsole& console) {
     /**
      * @brief Test network connectivity with comprehensive ping tests
      *
@@ -688,9 +644,13 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
      * - End-to-end internet connectivity
      */
 
-    auto& textRenderer = *kernel::textRenderer_ptr;
+    console << "Testing network connectivity (ICMP ping tests)...\n" << SWAP_BUFF();
+    bool is_gratuitous_arp_passed  = false;
+    bool is_cloudflare_ping_passed = false;
+    bool is_google_ping_passed     = false;
+    uint32_t rtt_ms_cloudflare;
+    uint32_t rtt_ms_google;
 
-    textRenderer << "Running ICMP ping tests (local, Cloudflare, Google)...\n" << SWAP_BUFF();
     {
         LOG_INFO("========================================");
         LOG_INFO("ICMP Ping Test Suite");
@@ -706,7 +666,6 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
                                     static_cast<uint8_t>((gateway_ip >> 16) & 0xFF),
                                     static_cast<uint8_t>((gateway_ip >> 8) & 0xFF),
                                     static_cast<uint8_t>(gateway_ip & 0xFF)};
-        uint32_t rtt_ms;
 
         // Test 1: Gratuitous ARP (self-announcement to test RX)
         LOG_INFO("");
@@ -721,14 +680,12 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
 
         if (received_own_arp) {
             LOG_INFO(" PASSED: Received our own ARP broadcast!");
-            textRenderer << "  [1/3] Gratuitous ARP: SUCCESS (RX working)\n" << SWAP_BUFF();
+            is_gratuitous_arp_passed = true;
         }
         else {
             LOG_WARN("✗ FAILED: Did not receive our own ARP broadcast");
             LOG_INFO("Diagnosis: Network adapter may be disconnected or not in promiscuous mode");
-            textRenderer << "  [1/3] Gratuitous ARP: FAILED (no RX)\n" << SWAP_BUFF();
         }
-        CPU::delay(1000);
 
         // Test 2: Ping Cloudflare DNS (1.1.1.1)
         LOG_INFO("");
@@ -739,8 +696,8 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
         LOG_INFO("Distance: ~15-20 hops");
 
         uint32_t cloudflare_ip = 0x01010101;
-        if (ICMP::ping(cloudflare_ip, &rtt_ms)) {
-            LOG_INFO(" PASSED: Cloudflare reachable! RTT: %u ms", rtt_ms);
+        if (ICMP::ping(cloudflare_ip, &rtt_ms_cloudflare)) {
+            LOG_INFO(" PASSED: Cloudflare reachable! RTT: %u ms", rtt_ms_cloudflare);
             LOG_INFO("Full path trace: %u.%u.%u.%u -> %u.%u.%u.%u -> Internet -> 1.1.1.1",
                      local_bytes[0],
                      local_bytes[1],
@@ -750,13 +707,12 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
                      gateway_bytes[1],
                      gateway_bytes[2],
                      gateway_bytes[3]);
-            textRenderer << "  [2/3] Cloudflare (1.1.1.1): SUCCESS (" << rtt_ms << " ms)\n" << SWAP_BUFF();
+            is_cloudflare_ping_passed = true;
         }
         else {
             LOG_WARN("✗ FAILED: Cloudflare unreachable");
             LOG_INFO("Diagnosis: TTL may have decremented to 0, or gateway/ISP not responding");
             LOG_INFO("ARP trace: Attempted to resolve %u.%u.%u.%u (gateway) - check ARP cache", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
-            textRenderer << "  [2/3] Cloudflare (1.1.1.1): TIMEOUT\n" << SWAP_BUFF();
         }
         CPU::delay(1000);
 
@@ -769,8 +725,8 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
         LOG_INFO("Distance: ~10-15 hops");
 
         uint32_t google_dns_ip = 0x08080808;
-        if (ICMP::ping(google_dns_ip, &rtt_ms)) {
-            LOG_INFO(" PASSED: Google DNS reachable! RTT: %u ms", rtt_ms);
+        if (ICMP::ping(google_dns_ip, &rtt_ms_google)) {
+            LOG_INFO(" PASSED: Google DNS reachable! RTT: %u ms", rtt_ms_google);
             LOG_INFO("Full path trace: %u.%u.%u.%u -> %u.%u.%u.%u -> Internet -> 8.8.8.8",
                      local_bytes[0],
                      local_bytes[1],
@@ -780,13 +736,12 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
                      gateway_bytes[1],
                      gateway_bytes[2],
                      gateway_bytes[3]);
-            textRenderer << "  [3/3] Google DNS (8.8.8.8): SUCCESS (" << rtt_ms << " ms)\n" << SWAP_BUFF();
+            is_google_ping_passed = true;
         }
         else {
             LOG_WARN("✗ FAILED: Google DNS unreachable");
             LOG_INFO("Diagnosis: TTL may have decremented to 0, or gateway/ISP not responding");
             LOG_INFO("ARP trace: Attempted to resolve %u.%u.%u.%u (gateway) - check ARP cache", gateway_bytes[0], gateway_bytes[1], gateway_bytes[2], gateway_bytes[3]);
-            textRenderer << "  [3/3] Google DNS (8.8.8.8): TIMEOUT\n" << SWAP_BUFF();
         }
 
         // Summary
@@ -805,11 +760,18 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
         LOG_INFO("  Network Connectivity: See test results above");
         LOG_INFO("========================================");
     }
-    textRenderer << "\n" << SWAP_BUFF();
+    console << "ICMP Ping Test Results:\n" << SWAP_BUFF();
+    console << "  [1/3] Gratuitous ARP: " << (is_gratuitous_arp_passed ? "PASSED" : "FAILED") << "\n" << SWAP_BUFF();
+    console << "  [2/3] Cloudflare (1.1.1.1): " << (is_cloudflare_ping_passed ? "PASSED" : "FAILED") << SWAP_BUFF();
+    if (is_cloudflare_ping_passed) { console << " (RTT: " << rtt_ms_cloudflare << " ms)"; }
+    console << "\n" << SWAP_BUFF();
+    console << "  [3/3] Google DNS (8.8.8.8): " << (is_google_ping_passed ? "PASSED" : "FAILED") << SWAP_BUFF();
+    if (is_google_ping_passed) { console << " (RTT: " << rtt_ms_google << " ms)"; }
+    console << "\n" << SWAP_BUFF();
     CPU::delay(2'500'000'000L);
 
     // ----------------------- DNS Resolution Tests -------
-    textRenderer << "Testing DNS hostname resolution...\n" << SWAP_BUFF();
+    console << "Testing DNS hostname resolution...\n" << SWAP_BUFF();
     {
         LOG_INFO("========================================");
         LOG_INFO("DNS Resolution Test Suite");
@@ -832,15 +794,9 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
                                       static_cast<uint8_t>(resolvedIP & 0xFF)};
 
                 LOG_INFO(" PASSED: %s -> %u.%u.%u.%u", testDomains[i], ipBytes[0], ipBytes[1], ipBytes[2], ipBytes[3]);
-                textRenderer << "  [" << (i + 1) << "/" << TEST_DOMAIN_COUNT << "] " << testDomains[i] << ": " << ipBytes[0] << "." << ipBytes[1] << "." << ipBytes[2] << "."
-                             << ipBytes[3] << "\n"
-                             << SWAP_BUFF();
                 successfulResolutions++;
             }
-            else {
-                LOG_WARN("✗ FAILED: Could not resolve %s", testDomains[i]);
-                textRenderer << "  [" << (i + 1) << "/" << TEST_DOMAIN_COUNT << "] " << testDomains[i] << ": TIMEOUT\n" << SWAP_BUFF();
-            }
+            else { LOG_WARN("✗ FAILED: Could not resolve %s", testDomains[i]); }
 
             CPU::delay(1000);  // Small delay between queries
         }
@@ -857,14 +813,16 @@ void PalmyraOS::kernel::testNetworkConnectivity() {
         LOG_INFO("  Failed: %u/%u", TEST_DOMAIN_COUNT - successfulResolutions, TEST_DOMAIN_COUNT);
         LOG_INFO("  Cache entries: %u/%u", successfulResolutions, DNS::CACHE_SIZE);
         LOG_INFO("========================================");
+
+        console << "DNS Resolution Test Results:\n" << SWAP_BUFF();
+        console << "  [1/3] Resolved: " << successfulResolutions << "/" << TEST_DOMAIN_COUNT << " domains\n" << SWAP_BUFF();
+        console << "  [2/3] Cache entries: " << successfulResolutions << "/32\n" << SWAP_BUFF();
+        console << "  [3/3] Status: " << (successfulResolutions == TEST_DOMAIN_COUNT ? "ALL PASSED" : "PARTIAL") << "\n" << SWAP_BUFF();
     }
-    textRenderer << "\n" << SWAP_BUFF();
     CPU::delay(2'500'000'000L);
 }
 
-void PalmyraOS::kernel::initializeDrivers() {
-
-    auto& textRenderer = *kernel::textRenderer_ptr;
+void PalmyraOS::kernel::initializeDrivers(BootConsole& console) {
 
     LOG_INFO("Start");
 
@@ -881,9 +839,9 @@ void PalmyraOS::kernel::initializeDrivers() {
             continue;  // TODO: or handle in a different way
         }
 
-        textRenderer << "\nAt [" << name << "] ";
+        console << "\nAt [" << name << "] " << SWAP_BUFF();
         if (!ata->identify(1000)) {
-            textRenderer << " NONE ";
+            console << " NONE " << SWAP_BUFF();
             continue;
         }
 
@@ -896,20 +854,19 @@ void PalmyraOS::kernel::initializeDrivers() {
                  ata->getFirmwareVersion(),
                  ata->getSectors28Bit(),
                  ata->getStorageSize() / 1048576);
-        textRenderer << "Model [" << ata->getModelNumber() << "] Serial [" << ata->getSerialNumber() << "] Firmware [" << ata->getFirmwareVersion() << "] Sectors ["
-                     << ata->getSectors28Bit() << "] Space [" << (ata->getStorageSize() / 1048576) << " MiB]";
+        console << "Model [" << ata->getModelNumber() << "] Serial [" << ata->getSerialNumber() << "] Firmware [" << ata->getFirmwareVersion() << "] Sectors ["
+                << ata->getSectors28Bit() << "] Space [" << (ata->getStorageSize() / 1048576) << " MiB]" << SWAP_BUFF();
     }
 
-    textRenderer << "\n";
+    console << "\n" << SWAP_BUFF();
 }
 
-void PalmyraOS::kernel::initializePartitions() {
+void PalmyraOS::kernel::initializePartitions(BootConsole& console) {
     LOG_INFO("Start");
     // dereference graphics tools
-    auto& textRenderer = *kernel::textRenderer_ptr;
 
     if (!kernel::ata_primary_master) {
-        textRenderer << "No ATA..";
+        console << "No ATA.." << SWAP_BUFF();
         LOG_WARN("ATA Primary Master is not available. Cannot initialize Partitions.");
         return;
     }
@@ -932,7 +889,7 @@ void PalmyraOS::kernel::initializePartitions() {
 
             // get MBR entry
             auto mbr_entry = mbr.getEntry(i);
-            textRenderer << "[" << i << ": ";
+            console << "[" << i << ": " << SWAP_BUFF();
             LOG_INFO("ATA Primary Master: Partition %d:", i);
             LOG_INFO("bootable: %d, Type: %s, lbaStart: 0x%X, Size: %d MiB",
                      mbr_entry.isBootable,
@@ -952,16 +909,16 @@ void PalmyraOS::kernel::initializePartitions() {
                 // TODO: Mounting System
                 // TODO: check if the type is FAT32 not FAT32 etc..
 
-                if (fat32.getType() == vfs::FAT32Partition::Type::Invalid) textRenderer << "Invalid Fat (X)] ";
-                else if (fat32.getType() == vfs::FAT32Partition::Type::FAT12) textRenderer << "FAT12 (X)] ";
-                else if (fat32.getType() == vfs::FAT32Partition::Type::FAT16) textRenderer << "FAT16 (X)] ";
+                if (fat32.getType() == vfs::FAT32Partition::Type::Invalid) console << "Invalid Fat (X)] " << SWAP_BUFF();
+                else if (fat32.getType() == vfs::FAT32Partition::Type::FAT12) console << "FAT12 (X)] " << SWAP_BUFF();
+                else if (fat32.getType() == vfs::FAT32Partition::Type::FAT16) console << "FAT16 (X)] " << SWAP_BUFF();
                 if (fat32.getType() != vfs::FAT32Partition::Type::FAT32) {
                     // Invalid
                     heapManager.free(fat32_p);
                     continue;
                 }
 
-                textRenderer << "FAT32]";
+                console << "FAT32]" << SWAP_BUFF();
                 auto rootNode =
                         heapManager.createInstance<vfs::FAT32Directory>(fat32, 2, vfs::InodeBase::Mode::USER_READ, vfs::InodeBase::UserID::ROOT, vfs::InodeBase::GroupID::ROOT);
                 vfs::VirtualFileSystem::setInodeByPath(name, rootNode);
@@ -1174,10 +1131,10 @@ void PalmyraOS::kernel::initializePartitions() {
                 // TODO: Create new file test after analysis
             }
             else if (mbr_entry.type == PalmyraOS::kernel::vfs::MasterBootRecord::NTFS) {
-                textRenderer << "NTFS (X)]";  // Unsupported
+                console << "NTFS (X)]" << SWAP_BUFF();  // Unsupported
             }
             else {
-                textRenderer << "(X)]";  // Unsupported and unrecognized
+                console << "(X)]" << SWAP_BUFF();  // Unsupported and unrecognized
             }
         }
     }

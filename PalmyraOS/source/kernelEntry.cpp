@@ -1,3 +1,4 @@
+#include "core/BootConsole.h"
 #include "core/Display.h"
 #include "core/FrameBuffer.h"
 #include "core/Interrupts.h"
@@ -233,20 +234,30 @@ void callConstructors() {
     kernel::clearScreen(true);
 
     // dereference graphics tools
-    auto& textRenderer = *kernel::textRenderer_ptr;
-    textRenderer << "Initialized Graphics.\n" << SWAP_BUFF();
+    auto& textRenderer  = *kernel::textRenderer_ptr;
+
+    // Set text renderer position below the logo (logo + line + margin = ~30px)
+    uint32_t logoHeight = 25;  // Approximate height of logo + line
+    textRenderer.setPosition(0, logoHeight);
+    textRenderer.setSize(textRenderer.getWidth(), textRenderer.getHeight() - logoHeight);
+    textRenderer.reset();
+
+    // Create boot console with circular buffer (4KB, 40 lines max for better visibility)
+    kernel::BootConsole console(textRenderer, 4096, 40);
+
+    console << "Initialized Graphics.\n" << SWAP_BUFF();
+    console.flush();
 
 
     // ----------------------- Initialize ACPI -------------------------------------
     const uint8_t* acpiRSDP = multiboot2_info.getACPIRSDP();
-    textRenderer << "Initializing ACPI..." << SWAP_BUFF();
+    console << "Initializing ACPI...\n" << SWAP_BUFF();
     if (acpiRSDP) {
         LOG_INFO("ACPI RSDP provided by bootloader at 0x%p", acpiRSDP);
-        textRenderer << "ACPI RSDP provided by bootloader.. " << SWAP_BUFF();
 
         if (kernel::ACPI::initialize(acpiRSDP)) {
             LOG_INFO("ACPI initialized successfully (version %u.0)", kernel::ACPI::getACPIVersion() == 0 ? 1 : kernel::ACPI::getACPIVersion());
-            textRenderer << "ACPI initialized successfully (version " << kernel::ACPI::getACPIVersion() << ".0).. " << SWAP_BUFF();
+            console << "ACPI initialized (version " << kernel::ACPI::getACPIVersion() << ".0)\n" << SWAP_BUFF();
 
             // Log all discovered ACPI tables
             kernel::ACPI::logAllTables();
@@ -254,17 +265,17 @@ void callConstructors() {
             // Initialize power management
             if (kernel::PowerManagement::initialize()) {
                 LOG_INFO("Power management initialized");
-                textRenderer << "Power management initialized.. \n" << SWAP_BUFF();
+                console << "Power management initialized\n" << SWAP_BUFF();
             }
             else {
                 LOG_WARN("Power management initialization failed");
-                textRenderer << "Power management initialization failed!\n" << SWAP_BUFF();
+                console << "Power management failed!\n" << SWAP_BUFF();
             }
 
             // Initialize HPET (High Precision Event Timer)
             if (kernel::HPET::initialize()) {
                 LOG_INFO("HPET initialized successfully");
-                textRenderer << "HPET initialized (Frequency: " << kernel::HPET::getFrequency() << " Hz).. \n" << SWAP_BUFF();
+                console << "HPET initialized (" << kernel::HPET::getFrequency() << " Hz)\n" << SWAP_BUFF();
 
                 // Enable HPET main counter (does NOT replace PIT)
                 kernel::HPET::enable();
@@ -272,7 +283,7 @@ void callConstructors() {
             }
             else {
                 LOG_WARN("HPET initialization failed (will use PIT only)");
-                textRenderer << "HPET not available, using PIT.. \n" << SWAP_BUFF();
+                console << "HPET not available (using PIT)\n" << SWAP_BUFF();
             }
 
             // Initialize PCIe (PCI Express Configuration Space) - DISCOVERY ONLY, NO HEAP!
@@ -280,62 +291,60 @@ void callConstructors() {
             // Actual device enumeration and driver initialization happens AFTER paging is enabled.
             if (kernel::PCIe::initialize()) {
                 LOG_INFO("PCIe configuration space initialized (base address from MCFG)");
-                textRenderer << "PCIe configuration space ready.. \n" << SWAP_BUFF();
+                console << "PCIe configuration space ready\n" << SWAP_BUFF();
 
                 // Enumerate all PCI Express devices
                 kernel::PCIe::enumerateDevices();
-                textRenderer << "PCIe: Found " << kernel::PCIe::getDeviceCount() << " devices.. \n" << SWAP_BUFF();
+                console << "PCIe: Found " << kernel::PCIe::getDeviceCount() << " devices\n" << SWAP_BUFF() << SWAP_BUFF();
             }
             else {
                 LOG_WARN("PCIe initialization failed (MCFG table not found or invalid)");
-                textRenderer << "PCIe not available.. \n" << SWAP_BUFF();
+                console << "PCIe not available\n" << SWAP_BUFF();
             }
         }
         else {
             LOG_WARN("ACPI initialization failed");
-            textRenderer << "ACPI initialization failed!\n" << SWAP_BUFF();
+            console << "ACPI initialization failed!\n" << SWAP_BUFF();
         }
     }
     else {
         LOG_WARN("No ACPI support - RSDP not provided by bootloader");
-        textRenderer << "No ACPI support - RSDP not provided by bootloader!\n" << SWAP_BUFF();
+        console << "No ACPI support!\n" << SWAP_BUFF();
     }
 
 
     // ----------------------- Initialize Global Descriptor Tables -------------
-    // enter protected mode (32-bit)
     enable_protected_mode();
     if (kernel::initializeGlobalDescriptorTable()) {
-        textRenderer << "Initialized GDT\n" << SWAP_BUFF();
+        console << "Initialized GDT\n" << SWAP_BUFF();
         LOG_INFO("Initialized GDT.");
     }
     else { kernel::kernelPanic("Failed to initialize the GDT"); }
 
-
     // ----------------------- Initialize Interrupts ----------------------------
     if (kernel::initializeInterrupts()) {
-        textRenderer << "Initialized Interrupts\n" << SWAP_BUFF();
+        console << "Initialized Interrupts\n" << SWAP_BUFF();
         LOG_INFO("Initialized Interrupts.");
     }
     else { kernel::kernelPanic("Failed to initialize Interrupts"); }
 
     // initialize system clock with frequency of 250 Hz initially
     PalmyraOS::kernel::SystemClock::initialize(kernel::SystemClockFrequency);
-    textRenderer << "Initialized System Clock at " << kernel::SystemClockFrequency << " Hz.\n" << SWAP_BUFF();
+    console << "Initialized System Clock at " << kernel::SystemClockFrequency << " Hz\n" << SWAP_BUFF();
     LOG_INFO("Initialized System Clock at %d Hz.", kernel::SystemClockFrequency);
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Physical Memory -------------------------------
-    textRenderer << "Initializing Physical Memory: " << (memInfo ? memInfo->mem_upper : 0) << " KiB\n" << SWAP_BUFF();
+    console << "Initializing Physical Memory: " << (memInfo ? memInfo->mem_upper : 0) << " KiB\n";
     kernel::initializePhysicalMemory(multiboot2_info);
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Virtual Memory -------------------------------
-    textRenderer << "Initializing Virtual Memory..." << SWAP_BUFF();
+    console << "Initializing Virtual Memory..." << SWAP_BUFF();
     PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-    kernel::initializeVirtualMemory(multiboot2_info);
+    kernel::initializeVirtualMemory(multiboot2_info, console);
     PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
-    textRenderer << " Done.\n" << SWAP_BUFF();
+    console << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);
 
     //	kernel::testMemory();
@@ -343,37 +352,31 @@ void callConstructors() {
 
 
     // ----------------------- Initialize PCIe Drivers (AFTER paging!) -------------------------------
-    // Now that paging is enabled and heap manager is ready, we can enumerate devices
-    // and initialize drivers that require DMA buffers and dynamic memory allocation.
-    textRenderer << "Initializing PCIe drivers..." << SWAP_BUFF();
-    kernel::initializePCIeDrivers();
-    textRenderer << " Done.\n" << SWAP_BUFF();
+    console << "Initializing PCIe drivers...\n" << SWAP_BUFF();
+    kernel::initializePCIeDrivers(console);
     kernel::CPU::delay(SHORT_DELAY);
 
     // ----------------------- Initialize Network Protocols -------
-    kernel::initializeNetworkProtocols();
+    kernel::initializeNetworkProtocols(console);
 
     // ----------------------- Test Network Connectivity -------
-    kernel::testNetworkConnectivity();
+    kernel::testNetworkConnectivity(console);
 
     // ----------------------- Virtual File System -------------------------------
-
-    textRenderer << "Initializing Virtual File System..." << SWAP_BUFF();
+    console << "Initializing Virtual File System..." << SWAP_BUFF();
     kernel::vfs::VirtualFileSystem::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
+    console << " Done.\n" << SWAP_BUFF();
 
     kernel::RTC::initialize();
-    textRenderer << "RTC is initialized.\n" << SWAP_BUFF();
+    console << "RTC initialized\n" << SWAP_BUFF();
 
     // Measure CPU frequency using HPET (or fall back to RTC if HPET not available)
-    textRenderer << "Measuring CPU frequency.." << SWAP_BUFF();
+    console << "Measuring CPU frequency..." << SWAP_BUFF();
     {
-
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
 
         // Use HPET for measurement if available, otherwise fall back to RTC
         if (kernel::HPET::isInitialized()) {
-            // Measure CPU TSC frequency directly using HPET (100ms measurement)
             uint32_t cpuFreqMHz = kernel::HPET::measureCPUFrequency(100);
             if (cpuFreqMHz > 0) {
                 kernel::CPU::setCPUFrequency(cpuFreqMHz);
@@ -381,78 +384,61 @@ void callConstructors() {
             }
             else {
                 LOG_WARN("HPET measurement failed, using RTC fallback");
-                kernel::CPU::initialize();  // Fallback to RTC-based measurement
+                kernel::CPU::initialize();
             }
         }
         else {
             LOG_WARN("HPET not available, using RTC fallback");
-            kernel::CPU::initialize();  // Uses RTC-based measurement (2 seconds)
+            kernel::CPU::initialize();
         }
 
         PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
-        textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
-        textRenderer << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz] " << SWAP_BUFF();
+        console << " [CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
+        console << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz]\n" << SWAP_BUFF();
 
         uint32_t hsc_frequency = PalmyraOS::kernel::CPU::getHSCFrequency();
-        if (hsc_frequency > 50) {
-
-            textRenderer << " Updating HSC to " << hsc_frequency << " Hz] " << SWAP_BUFF();
-            PalmyraOS::kernel::SystemClock::setFrequency(hsc_frequency);
-        }
+        if (hsc_frequency > 50) { PalmyraOS::kernel::SystemClock::setFrequency(hsc_frequency); }
 
         kernel::CPU::delay(SHORT_DELAY);
     }
-    textRenderer << " Done.\n" << SWAP_BUFF();
 
     // ----------------------- Initialize Tasks -------------------------------
-
-
     {
-        textRenderer << "Initializing ATA.." << SWAP_BUFF();
+        console << "Initializing ATA...\n" << SWAP_BUFF();
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-        kernel::initializeDrivers();  // ATAs after interrupts run
-        textRenderer << " Done.\n" << SWAP_BUFF();
+        kernel::initializeDrivers(console);
         LOG_INFO("Initialized Drivers.");
 
-        textRenderer << "Initializing Partitions..." << SWAP_BUFF();
-        kernel::initializePartitions();
+        console << "Initializing Partitions...\n" << SWAP_BUFF();
+        kernel::initializePartitions(console);
         PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
-        textRenderer << " Done.\n" << SWAP_BUFF();
+        console << "Partitions initialized\n" << SWAP_BUFF();
         LOG_INFO("Initialized Partitions.");
     }
 
-    textRenderer << "Initializing SystemCallsManager..." << SWAP_BUFF();
+    console << "Initializing SystemCallsManager...\n" << SWAP_BUFF();
     kernel::SystemCallsManager::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);
 
-    textRenderer << "Initializing WindowManager..." << SWAP_BUFF();
+    console << "Initializing WindowManager...\n" << SWAP_BUFF();
     kernel::WindowManager::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);
-
 
     // ----------------------- Initialize Peripherals -------------------------------
-
-    textRenderer << "Initializing Keyboard Driver..." << SWAP_BUFF();
+    console << "Initializing Keyboard Driver...\n" << SWAP_BUFF();
     kernel::Keyboard::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
 
-    textRenderer << "Initializing Mouse Driver..." << SWAP_BUFF();
+    console << "Initializing Mouse Driver...\n" << SWAP_BUFF();
     kernel::Mouse::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
 
-    textRenderer << "Initializing Binaries.." << SWAP_BUFF();
+    console << "Initializing Binaries...\n" << SWAP_BUFF();
     kernel::initializeBinaries();
-    textRenderer << " Done.\n" << SWAP_BUFF();
 
-    textRenderer << "Re-measuring CPU frequency.." << SWAP_BUFF();
+    console << "Re-measuring CPU frequency..." << SWAP_BUFF();
     {
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
 
-        // Use HPET for measurement if available, otherwise fall back to RTC
         if (kernel::HPET::isInitialized()) {
-            // Measure CPU TSC frequency directly using HPET (100ms measurement)
             uint32_t cpuFreqMHz = kernel::HPET::measureCPUFrequency(100);
             if (cpuFreqMHz > 0) {
                 kernel::CPU::setCPUFrequency(cpuFreqMHz);
@@ -460,24 +446,22 @@ void callConstructors() {
             }
             else {
                 LOG_WARN("HPET re-measurement failed, using RTC fallback");
-                kernel::CPU::initialize();  // Fallback to RTC-based measurement
+                kernel::CPU::initialize();
             }
         }
-        else {
-            kernel::CPU::initialize();  // Uses RTC-based measurement (2 seconds)
-        }
+        else { kernel::CPU::initialize(); }
 
         PalmyraOS::kernel::interrupts::InterruptController::disableInterrupts();
+        console << " [CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
+        console << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz]\n" << SWAP_BUFF();
 
-        textRenderer << "[CPU: " << PalmyraOS::kernel::CPU::getCPUFrequency() << " MHz] " << SWAP_BUFF();
-        textRenderer << "[HSC: " << PalmyraOS::kernel::CPU::getHSCFrequency() << " Hz] " << SWAP_BUFF();
+        uint32_t hsc_frequency = PalmyraOS::kernel::CPU::getHSCFrequency();
+        if (hsc_frequency > 50) { PalmyraOS::kernel::SystemClock::setFrequency(hsc_frequency); }
         for (int i = 0; i < 5; ++i) { kernel::CPU::delay(SHORT_DELAY); }
     }
-    textRenderer << " Done.\n" << SWAP_BUFF();
 
-    textRenderer << "Initializing TaskManager..." << SWAP_BUFF();
+    console << "Initializing TaskManager...\n" << SWAP_BUFF();
     kernel::TaskManager::initialize();
-    textRenderer << " Done.\n" << SWAP_BUFF();
     kernel::CPU::delay(SHORT_DELAY);
 
     // ---------------------------- Add Processes -----------------------------------
@@ -559,12 +543,22 @@ void callConstructors() {
 
     // ----------------------- System Entry End -------------------------------
 
+    console << "\n";
+    console << "========================================\n";
+    console << "  Kernel Initialization Complete!\n";
+    console << "========================================\n";
+    console << "System ready. Starting scheduler...\n";
+    console.flush();
 
     // Now enable maskable interrupts
     {
         LOG_INFO("Enabling Interrupts.");
         PalmyraOS::kernel::interrupts::InterruptController::enableInterrupts();
-        textRenderer << "Interrupts are enabled.\n" << SWAP_BUFF();
+        console << "Interrupts enabled. Entering scheduler loop.\n";
+        console << "\n";  // Extra spacing for visibility
+        console << "[Boot complete - System running]\n";
+        console << "\n";  // Empty line for bottom margin
+        console.flush();
         LOG_INFO("Interrupts are enabled.");
     }
 

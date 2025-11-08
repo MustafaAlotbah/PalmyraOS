@@ -2,8 +2,8 @@
 
 #pragma once
 
-// #include "boot/multiboot.h"
 #include "boot/multiboot2.h"
+#include "core/BootConsole.h"
 #include "core/Display.h"
 #include "core/definitions.h"
 #include "core/memory/KernelHeap.h"
@@ -112,7 +112,7 @@ namespace PalmyraOS::kernel {
      * @param multiboot2_info Multiboot 2 information structure
      * @return True if initialization is successful, false otherwise.
      */
-    bool initializeVirtualMemory(const Multiboot2::MultibootInfo& multiboot2_info);
+    bool initializeVirtualMemory(const Multiboot2::MultibootInfo& multiboot2_info, BootConsole& console);
 
     /**
      * @brief Tests the memory system.
@@ -122,13 +122,11 @@ namespace PalmyraOS::kernel {
      */
     void testMemory();
 
-    void initializeDrivers();           // ATA/IDE drivers
-    void initializePCIeDrivers();       // PCIe drivers (network, etc.) - MUST be called AFTER paging!
-    void initializeNetworkProtocols();  // Network protocols (ARP, DNS, IPv4, ICMP)
-    void testNetworkConnectivity();     // Network connectivity tests (ping)
-
-    void initializePartitions();
-
+    void initializeDrivers(BootConsole& console);           // ATA/IDE drivers
+    void initializePCIeDrivers(BootConsole& console);       // PCIe drivers (network, etc.) - MUST be called AFTER paging!
+    void initializeNetworkProtocols(BootConsole& console);  // Network protocols (ARP, DNS, IPv4, ICMP)
+    void testNetworkConnectivity(BootConsole& console);     // Network connectivity tests (ping)
+    void initializePartitions(BootConsole& console);        // Initialize partitions
     void initializeBinaries();
 
     /**
