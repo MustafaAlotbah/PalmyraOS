@@ -4,9 +4,13 @@
 #include "core/definitions.h"
 #include "core/files/VirtualFileSystem.h"
 #include "core/memory/KernelHeapAllocator.h"
+#include "libs/MutexTracker.h"
 
 
 namespace PalmyraOS::kernel {
+
+    // Forward declaration
+    class Mutex;
 
     // Maximum number of processes supported
     constexpr uint32_t MAX_PROCESSES             = 512;
@@ -125,6 +129,39 @@ namespace PalmyraOS::kernel {
          * Note: This cannot be called within the process stack, as memory will be freed!
          */
         void kill();
+
+        // ==================== Mutex Management ====================
+
+        /**
+         * @brief Acquire a mutex with automatic tracking
+         *
+         * Blocks until the mutex is acquired. Automatically adds mutex to
+         * tracking list for cleanup on process death.
+         *
+         * @param mutex The mutex to acquire
+         */
+        void acquireMutex(Mutex& mutex);
+
+        /**
+         * @brief Release a mutex and remove from tracking
+         *
+         * @param mutex The mutex to release
+         */
+        void releaseMutex(Mutex& mutex);
+
+        /**
+         * @brief Try to acquire mutex without blocking
+         *
+         * @param mutex The mutex to try acquiring
+         * @return true if acquired and tracked, false if already locked
+         */
+        bool tryAcquireMutex(Mutex& mutex);
+
+        /**
+         * @brief Get mutex tracker for introspection/debugging
+         * @return Reference to the mutex tracker
+         */
+        MutexTracker& getMutexTracker() { return mutexTracker_; }
 
         /**
          * @brief Registers pages for the process to keep track of them.
@@ -305,6 +342,11 @@ namespace PalmyraOS::kernel {
         uint32_t initial_brk = 0;
         uint32_t current_brk = 0;
         uint32_t max_brk     = 0;
+
+        // ==================== Synchronization ====================
+
+        /// @brief Tracks mutexes held by this process (for automatic cleanup on death)
+        MutexTracker mutexTracker_;
     };
 
     /**
@@ -345,6 +387,14 @@ namespace PalmyraOS::kernel {
         static void startAtomicOperation();
         static void endAtomicOperation();
         static uint32_t getAtomicLevel();
+
+        /**
+         * @brief Voluntarily yield CPU to other processes
+         *
+         * Causes an immediate context switch to the next ready process.
+         * Used by mutexes when waiting for locks.
+         */
+        static void yield();
 
     public:
         /**

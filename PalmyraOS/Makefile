@@ -15,6 +15,7 @@ SUBDIRS := \
 	source/core/boot/ \
 	source/core/acpi/ \
 	source/core/pcie/ \
+	source/core/sync/ \
 	source/core/peripherals/ \
 	source/core/memory \
 	source/core/std \

@@ -18,8 +18,10 @@
 
 #include "core/port.h"
 
-
 namespace PalmyraOS::kernel {
+    // Forward declaration
+    class Mutex;
+
     // Transfer Modes:
     // DMA (Direct Memory Access)
     // PIO (Programmed I/O)
@@ -86,6 +88,12 @@ namespace PalmyraOS::kernel {
         [[nodiscard]] uint32_t getSectors28Bit() const;
         [[nodiscard]] uint32_t getSectors48Bit() const;
         [[nodiscard]] bool supportsLBA48() const;
+
+        /**
+         * @brief Get the mutex protecting this ATA controller
+         * @return Pointer to mutex, or nullptr if not initialized
+         */
+        [[nodiscard]] Mutex* getMutex() const { return mutex_; }
 
     protected:
         /**
@@ -169,6 +177,12 @@ namespace PalmyraOS::kernel {
         uint32_t sectors28Bit_{};    // Number of 28-bit addressable sectors
         uint32_t sectors48Bit_{};    // Number of 48-bit addressable sectors
         bool supports48Bit_{};       // Indicates LBA48 support
+
+        // ==================== Synchronization ====================
+
+        /// @brief Mutex to protect concurrent access to this ATA controller
+        /// Prevents race conditions when multiple processes access the same disk
+        Mutex* mutex_;
     };
 
 }  // namespace PalmyraOS::kernel

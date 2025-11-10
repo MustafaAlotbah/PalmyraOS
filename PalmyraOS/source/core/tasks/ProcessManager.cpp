@@ -5,6 +5,7 @@
 #include <new>
 
 #include "core/SystemClock.h"
+#include "core/sync/Mutex.h"
 #include "core/tasks/ProcessManager.h"
 
 #include "libs/memory.h"
@@ -270,6 +271,10 @@ void PalmyraOS::kernel::Process::kill() {
     age_   = 0;
     // exitCode_ is set by _exit syscall
 
+    // Release any mutexes held by this process (prevents deadlock!)
+    // MutexTracker automatically handles all held mutexes
+    mutexTracker_.forceReleaseAll(pid_);
+
     // clean up memory
     for (auto& physicalPage: physicalPages_) { kernel::kernelPagingDirectory_ptr->freePage(physicalPage); }
     physicalPages_.clear();
@@ -279,6 +284,102 @@ void PalmyraOS::kernel::Process::kill() {
     windows_.clear();
 
     // TODO free directory table arrays if user process
+}
+
+// ==================== Mutex Management Methods ====================
+
+void PalmyraOS::kernel::Process::acquireMutex(Mutex& mutex) {
+    /**
+     * @brief Acquire mutex with automatic tracking
+     *
+     * This method orchestrates mutex acquisition:
+     * 1. Attempts to acquire the mutex (may block)
+     * 2. Tracks the mutex for cleanup on process death
+     * 3. Handles all process state transitions
+     */
+
+    uint32_t myPID = pid_;
+
+    // Main acquisition loop
+    while (true) {
+        // Try to acquire lock atomically (fast path)
+        if (mutex.tryAcquire(myPID)) {
+            // SUCCESS - we got the lock!
+            // Track it for automatic cleanup
+            if (!mutexTracker_.track(&mutex)) {
+                // Tracking failed (too many mutexes) - release and fail
+                LOG_ERROR("Process %u: Cannot track mutex, releasing", myPID);
+                mutex.release(myPID);
+                return;
+            }
+            return;  // Done!
+        }
+
+        // Lock is held - check for deadlock
+        if (mutex.getOwner() == myPID) {
+            LOG_ERROR("Process %u: Deadlock - trying to re-lock owned mutex", myPID);
+            return;
+        }
+
+        // Add ourselves to wait queue (only if not already waiting)
+        if (state_ != State::Waiting) {
+            if (!mutex.enqueueWaiter(myPID)) {
+                LOG_ERROR("Process %u: Mutex wait queue full", myPID);
+                return;
+            }
+            state_ = State::Waiting;
+        }
+
+        // Yield until woken up
+        while (state_ == State::Waiting) {
+            age_ = 0;
+            asm volatile("int $0x20");  // Trigger scheduler
+        }
+
+        // We've been woken - loop back to try CAS again
+    }
+}
+
+void PalmyraOS::kernel::Process::releaseMutex(Mutex& mutex) {
+    /**
+     * @brief Release mutex and remove from tracking
+     */
+
+    // Release the mutex
+    if (!mutex.release(pid_)) {
+        LOG_ERROR("Process %u: Failed to release mutex (not owner?)", pid_);
+        return;
+    }
+
+    // Untrack it
+    if (!mutexTracker_.untrack(&mutex)) { LOG_WARN("Process %u: Mutex wasn't being tracked", pid_); }
+
+    // Wake up one waiter
+    uint32_t nextPID = 0;
+    if (mutex.dequeueWaiter(&nextPID)) {
+        Process* nextProc = TaskManager::getProcess(nextPID);
+
+        if (nextProc && nextProc->state_ == State::Waiting) {
+            nextProc->state_ = State::Ready;
+            LOG_DEBUG("Process %u: Woke up process %u from mutex wait", pid_, nextPID);
+        }
+    }
+}
+
+bool PalmyraOS::kernel::Process::tryAcquireMutex(Mutex& mutex) {
+    /**
+     * @brief Non-blocking mutex acquire with tracking
+     */
+
+    if (mutex.tryAcquire(pid_)) {
+        if (!mutexTracker_.track(&mutex)) {
+            mutex.release(pid_);
+            return false;
+        }
+        return true;
+    }
+
+    return false;
 }
 
 void PalmyraOS::kernel::Process::dispatcher(PalmyraOS::kernel::Process::Arguments* args) {
@@ -812,12 +913,30 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::getProcess(uint32_t 
 }
 
 void PalmyraOS::kernel::TaskManager::startAtomicOperation() {
-    if (processes_[currentProcessIndex_].mode_ != Process::Mode::Kernel) return;
+    // Increment atomic section level (prevents context switches)
+    // Works for BOTH kernel and user mode processes
     atomicSectionLevel_++;
 }
 
 void PalmyraOS::kernel::TaskManager::endAtomicOperation() {
     if (atomicSectionLevel_ > 0) atomicSectionLevel_--;
+}
+
+void PalmyraOS::kernel::TaskManager::yield() {
+    /**
+     * @brief Voluntarily give up CPU to allow other processes to run
+     *
+     * This function forces an immediate context switch by triggering
+     * the scheduler interrupt. Used by mutexes when waiting for locks.
+     */
+
+    // Force context switch by resetting age to 0
+    // This ensures the scheduler will switch even if we have time slice left
+    if (currentProcessIndex_ < processes_.size()) { processes_[currentProcessIndex_].age_ = 0; }
+
+    // Trigger software interrupt to invoke scheduler
+    // INT 0x20 is the timer interrupt (scheduler entry point)
+    asm volatile("int $0x20");
 }
 
 PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(KVector<uint8_t>& elfFileContent,

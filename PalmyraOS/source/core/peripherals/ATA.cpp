@@ -3,20 +3,30 @@
 #include "core/SystemClock.h"
 #include "core/cpu.h"
 #include "core/peripherals/Logger.h"
+#include "core/sync/Mutex.h"
+#include "core/tasks/ProcessManager.h"
 #include "libs/memory.h"
+#include <new>
 
 
 namespace PalmyraOS::kernel {
 
 
     ATA::ATA(uint16_t portBase, Type deviceType)
-        : basePort_(portBase), dataPort_(portBase), errorPort_(portBase + 1), sectorCountPort_(portBase + 2), lbaLowPort_(portBase + 3),
-          lbaMidPort_(portBase + 4), lbaHighPort_(portBase + 5), devicePort_(portBase + 6), commandPort_(portBase + 7), controlPort_(portBase + 0x206),
-          deviceType_(deviceType) {
+        : basePort_(portBase), dataPort_(portBase), errorPort_(portBase + 1), sectorCountPort_(portBase + 2), lbaLowPort_(portBase + 3), lbaMidPort_(portBase + 4),
+          lbaHighPort_(portBase + 5), devicePort_(portBase + 6), commandPort_(portBase + 7), controlPort_(portBase + 0x206), deviceType_(deviceType), mutex_(nullptr) {
         // Initialize strings to null characters
         memset(serialNumber_, '\0', sizeof(serialNumber_));
         memset(firmwareVersion_, '\0', sizeof(firmwareVersion_));
         memset(modelNumber_, '\0', sizeof(modelNumber_));
+
+        // Allocate mutex for this ATA controller
+        void* mutexMem = kernel::heapManager.alloc(sizeof(kernel::Mutex));
+        if (mutexMem) {
+            mutex_ = new (mutexMem) kernel::Mutex();
+            LOG_DEBUG("ATA Port (0x%X) %s: Mutex initialized", basePort_, toString(deviceType_));
+        }
+        else { LOG_ERROR("ATA Port (0x%X) %s: Failed to allocate mutex!", basePort_, toString(deviceType_)); }
     }
 
     bool ATA::identify(uint32_t timeout) {
@@ -81,7 +91,16 @@ namespace PalmyraOS::kernel {
             return false;
         }
 
-        return executeCommand(Command::ReadSectors, logicalBlockAddress, 1, buffer, timeout) && checkStatus();
+        // CRITICAL: Acquire mutex to prevent race conditions during disk I/O
+        // Uses Process::acquireMutex() for automatic tracking and cleanup
+        Process* current = TaskManager::getCurrentProcess();
+        if (current && mutex_) { current->acquireMutex(*mutex_); }
+
+        bool success = executeCommand(Command::ReadSectors, logicalBlockAddress, 1, buffer, timeout) && checkStatus();
+
+        if (current && mutex_) { current->releaseMutex(*mutex_); }
+
+        return success;
     }
 
     bool ATA::writeSector(uint32_t logicalBlockAddress, const uint8_t* buffer, uint32_t timeout) {
@@ -91,7 +110,15 @@ namespace PalmyraOS::kernel {
             return false;
         }
 
-        return executeCommand(Command::WriteSectors, logicalBlockAddress, 1, const_cast<uint8_t*>(buffer), timeout) && checkStatus();
+        // CRITICAL: Acquire mutex to prevent race conditions during disk I/O
+        Process* current = TaskManager::getCurrentProcess();
+        if (current && mutex_) { current->acquireMutex(*mutex_); }
+
+        bool success = executeCommand(Command::WriteSectors, logicalBlockAddress, 1, const_cast<uint8_t*>(buffer), timeout) && checkStatus();
+
+        if (current && mutex_) { current->releaseMutex(*mutex_); }
+
+        return success;
     }
 
     bool ATA::waitForBusy(uint32_t timeout) {
@@ -106,6 +133,14 @@ namespace PalmyraOS::kernel {
         {
             // Check if the current tick count exceeds the target tick count
             if (SystemClock::getTicks() > targetTicks) return false;
+
+            // Yield to other processes while waiting (keeps UI responsive!)
+            // Same logic as sched_yield() syscall
+            Process* current = TaskManager::getCurrentProcess();
+            if (current) {
+                current->age_ = 0;
+                asm volatile("int $0x20");
+            }
         }
         return true;
     }
@@ -133,6 +168,13 @@ namespace PalmyraOS::kernel {
                 LOG_ERROR("ATA Port (0x%X) %s: Timeout waiting for ready. Status: 0x%X", basePort_, toString(deviceType_), status);
                 return false;
             }
+
+            // Yield to other processes while waiting (keeps UI responsive!)
+            Process* current = TaskManager::getCurrentProcess();
+            if (current) {
+                current->age_ = 0;
+                asm volatile("int $0x20");
+            }
         }
         return true;
     }
@@ -147,9 +189,7 @@ namespace PalmyraOS::kernel {
         return (commandPort_.read() != 0x00);
     }
 
-    void ATA::selectDevice(uint32_t logicalBlockAddress) {
-        devicePort_.write((deviceType_ == Type::Master ? 0xE0 : 0xF0) | ((logicalBlockAddress >> 24) & 0x0F));
-    }
+    void ATA::selectDevice(uint32_t logicalBlockAddress) { devicePort_.write((deviceType_ == Type::Master ? 0xE0 : 0xF0) | ((logicalBlockAddress >> 24) & 0x0F)); }
 
     void ATA::setLBA(uint32_t logicalBlockAddress) {
         lbaLowPort_.write(logicalBlockAddress & 0xFF);
@@ -158,6 +198,8 @@ namespace PalmyraOS::kernel {
     }
 
     bool ATA::executeCommand(Command command, uint32_t logicalBlockAddress, uint8_t sectorCount, uint8_t* buffer, uint32_t timeout) {
+        // NOTE: This function is called from readSector()/writeSector() which already hold the mutex!
+
         // Optionally check if the drive is already ready and not busy
         if (!waitForNotBusy(timeout)) {
             LOG_ERROR("ATA Port (0x%X) %s: Command 0x%X timed out (Busy).", basePort_, toString(deviceType_), static_cast<uint8_t>(command));
@@ -269,6 +311,13 @@ namespace PalmyraOS::kernel {
 
             // Not busy
             if (!(status & 0x80)) return true;
+
+            // Yield to other processes while waiting (keeps UI responsive!)
+            Process* current = TaskManager::getCurrentProcess();
+            if (current) {
+                current->age_ = 0;
+                asm volatile("int $0x20");
+            }
         }
         return false;
     }
