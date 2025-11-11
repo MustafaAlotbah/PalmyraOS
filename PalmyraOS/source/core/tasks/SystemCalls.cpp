@@ -15,6 +15,7 @@
 #include "core/files/VirtualFileSystem.h"
 #include "core/tasks/FileDescriptor.h"
 #include "core/tasks/ProcessManager.h"
+#include "core/tasks/SocketDescriptor.h"
 #include "core/tasks/WindowManager.h"
 
 #include "core/peripherals/Logger.h"
@@ -69,6 +70,20 @@ void PalmyraOS::kernel::SystemCallsManager::initialize() {
     // Adopted from Linux
     systemCallHandlers_[LINUX_INT_GETDENTS]           = &SystemCallsManager::handleGetdents;
     systemCallHandlers_[LINUX_INT_PRCTL]              = &SystemCallsManager::handleArchPrctl;
+
+    // Socket syscalls
+    systemCallHandlers_[POSIX_INT_SOCKET]             = &SystemCallsManager::handleSocket;
+    systemCallHandlers_[POSIX_INT_BIND]               = &SystemCallsManager::handleBind;
+    systemCallHandlers_[POSIX_INT_CONNECT]            = &SystemCallsManager::handleConnect;
+    systemCallHandlers_[POSIX_INT_LISTEN]             = &SystemCallsManager::handleListen;
+    systemCallHandlers_[POSIX_INT_ACCEPT]             = &SystemCallsManager::handleAccept;
+    systemCallHandlers_[POSIX_INT_SENDTO]             = &SystemCallsManager::handleSendto;
+    systemCallHandlers_[POSIX_INT_RECVFROM]           = &SystemCallsManager::handleRecvfrom;
+    systemCallHandlers_[POSIX_INT_SETSOCKOPT]         = &SystemCallsManager::handleSetsockopt;
+    systemCallHandlers_[POSIX_INT_GETSOCKOPT]         = &SystemCallsManager::handleGetsockopt;
+    systemCallHandlers_[POSIX_INT_GETSOCKNAME]        = &SystemCallsManager::handleGetsockname;
+    systemCallHandlers_[POSIX_INT_GETPEERNAME]        = &SystemCallsManager::handleGetpeername;
+    systemCallHandlers_[POSIX_INT_SHUTDOWN]           = &SystemCallsManager::handleShutdown;
 }
 
 // TODO isValidAddress(void* addr, size_t size) this way we are sure for more than one byte!!
@@ -1228,4 +1243,527 @@ void PalmyraOS::kernel::SystemCallsManager::handleReboot(PalmyraOS::kernel::inte
 
     // Should never reach here for RESTART/POWER_OFF/HALT
     regs->eax = 0;
+}
+
+// ==================== Socket Syscalls ====================
+
+void PalmyraOS::kernel::SystemCallsManager::handleSocket(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int socket(int domain, int type, int protocol);
+    int domain   = (int) regs->ebx;
+    int type     = (int) regs->ecx;
+    int protocol = (int) regs->edx;
+
+    LOG_INFO("SYSCALL socket(domain=%d, type=%d, protocol=%d)", domain, type, protocol);
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Create SocketDescriptor
+    auto* socketDesc = heapManager.createInstance<SocketDescriptor>(domain, type, protocol);
+    if (!socketDesc) {
+        LOG_ERROR("SYSCALL socket() -> failed to create socket descriptor");
+        regs->eax = -ENOMEM;
+        return;
+    }
+
+    // Allocate file descriptor
+    fd_t sockfd = proc->descriptorTable_.allocate(socketDesc);
+    if (sockfd < 0) {
+        LOG_ERROR("SYSCALL socket() -> failed to allocate descriptor");
+        delete socketDesc;
+        regs->eax = -EMFILE;
+        return;
+    }
+
+    LOG_INFO("SYSCALL socket() -> fd=%d", sockfd);
+    regs->eax = sockfd;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleBind(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+    fd_t sockfd      = (fd_t) regs->ebx;
+    const void* addr = (const void*) regs->ecx;
+    uint32_t addrlen = regs->edx;
+
+    LOG_INFO("SYSCALL bind(sockfd=%d, addr=%p, addrlen=%u)", sockfd, addr, addrlen);
+
+    // Validate address
+    if (!isValidAddress((void*) addr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL bind() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call bind
+    int result       = socketDesc->bind(addr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL bind() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleConnect(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+    fd_t sockfd      = (fd_t) regs->ebx;
+    const void* addr = (const void*) regs->ecx;
+    uint32_t addrlen = regs->edx;
+
+    LOG_INFO("SYSCALL connect(sockfd=%d, addr=%p, addrlen=%u)", sockfd, addr, addrlen);
+
+    // Validate address
+    if (!isValidAddress((void*) addr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL connect() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call connect
+    int result       = socketDesc->connect(addr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL connect() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleSendto(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+    //                const struct sockaddr *dest_addr, socklen_t addrlen);
+    fd_t sockfd          = (fd_t) regs->ebx;
+    const char* buffer   = (const char*) regs->ecx;
+    size_t length        = regs->edx;
+    int flags            = (int) regs->esi;
+    const void* destAddr = (const void*) regs->edi;
+    uint32_t addrlen     = regs->ebp;
+
+    LOG_INFO("SYSCALL sendto(sockfd=%d, len=%u, flags=%d)", sockfd, length, flags);
+
+    // Validate buffer
+    if (!isValidAddress((void*) buffer)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate dest address if provided
+    if (destAddr && !isValidAddress((void*) destAddr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL sendto() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call sendto
+    size_t result    = socketDesc->sendto(buffer, length, flags, destAddr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL sendto() -> %d bytes", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleRecvfrom(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+    //                  struct sockaddr *src_addr, socklen_t *addrlen);
+    fd_t sockfd       = (fd_t) regs->ebx;
+    char* buffer      = (char*) regs->ecx;
+    size_t length     = regs->edx;
+    int flags         = (int) regs->esi;
+    void* srcAddr     = (void*) regs->edi;
+    uint32_t* addrlen = (uint32_t*) regs->ebp;
+
+    LOG_INFO("SYSCALL recvfrom(sockfd=%d, len=%u, flags=%d)", sockfd, length, flags);
+
+    // Validate buffer
+    if (!isValidAddress(buffer)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate src address if provided
+    if (srcAddr && !isValidAddress(srcAddr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate addrlen if provided
+    if (addrlen && !isValidAddress(addrlen)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL recvfrom() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call recvfrom
+    size_t result    = socketDesc->recvfrom(buffer, length, flags, srcAddr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL recvfrom() -> %d bytes", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleSetsockopt(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int setsockopt(int sockfd, int level, int optname,
+    //                const void *optval, socklen_t optlen);
+    fd_t sockfd        = (fd_t) regs->ebx;
+    int level          = (int) regs->ecx;
+    int optname        = (int) regs->edx;
+    const void* optval = (const void*) regs->esi;
+    uint32_t optlen    = regs->edi;
+
+    LOG_INFO("SYSCALL setsockopt(sockfd=%d, level=%d, optname=%d, optlen=%u)", sockfd, level, optname, optlen);
+
+    // Validate optval
+    if (optval && !isValidAddress((void*) optval)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL setsockopt() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call setsockopt
+    int result       = socketDesc->setsockopt(level, optname, optval, optlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL setsockopt() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetsockopt(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int getsockopt(int sockfd, int level, int optname,
+    //                void *optval, socklen_t *optlen);
+    fd_t sockfd      = (fd_t) regs->ebx;
+    int level        = (int) regs->ecx;
+    int optname      = (int) regs->edx;
+    void* optval     = (void*) regs->esi;
+    uint32_t* optlen = (uint32_t*) regs->edi;
+
+    LOG_INFO("SYSCALL getsockopt(sockfd=%d, level=%d, optname=%d)", sockfd, level, optname);
+
+    // Validate optval
+    if (optval && !isValidAddress(optval)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate optlen
+    if (optlen && !isValidAddress(optlen)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL getsockopt() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call getsockopt
+    int result       = socketDesc->getsockopt(level, optname, optval, optlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL getsockopt() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetsockname(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+    fd_t sockfd       = (fd_t) regs->ebx;
+    void* addr        = (void*) regs->ecx;
+    uint32_t* addrlen = (uint32_t*) regs->edx;
+
+    LOG_INFO("SYSCALL getsockname(sockfd=%d)", sockfd);
+
+    // Validate address
+    if (!isValidAddress(addr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate addrlen
+    if (!isValidAddress(addrlen)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL getsockname() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call getsockname
+    int result       = socketDesc->getsockname(addr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL getsockname() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleGetpeername(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+    fd_t sockfd       = (fd_t) regs->ebx;
+    void* addr        = (void*) regs->ecx;
+    uint32_t* addrlen = (uint32_t*) regs->edx;
+
+    LOG_INFO("SYSCALL getpeername(sockfd=%d)", sockfd);
+
+    // Validate address
+    if (!isValidAddress(addr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate addrlen
+    if (!isValidAddress(addrlen)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL getpeername() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call getpeername
+    int result       = socketDesc->getpeername(addr, addrlen);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL getpeername() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleListen(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int listen(int sockfd, int backlog);
+    fd_t sockfd = (fd_t) regs->ebx;
+    int backlog = (int) regs->ecx;
+
+    LOG_INFO("SYSCALL listen(sockfd=%d, backlog=%d)", sockfd, backlog);
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL listen() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call listen
+    int result       = socketDesc->listen(backlog);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL listen() -> %d", result);
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleAccept(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+    fd_t sockfd       = (fd_t) regs->ebx;
+    void* addr        = (void*) regs->ecx;
+    uint32_t* addrlen = (uint32_t*) regs->edx;
+
+    LOG_INFO("SYSCALL accept(sockfd=%d)", sockfd);
+
+    // Validate address if provided
+    if (addr && !isValidAddress(addr)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Validate addrlen if provided
+    if (addrlen && !isValidAddress(addrlen)) {
+        regs->eax = -EFAULT;
+        return;
+    }
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL accept() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc            = static_cast<SocketDescriptor*>(desc);
+
+    // Call accept
+    SocketDescriptor* newSocket = socketDesc->accept(addr, addrlen);
+    if (!newSocket) {
+        LOG_ERROR("SYSCALL accept() -> failed");
+        regs->eax = -EOPNOTSUPP;  // Not implemented yet
+        return;
+    }
+
+    // Allocate file descriptor for new socket
+    fd_t newSockfd = proc->descriptorTable_.allocate(newSocket);
+    if (newSockfd < 0) {
+        LOG_ERROR("SYSCALL accept() -> failed to allocate descriptor");
+        delete newSocket;
+        regs->eax = -EMFILE;
+        return;
+    }
+
+    LOG_INFO("SYSCALL accept() -> new fd=%d", newSockfd);
+    regs->eax = newSockfd;
+}
+
+void PalmyraOS::kernel::SystemCallsManager::handleShutdown(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
+    // int shutdown(int sockfd, int how);
+    fd_t sockfd = (fd_t) regs->ebx;
+    int how     = (int) regs->ecx;
+
+    LOG_INFO("SYSCALL shutdown(sockfd=%d, how=%d)", sockfd, how);
+
+    // Get current process
+    auto* proc = TaskManager::getCurrentProcess();
+    if (!proc) {
+        regs->eax = -ESRCH;
+        return;
+    }
+
+    // Get descriptor
+    Descriptor* desc = proc->descriptorTable_.get(sockfd);
+    if (!desc || desc->kind() != Descriptor::Kind::Socket) {
+        LOG_ERROR("SYSCALL shutdown() -> invalid socket descriptor %d", sockfd);
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Cast to SocketDescriptor
+    auto* socketDesc = static_cast<SocketDescriptor*>(desc);
+
+    // Call shutdown
+    int result       = socketDesc->shutdown(how);
+    regs->eax        = result;
+
+    LOG_INFO("SYSCALL shutdown() -> %d", result);
 }

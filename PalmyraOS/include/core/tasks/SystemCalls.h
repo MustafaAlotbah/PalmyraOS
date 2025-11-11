@@ -48,6 +48,20 @@ namespace PalmyraOS::kernel {
         static void handleGetWindowStatus(interrupts::CPURegisters* regs);
 
         static void handleWaitPID(interrupts::CPURegisters* regs);
+
+        /* Socket syscalls */
+        static void handleSocket(interrupts::CPURegisters* regs);
+        static void handleBind(interrupts::CPURegisters* regs);
+        static void handleConnect(interrupts::CPURegisters* regs);
+        static void handleListen(interrupts::CPURegisters* regs);
+        static void handleAccept(interrupts::CPURegisters* regs);
+        static void handleSendto(interrupts::CPURegisters* regs);
+        static void handleRecvfrom(interrupts::CPURegisters* regs);
+        static void handleSetsockopt(interrupts::CPURegisters* regs);
+        static void handleGetsockopt(interrupts::CPURegisters* regs);
+        static void handleGetsockname(interrupts::CPURegisters* regs);
+        static void handleGetpeername(interrupts::CPURegisters* regs);
+        static void handleShutdown(interrupts::CPURegisters* regs);
         static void handleSpawn(interrupts::CPURegisters* regs);
 
         static void handleBrk(interrupts::CPURegisters* regs);

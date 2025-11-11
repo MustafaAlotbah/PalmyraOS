@@ -1,8 +1,10 @@
 #include "core/network/PCnetDriver.h"
+#include "core/SystemClock.h"
 #include "core/kernel.h"
 #include "core/network/ARP.h"
 #include "core/network/Ethernet.h"
 #include "core/network/IPv4.h"
+#include "core/network/NetworkManager.h"
 #include "core/pcie/PCIe.h"
 #include "core/peripherals/Logger.h"
 #include "core/port.h"
@@ -11,10 +13,13 @@
 
 namespace PalmyraOS::kernel {
 
+    // Forward declaration for timer polling handler
+    static uint32_t* networkTimerPollHandler(interrupts::CPURegisters* regs);
+
     // ==================== Constructor / Destructor ====================
 
     PCnetDriver::PCnetDriver(uint8_t bus, uint8_t device, uint8_t function, types::HeapManagerBase* heapManager)
-        : NetworkInterface("eth0", nullptr, heapManager), bus_(bus), device_(device), function_(function), ioBase_(0), initBlock_(nullptr), initBlockRaw_(nullptr),
+        : NetworkInterface("eth0", nullptr, heapManager), bus_(bus), device_(device), function_(function), irqLine_(0), ioBase_(0), initBlock_(nullptr), initBlockRaw_(nullptr),
           txRing_(nullptr), rxRing_(nullptr), txRingRaw_(nullptr), rxRingRaw_(nullptr), currentTx_(0), currentRx_(0) {
 
         // Initialize buffer pointers to safe default (nullptr)
@@ -32,6 +37,52 @@ namespace PalmyraOS::kernel {
     bool PCnetDriver::initialize() {
         LOG_INFO("PCnet: Initializing AMD PCnet driver");
         LOG_INFO("PCnet: PCI location [%02X:%02X.%u]", bus_, device_, function_);
+
+        // Read interrupt configuration from PCI config space
+        irqLine_       = PCIe::readConfig8(bus_, device_, function_, 0x3C);  // Interrupt Line
+        uint8_t irqPin = PCIe::readConfig8(bus_, device_, function_, 0x3D);  // Interrupt PIN
+        LOG_INFO("PCnet: PCI Interrupt Line: IRQ%u, PIN: INT%c", irqLine_, 'A' + irqPin - 1);
+
+        // Register interrupt handler (IRQ x → interrupt vector 0x20 + x)
+        if (irqLine_ != 0 && irqLine_ < 16) {
+            uint8_t irqVector = 0x20 + irqLine_;
+            interrupts::InterruptController::setInterruptHandler(irqVector, &PCnetDriver::handleInterruptTrampoline);
+            LOG_INFO("PCnet: Registered interrupt handler for IRQ%u (vector 0x%02X)", irqLine_, irqVector);
+
+            // Explicitly unmask this IRQ in the PIC
+            // IRQ 0-7: Master PIC (port 0x21), IRQ 8-15: Slave PIC (port 0xA1)
+            if (irqLine_ >= 8) {
+                // Slave PIC - unmask bit (irqLine_ - 8)
+                ports::BytePort picData(0xA1);
+                uint8_t maskBefore = picData.read();
+                uint8_t maskAfter  = maskBefore & ~(1 << (irqLine_ - 8));  // Clear bit to unmask
+                picData.write(maskAfter);
+                uint8_t maskVerify = picData.read();
+                LOG_INFO("PCnet: Slave PIC IRQ%u: mask before=0x%02X, after=0x%02X, verify=0x%02X", irqLine_, maskBefore, maskAfter, maskVerify);
+            }
+            else {
+                // Master PIC - unmask bit irqLine_
+                ports::BytePort picData(0x21);
+                uint8_t maskBefore = picData.read();
+                uint8_t maskAfter  = maskBefore & ~(1 << irqLine_);  // Clear bit to unmask
+                picData.write(maskAfter);
+                uint8_t maskVerify = picData.read();
+                LOG_INFO("PCnet: Master PIC IRQ%u: mask before=0x%02X, after=0x%02X, verify=0x%02X", irqLine_, maskBefore, maskAfter, maskVerify);
+            }
+
+            // Diagnostic: Check PCI Command Register (bit 10 = Interrupt Disable)
+            uint16_t pciCommand    = PCIe::readConfig16(bus_, device_, function_, 0x04);
+            bool interruptDisabled = pciCommand & (1 << 10);
+            LOG_INFO("PCnet: PCI Command Register = 0x%04X (Interrupt Disable bit = %d)", pciCommand, interruptDisabled);
+            if (interruptDisabled) {
+                LOG_WARN("PCnet: PCI Interrupt Disable bit is SET! Clearing it...");
+                pciCommand &= ~(1 << 10);
+                PCIe::writeConfig16(bus_, device_, function_, 0x04, pciCommand);
+                uint16_t verify = PCIe::readConfig16(bus_, device_, function_, 0x04);
+                LOG_INFO("PCnet: PCI Command after clear: 0x%04X", verify);
+            }
+        }
+        else { LOG_WARN("PCnet: Invalid IRQ line %u, interrupts will not work", irqLine_); }
 
         // Read BAR0 from PCI config space (I/O base address)
         LOG_DEBUG("PCnet: Reading BAR0 from PCI config space...");
@@ -451,6 +502,24 @@ namespace PalmyraOS::kernel {
             csr0 = readCSR(CSR0);
             if ((csr0 & (TXON | RXON)) == (TXON | RXON)) {
                 LOG_INFO("PCnet: Interface enabled (TX/RX online, CSR0=0x%X)", csr0);
+                LOG_INFO("PCnet: Hardware interrupts enabled (INEA bit set, IRQ%u)", irqLine_);
+
+                // Diagnostic: Verify interrupt configuration
+                uint32_t csr3 = readCSR(CSR3);
+                uint32_t csr4 = readCSR(CSR4);
+                LOG_INFO("PCnet: Interrupt config: CSR3=0x%X, CSR4=0x%X", csr3, csr4);
+                LOG_INFO("PCnet: CSR0 breakdown: INEA=%d, RXON=%d, TXON=%d, IDON=%d", !!(csr0 & INEA), !!(csr0 & RXON), !!(csr0 & TXON), !!(csr0 & IDON));
+
+                // Check if RINT/TINT are masked in CSR3
+                bool rintMasked = csr3 & (1 << 10);  // RINTM bit
+                bool tintMasked = csr3 & (1 << 9);   // TINTM bit
+                if (rintMasked || tintMasked) { LOG_WARN("PCnet: Interrupts masked in CSR3! RINTM=%d, TINTM=%d", rintMasked, tintMasked); }
+
+                // Register timer polling handler (workaround for IRQ9 IOAPIC routing issue)
+                // IRQ9 has ACPI override (level-triggered, active-low) that PIC can't handle
+                SystemClock::attachHandler(&networkTimerPollHandler);
+                LOG_INFO("PCnet: Registered timer polling handler (100ms interval) as workaround for IRQ9");
+
                 setState(State::Up);
                 return true;
             }
@@ -489,9 +558,38 @@ namespace PalmyraOS::kernel {
 
     // ==================== Interrupt Handling ====================
 
+    uint32_t* PCnetDriver::handleInterruptTrampoline(interrupts::CPURegisters* regs) {
+        // Get the default network interface (assumes single network interface)
+        LOG_INFO("PCnet: *** IRQ9 HARDWARE INTERRUPT FIRED! *** CSR0 check follows...");
+        auto* networkInterface = NetworkManager::getDefaultInterface();
+        if (networkInterface) { networkInterface->handleInterrupt(); }
+        else { LOG_ERROR("PCnet: IRQ9 fired but no network interface available!"); }
+        return (uint32_t*) (regs);
+    }
+
+    // Static timer polling handler (workaround for IRQ9 routing issues)
+    static uint32_t* networkTimerPollHandler(interrupts::CPURegisters* regs) {
+        // Poll network every 25 ticks (100ms at 250Hz)
+        static uint32_t pollCounter = 0;
+        if (++pollCounter >= 25) {
+            pollCounter = 0;
+            auto* netif = NetworkManager::getDefaultInterface();
+            if (netif && netif->isUp()) {
+                netif->handleInterrupt();  // Process pending packets
+            }
+        }
+        return (uint32_t*) (regs);
+    }
+
     void PCnetDriver::handleInterrupt() {
         // Read interrupt status
         uint32_t csr0 = readCSR(CSR0);
+
+        // Diagnostic: Log interrupt flags
+        bool hasRINT  = csr0 & RINT;
+        bool hasTINT  = csr0 & TINT;
+        bool hasINTR  = csr0 & INTR;
+        if (hasRINT || hasTINT) { LOG_DEBUG("PCnet: handleInterrupt() CSR0=0x%X (RINT=%d, TINT=%d, INTR=%d)", csr0, hasRINT, hasTINT, hasINTR); }
 
         // ALWAYS poll for received packets (for ARP polling)
         // In a real OS, this would only be called on actual interrupts

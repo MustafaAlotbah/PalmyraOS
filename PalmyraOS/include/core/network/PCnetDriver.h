@@ -5,6 +5,11 @@
 
 namespace PalmyraOS::kernel {
 
+    // Forward declaration for interrupt handling
+    namespace interrupts {
+        struct CPURegisters;
+    }
+
     /**
      * @brief AMD PCnet-PCI II (Am79C970A) Network Driver
      *
@@ -455,12 +460,24 @@ namespace PalmyraOS::kernel {
         /// @brief Process received packets from RX ring (called from ISR)
         void processReceivedPackets();
 
+        /**
+         * @brief Interrupt handler trampoline (static for ISR registration)
+         *
+         * This static method is registered with the InterruptController.
+         * It retrieves the default network interface and calls its handleInterrupt().
+         *
+         * @param regs CPU register state (from ISR)
+         * @return Updated register state
+         */
+        static uint32_t* handleInterruptTrampoline(interrupts::CPURegisters* regs);
+
         // ==================== Member Variables ====================
 
         // **PCI Location**
         uint8_t bus_;       ///< PCI bus number
         uint8_t device_;    ///< PCI device number
         uint8_t function_;  ///< PCI function number
+        uint8_t irqLine_;   ///< PCI interrupt line (IRQ number)
 
         // **I/O Base Address**
         uint16_t ioBase_;  ///< I/O base address from BAR0

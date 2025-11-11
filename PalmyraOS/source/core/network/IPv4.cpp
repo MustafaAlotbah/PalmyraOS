@@ -2,6 +2,7 @@
 #include "core/network/ARP.h"
 #include "core/network/Ethernet.h"
 #include "core/network/ICMP.h"
+#include "core/network/ICMPSocket.h"
 #include "core/network/NetworkManager.h"
 #include "core/network/UDP.h"
 #include "core/peripherals/Logger.h"
@@ -210,7 +211,14 @@ namespace PalmyraOS::kernel {
         LOG_DEBUG("IPv4: Routing packet (protocol=%u, length=%u bytes)", protocol, payloadLength);
 
         switch (protocol) {
-            case PROTOCOL_ICMP: return ICMP::handleICMPPacket(payload, payloadLength, sourceIP);
+            case PROTOCOL_ICMP:
+                // Deliver to kernel ICMP handler (for ping replies, errors, etc.)
+                ICMP::handleICMPPacket(payload, payloadLength, sourceIP);
+
+                // ALSO deliver to all raw ICMP sockets (Linux behavior)
+                ICMPSocket::deliverToAllSockets(sourceIP, payload, payloadLength);
+
+                return true;
 
             case PROTOCOL_UDP:
                 LOG_INFO("IPv4: Dispatching UDP packet (%u bytes) from %u.%u.%u.%u",

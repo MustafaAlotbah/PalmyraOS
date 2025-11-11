@@ -17,6 +17,9 @@
 #define STDOUT 1
 #define STDERR 2
 
+/* Type definitions */
+typedef int32_t ssize_t;  // Signed size type for read/write return values
+
 
 /* Specific Interrupts */
 
@@ -62,6 +65,21 @@
 /* From Linux */
 #define LINUX_INT_GETDENTS 141
 #define LINUX_INT_PRCTL 384
+
+/* Socket syscalls (Linux x86-32 compatible) */
+#define POSIX_INT_SOCKET 359
+#define POSIX_INT_BIND 361
+#define POSIX_INT_CONNECT 362
+#define POSIX_INT_LISTEN 363
+#define POSIX_INT_ACCEPT 364
+#define POSIX_INT_GETSOCKOPT 365
+#define POSIX_INT_SETSOCKOPT 366
+#define POSIX_INT_GETSOCKNAME 367
+#define POSIX_INT_GETPEERNAME 368
+#define POSIX_INT_SENDTO 369
+#define POSIX_INT_RECVFROM 371
+#define POSIX_INT_SHUTDOWN 373
+
 
 /* Linux reboot() magic numbers and commands */
 #define LINUX_REBOOT_MAGIC1 0xfee1dead
@@ -360,3 +378,190 @@ int rmdir(const char* pathname);
  * - LINUX_REBOOT_CMD_HALT: Halt the system (stop CPU)
  */
 int reboot(int magic, int magic2, int cmd, void* arg);
+
+// ==================== Socket API (POSIX-compatible) ====================
+
+// Forward declarations
+struct sockaddr;
+
+/**
+ * @brief Creates an endpoint for communication and returns a file descriptor.
+ *
+ * Creates a socket of the specified type and protocol within the specified domain.
+ * The socket is used for network communication and can be used with read(), write(),
+ * and socket-specific functions like sendto(), recvfrom(), etc.
+ *
+ * @param domain Communication domain (AF_INET for IPv4)
+ * @param type Socket type:
+ *             - SOCK_STREAM: TCP (connection-oriented, reliable byte stream)
+ *             - SOCK_DGRAM:  UDP (connectionless, unreliable datagrams)
+ *             - SOCK_RAW:    Raw IP (for ICMP ping, requires IPPROTO_ICMP)
+ * @param protocol Protocol to use:
+ *                 - 0: Auto-select based on type (TCP for STREAM, UDP for DGRAM)
+ *                 - IPPROTO_ICMP (1): For raw ICMP sockets (ping, traceroute)
+ *                 - IPPROTO_TCP (6): Transmission Control Protocol
+ *                 - IPPROTO_UDP (17): User Datagram Protocol
+ * @return Socket file descriptor on success, or negative error code on failure
+ */
+int socket(int domain, int type, int protocol);
+
+/**
+ * @brief Binds a socket to a local address and port.
+ *
+ * Assigns a local address (IP and port) to the socket. For server sockets, this
+ * specifies the address on which to listen for incoming connections or datagrams.
+ * For raw sockets (SOCK_RAW), the port field is ignored.
+ *
+ * @param sockfd Socket file descriptor
+ * @param addr Pointer to sockaddr_in structure containing local address and port
+ * @param addrlen Size of the addr structure (typically sizeof(sockaddr_in))
+ * @return 0 on success, or negative error code on failure (e.g., -EADDRINUSE if port in use)
+ */
+int bind(int sockfd, const struct sockaddr* addr, uint32_t addrlen);
+
+/**
+ * @brief Connects a socket to a remote address.
+ *
+ * For TCP (SOCK_STREAM): Initiates a connection to the remote host.
+ * For UDP (SOCK_DGRAM): Sets the default destination address for send()/write().
+ * For raw sockets (SOCK_RAW): Filters received packets to only those from the remote address.
+ *
+ * @param sockfd Socket file descriptor
+ * @param addr Pointer to sockaddr_in structure containing remote address and port
+ * @param addrlen Size of the addr structure
+ * @return 0 on success, or negative error code on failure
+ */
+int connect(int sockfd, const struct sockaddr* addr, uint32_t addrlen);
+
+/**
+ * @brief Sends a message to a specific destination address.
+ *
+ * Sends data to the specified destination address. For connection-oriented sockets
+ * (TCP), the destination address is ignored and the connected peer is used.
+ * For raw sockets, the port field in dest_addr is ignored (e.g., ICMP has no ports).
+ *
+ * @param sockfd Socket file descriptor
+ * @param buf Pointer to data buffer to send
+ * @param len Length of data in bytes
+ * @param flags Message flags (MSG_DONTWAIT for non-blocking, etc.)
+ * @param dest_addr Destination address (sockaddr_in structure)
+ * @param addrlen Size of dest_addr structure
+ * @return Number of bytes sent on success, or negative error code on failure
+ */
+ssize_t sendto(int sockfd, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, uint32_t addrlen);
+
+/**
+ * @brief Receives a message from a socket, storing the source address.
+ *
+ * Receives data from the socket and optionally stores the source address.
+ * For connection-oriented sockets (TCP), src_addr is ignored.
+ * For raw sockets, the port field in src_addr is always 0 (e.g., ICMP has no ports).
+ *
+ * @param sockfd Socket file descriptor
+ * @param buf Pointer to buffer to store received data
+ * @param len Maximum number of bytes to receive
+ * @param flags Message flags (MSG_PEEK to peek without removing, etc.)
+ * @param src_addr Output: Source address (can be NULL if not needed)
+ * @param addrlen Input/Output: Size of src_addr buffer, updated with actual size
+ * @return Number of bytes received on success, 0 if no data available (non-blocking),
+ *         or negative error code on failure
+ */
+ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags, struct sockaddr* src_addr, uint32_t* addrlen);
+
+/**
+ * @brief Sets options on a socket.
+ *
+ * Modifies socket behavior by setting various options. Common options include
+ * SO_REUSEADDR (allow address reuse), SO_BROADCAST (enable broadcast), etc.
+ *
+ * @param sockfd Socket file descriptor
+ * @param level Option level (SOL_SOCKET for socket-level options)
+ * @param optname Option name (SO_REUSEADDR, SO_BROADCAST, etc.)
+ * @param optval Pointer to option value
+ * @param optlen Size of option value in bytes
+ * @return 0 on success, or negative error code on failure
+ */
+int setsockopt(int sockfd, int level, int optname, const void* optval, uint32_t optlen);
+
+/**
+ * @brief Gets the current value of a socket option.
+ *
+ * Retrieves the current value of the specified socket option.
+ *
+ * @param sockfd Socket file descriptor
+ * @param level Option level (SOL_SOCKET for socket-level options)
+ * @param optname Option name (SO_TYPE, SO_ERROR, etc.)
+ * @param optval Output: Pointer to buffer to store option value
+ * @param optlen Input/Output: Pointer to size of optval buffer, updated with actual size
+ * @return 0 on success, or negative error code on failure
+ */
+int getsockopt(int sockfd, int level, int optname, void* optval, uint32_t* optlen);
+
+/**
+ * @brief Gets the local address to which a socket is bound.
+ *
+ * Retrieves the current local address (IP and port) bound to the socket.
+ * Useful for determining which port was assigned after binding to port 0 (auto-assign).
+ *
+ * @param sockfd Socket file descriptor
+ * @param addr Output: Pointer to sockaddr structure to store local address
+ * @param addrlen Input/Output: Pointer to size of addr buffer, updated with actual size
+ * @return 0 on success, or negative error code on failure
+ */
+int getsockname(int sockfd, struct sockaddr* addr, uint32_t* addrlen);
+
+/**
+ * @brief Gets the address of the peer connected to the socket.
+ *
+ * Retrieves the remote address of the peer connected to this socket.
+ * Only valid for connected sockets (after connect() or accept()).
+ *
+ * @param sockfd Socket file descriptor
+ * @param addr Output: Pointer to sockaddr structure to store remote address
+ * @param addrlen Input/Output: Pointer to size of addr buffer, updated with actual size
+ * @return 0 on success, or -ENOTCONN if socket is not connected, or other negative error code
+ */
+int getpeername(int sockfd, struct sockaddr* addr, uint32_t* addrlen);
+
+/**
+ * @brief Marks a socket as passive, ready to accept incoming connections.
+ *
+ * Converts an active socket to a passive socket that will accept incoming connection
+ * requests using accept(). Only valid for connection-oriented sockets (SOCK_STREAM/TCP).
+ *
+ * @param sockfd Socket file descriptor
+ * @param backlog Maximum length of the queue of pending connections
+ * @return 0 on success, or negative error code on failure
+ */
+int listen(int sockfd, int backlog);
+
+/**
+ * @brief Accepts an incoming connection on a listening socket.
+ *
+ * Extracts the first connection request from the queue of pending connections,
+ * creates a new connected socket, and returns a new file descriptor for that socket.
+ * The original listening socket remains open to accept further connections.
+ * Only valid for connection-oriented sockets (SOCK_STREAM/TCP).
+ *
+ * @param sockfd Listening socket file descriptor
+ * @param addr Output: Pointer to sockaddr structure to store peer address (can be NULL)
+ * @param addrlen Input/Output: Pointer to size of addr buffer, updated with actual size (can be NULL)
+ * @return New socket file descriptor for the accepted connection on success,
+ *         or negative error code on failure
+ */
+int accept(int sockfd, struct sockaddr* addr, uint32_t* addrlen);
+
+/**
+ * @brief Shuts down part or all of a full-duplex connection.
+ *
+ * Disables further send and/or receive operations on a socket.
+ * Only valid for connection-oriented sockets (SOCK_STREAM/TCP).
+ *
+ * @param sockfd Socket file descriptor
+ * @param how Shutdown mode:
+ *            - SHUT_RD (0): Disable further receive operations
+ *            - SHUT_WR (1): Disable further send operations
+ *            - SHUT_RDWR (2): Disable both send and receive operations
+ * @return 0 on success, or negative error code on failure
+ */
+int shutdown(int sockfd, int how);

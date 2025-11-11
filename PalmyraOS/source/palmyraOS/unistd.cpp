@@ -403,3 +403,109 @@ int reboot(int magic, int magic2, int cmd, void* arg) {
     asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(magic_reg), "r"(magic2_reg), "r"(cmd_reg), "r"(arg_reg) : "memory");
     return result;
 }
+
+// ==================== Socket Syscalls ====================
+
+int socket(int domain, int type, int protocol) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_SOCKET), "b"(domain), "c"(type), "d"(protocol) : "memory");
+    return result;
+}
+
+int bind(int sockfd, const struct sockaddr* addr, uint32_t addrlen) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_BIND), "b"(sockfd), "c"(addr), "d"(addrlen) : "memory");
+    return result;
+}
+
+int connect(int sockfd, const struct sockaddr* addr, uint32_t addrlen) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_CONNECT), "b"(sockfd), "c"(addr), "d"(addrlen) : "memory");
+    return result;
+}
+
+ssize_t sendto(int sockfd, const void* buf, size_t len, int flags,
+                const struct sockaddr* dest_addr, uint32_t addrlen) {
+    ssize_t result;
+    register uint32_t syscall_no asm("eax") = POSIX_INT_SENDTO;
+    register int sockfd_reg asm("ebx")      = sockfd;
+    register const void* buf_reg asm("ecx") = buf;
+    register size_t len_reg asm("edx")      = len;
+    register int flags_reg asm("esi")       = flags;
+    register const void* addr_reg asm("edi") = dest_addr;
+    register uint32_t addrlen_reg asm("ebp") = addrlen;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(sockfd_reg), "r"(buf_reg), "r"(len_reg), "r"(flags_reg), "r"(addr_reg), "r"(addrlen_reg) : "memory");
+    return result;
+}
+
+ssize_t recvfrom(int sockfd, void* buf, size_t len, int flags,
+                  struct sockaddr* src_addr, uint32_t* addrlen) {
+    ssize_t result;
+    register uint32_t syscall_no asm("eax") = POSIX_INT_RECVFROM;
+    register int sockfd_reg asm("ebx")      = sockfd;
+    register void* buf_reg asm("ecx")       = buf;
+    register size_t len_reg asm("edx")      = len;
+    register int flags_reg asm("esi")       = flags;
+    register void* addr_reg asm("edi")      = src_addr;
+    register uint32_t* addrlen_reg asm("ebp") = addrlen;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(sockfd_reg), "r"(buf_reg), "r"(len_reg), "r"(flags_reg), "r"(addr_reg), "r"(addrlen_reg) : "memory");
+    return result;
+}
+
+int setsockopt(int sockfd, int level, int optname, const void* optval, uint32_t optlen) {
+    int result;
+    register uint32_t syscall_no asm("eax") = POSIX_INT_SETSOCKOPT;
+    register int sockfd_reg asm("ebx")      = sockfd;
+    register int level_reg asm("ecx")       = level;
+    register int optname_reg asm("edx")     = optname;
+    register const void* optval_reg asm("esi") = optval;
+    register uint32_t optlen_reg asm("edi") = optlen;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(sockfd_reg), "r"(level_reg), "r"(optname_reg), "r"(optval_reg), "r"(optlen_reg) : "memory");
+    return result;
+}
+
+int getsockopt(int sockfd, int level, int optname, void* optval, uint32_t* optlen) {
+    int result;
+    register uint32_t syscall_no asm("eax") = POSIX_INT_GETSOCKOPT;
+    register int sockfd_reg asm("ebx")      = sockfd;
+    register int level_reg asm("ecx")       = level;
+    register int optname_reg asm("edx")     = optname;
+    register void* optval_reg asm("esi")    = optval;
+    register uint32_t* optlen_reg asm("edi") = optlen;
+
+    asm volatile("int $0x80" : "=a"(result) : "r"(syscall_no), "r"(sockfd_reg), "r"(level_reg), "r"(optname_reg), "r"(optval_reg), "r"(optlen_reg) : "memory");
+    return result;
+}
+
+int getsockname(int sockfd, struct sockaddr* addr, uint32_t* addrlen) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_GETSOCKNAME), "b"(sockfd), "c"(addr), "d"(addrlen) : "memory");
+    return result;
+}
+
+int getpeername(int sockfd, struct sockaddr* addr, uint32_t* addrlen) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_GETPEERNAME), "b"(sockfd), "c"(addr), "d"(addrlen) : "memory");
+    return result;
+}
+
+int listen(int sockfd, int backlog) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_LISTEN), "b"(sockfd), "c"(backlog) : "memory");
+    return result;
+}
+
+int accept(int sockfd, struct sockaddr* addr, uint32_t* addrlen) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_ACCEPT), "b"(sockfd), "c"(addr), "d"(addrlen) : "memory");
+    return result;
+}
+
+int shutdown(int sockfd, int how) {
+    int result;
+    asm volatile("int $0x80" : "=a"(result) : "a"(POSIX_INT_SHUTDOWN), "b"(sockfd), "c"(how) : "memory");
+    return result;
+}

@@ -105,6 +105,29 @@ namespace PalmyraOS::kernel {
             return toBigEndian16(value);  // Symmetric operation
         }
 
+        /**
+         * @brief Convert 32-bit value to big-endian
+         *
+         * @param value Native endian value
+         * @return Big-endian value
+         */
+        inline uint32_t toBigEndian32(uint32_t value) {
+            return ((value & 0x000000FF) << 24) |
+                   ((value & 0x0000FF00) << 8) |
+                   ((value & 0x00FF0000) >> 8) |
+                   ((value & 0xFF000000) >> 24);
+        }
+
+        /**
+         * @brief Convert 32-bit big-endian to native endian
+         *
+         * @param value Big-endian value
+         * @return Native endian value
+         */
+        inline uint32_t fromBigEndian32(uint32_t value) {
+            return toBigEndian32(value);  // Symmetric operation
+        }
+
     }  // namespace ethernet
 
 }  // namespace PalmyraOS::kernel

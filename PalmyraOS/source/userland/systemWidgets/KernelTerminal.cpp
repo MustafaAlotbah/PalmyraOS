@@ -3,6 +3,7 @@
 #include <elf.h>
 
 #include "palmyraOS/errono.h"
+#include "palmyraOS/network.h"                      // Network utilities (DNS, ping)
 #include "palmyraOS/shared/memory/HeapAllocator.h"  // C++ heap allocator for efficient memory management
 #include "palmyraOS/stdio.h"                        // For standard input/output functions: printf, perror
 #include "palmyraOS/stdlib.h"                       // For dynamic memory management
@@ -975,6 +976,89 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 output.append(statusBuffer, strlen(statusBuffer));
                 output.append(".\n", 2);
             }
+        }
+
+        // PING - Test network connectivity with ICMP echo
+        if (tokens[0] == "ping") {
+            if (tokens.size() < 2) {
+                output.append("Usage: ping <hostname|ip>\n", 27);
+                return;
+            }
+
+            const char* target = tokens[1].c_str();
+            output.append("Pinging ", 8);
+            output.append(target, strlen(target));
+            output.append(" ...\n", 5);
+
+            // Resolve hostname and ping
+            uint32_t rtt;
+            int result = ping_host(target, &rtt, 5000);
+
+            if (result == 0) {
+                // Success
+                output.append("Reply received! RTT: ", 21);
+                char rttBuffer[16];
+                snprintf(rttBuffer, sizeof(rttBuffer), "%u", rtt);
+                output.append(rttBuffer, strlen(rttBuffer));
+                output.append(" ms\n", 4);
+            }
+            else {
+                // Failure
+                output.append("Ping failed: ", 13);
+                if (result == -ETIMEDOUT) { output.append("Request timed out\n", 18); }
+                else if (result == -EHOSTUNREACH) { output.append("Destination host unreachable\n", 30); }
+                else if (result == -ENETUNREACH) { output.append("Network unreachable\n", 20); }
+                else {
+                    output.append("Error code ", 11);
+                    char errBuffer[16];
+                    snprintf(errBuffer, sizeof(errBuffer), "%d", result);
+                    output.append(errBuffer, strlen(errBuffer));
+                    output.append("\n", 1);
+                }
+            }
+            return;
+        }
+
+        // NSLOOKUP - DNS lookup utility
+        if (tokens[0] == "nslookup") {
+            if (tokens.size() < 2) {
+                output.append("Usage: nslookup <hostname>\n", 27);
+                return;
+            }
+
+            const char* hostname = tokens[1].c_str();
+            output.append("Resolving ", 10);
+            output.append(hostname, strlen(hostname));
+            output.append("...\n", 4);
+
+            uint32_t ip;
+            int result = gethostbyname(hostname, &ip, 5000);
+
+            if (result == 0) {
+                // Success - show IP address
+                output.append("Name:    ", 9);
+                output.append(hostname, strlen(hostname));
+                output.append("\nAddress: ", 10);
+
+                // Convert IP to string
+                const char* ipStr = inet_ntoa(ip);
+                output.append(ipStr, strlen(ipStr));
+                output.append("\n", 1);
+            }
+            else {
+                // Failure
+                output.append("DNS lookup failed: ", 19);
+                if (result == -ETIMEDOUT) { output.append("Request timed out\n", 18); }
+                else if (result == -ENOENT) { output.append("Name or service not known\n", 26); }
+                else {
+                    output.append("Error code ", 11);
+                    char errBuffer[16];
+                    snprintf(errBuffer, sizeof(errBuffer), "%d", result);
+                    output.append(errBuffer, strlen(errBuffer));
+                    output.append("\n", 1);
+                }
+            }
+            return;
         }
 
         // Unknown command
