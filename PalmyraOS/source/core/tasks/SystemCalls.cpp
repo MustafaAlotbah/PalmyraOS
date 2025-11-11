@@ -12,6 +12,7 @@
 
 // System Objects
 #include "core/SystemClock.h"
+#include "core/files/BuiltinExecutableInode.h"
 #include "core/files/VirtualFileSystem.h"
 #include "core/tasks/FileDescriptor.h"
 #include "core/tasks/ProcessManager.h"
@@ -906,129 +907,48 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
     int argc = 0;
     while (argv[argc] != nullptr) { argc++; }
 
-    // check if file is internal TODO move out
-    if (strcmp(path, "/bin/terminal.elf") == 0) {
-
-        LOG_INFO("EXEC TERMINAL");
-        Process* proc =
-                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelTerminal::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
-
-
-        if (!proc) {
-            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
-            return;
-        }
-
-        // If pid is a valid pointer, store the process ID of the new process
-        if (isValidAddress(pid)) { *pid = proc->getPid(); }
-
-        // Return success
-        regs->eax = 0;
-        return;
-    }
-
-    if (strcmp(path, "/bin/imgview.elf") == 0) {
-
-        LOG_INFO("EXEC IMAGE VIEWER");
-        Process* proc =
-                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::ImageViewer::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
-
-
-        if (!proc) {
-            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
-            return;
-        }
-
-        // If pid is a valid pointer, store the process ID of the new process
-        if (isValidAddress(pid)) { *pid = proc->getPid(); }
-
-        // Return success
-        regs->eax = 0;
-        return;
-    }
-
-    if (strcmp(path, "/bin/filemanager.elf") == 0) {
-
-        LOG_INFO("EXEC FILE MANAGER");
-        Process* proc =
-                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::fileManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
-
-
-        if (!proc) {
-            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
-            return;
-        }
-
-        // If pid is a valid pointer, store the process ID of the new process
-        if (isValidAddress(pid)) { *pid = proc->getPid(); }
-
-        // Return success
-        regs->eax = 0;
-        return;
-    }
-
-    if (strcmp(path, "/bin/taskmanager.elf") == 0) {
-
-        LOG_INFO("EXEC TASK MANAGER");
-        Process* proc =
-                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::taskManager::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
-
-
-        if (!proc) {
-            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
-            return;
-        }
-
-        // If pid is a valid pointer, store the process ID of the new process
-        if (isValidAddress(pid)) { *pid = proc->getPid(); }
-
-        // Return success
-        regs->eax = 0;
-        return;
-    }
-
-    if (strcmp(path, "/bin/clock.elf") == 0) {
-
-        LOG_INFO("EXEC CLOCK");
-        Process* proc =
-                kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelClock::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
-
-
-        if (!proc) {
-            regs->eax = -ENOMEM;  // Out of memory or failed to create the process
-            return;
-        }
-
-        // If pid is a valid pointer, store the process ID of the new process
-        if (isValidAddress(pid)) { *pid = proc->getPid(); }
-
-        // Return success
-        regs->eax = 0;
-        return;
-    }
-
-
-    // Load the ELF file from the specified path
-    auto file = vfs::VirtualFileSystem::getInodeByPath(KString(path));
-    if (!file) {
+    // Look up the file in VFS
+    auto inode = vfs::VirtualFileSystem::getInodeByPath(KString(path));
+    if (!inode) {
         regs->eax = -ENOENT;  // No such file or directory
         return;
     }
 
-    // Read the file content into memory
-    auto fileSize = file->getSize();
-    KVector<uint8_t> fileContent(fileSize);
-    if (file->read((char*) fileContent.data(), fileSize, 0) != fileSize) {
-        regs->eax = -EIO;  // I/O error
+    Process* proc = nullptr;
+
+    // Check if it's a built-in executable (virtual method, no RTTI needed!)
+    if (inode->isBuiltinExecutable()) {
+        // Cast is safe because isBuiltinExecutable() returned true
+        auto* builtinInode = static_cast<vfs::BuiltinExecutableInode*>(inode);
+        auto entryPoint    = builtinInode->getEntryPoint();
+
+        LOG_INFO("EXEC BUILTIN: %s at entry point 0x%X", path, (uint32_t) entryPoint);
+
+        // Create process with the built-in entry point
+        proc = kernel::TaskManager::newProcess(entryPoint, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+    }
+    else if (inode->getType() == vfs::InodeBase::Type::File) {
+        // Load as ELF from disk
+        auto fileSize = inode->getSize();
+        KVector<uint8_t> fileContent(fileSize);
+
+        if (inode->read((char*) fileContent.data(), fileSize, 0) != fileSize) {
+            regs->eax = -EIO;  // I/O error
+            return;
+        }
+
+        LOG_INFO("EXEC ELF: %s", path);
+
+        // Execute the ELF file as a new process
+        proc = kernel::TaskManager::execv_elf(fileContent, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv);
+    }
+    else {
+        // Not a regular file or built-in executable
+        regs->eax = -EACCES;  // Permission denied (not executable)
         return;
     }
 
-    LOG_INFO("Spawning %s", path);
-
-    // Execute the ELF file as a new process
-    Process* proc = kernel::TaskManager::execv_elf(fileContent, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv);
-
-
+    // Check if process creation succeeded
     if (!proc) {
         regs->eax = -ENOMEM;  // Out of memory or failed to create the process
         return;

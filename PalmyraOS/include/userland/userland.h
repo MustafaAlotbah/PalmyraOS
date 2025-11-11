@@ -21,3 +21,4 @@
 
 
 #include "userland/tests/events.h"
+#include "userland/tests/udp_echo_server.h"

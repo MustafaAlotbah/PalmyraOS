@@ -127,7 +127,7 @@ namespace PalmyraOS::kernel {
     void initializeNetworkProtocols(BootConsole& console);  // Network protocols (ARP, DNS, IPv4, ICMP)
     void testNetworkConnectivity(BootConsole& console);     // Network connectivity tests (ping)
     void initializePartitions(BootConsole& console);        // Initialize partitions
-    void initializeBinaries();
+    void initializeBinaries();                              // Register built-in executables in /bin/
 
     /**
      * @brief Reboot the system

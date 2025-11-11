@@ -12,3 +12,4 @@ cmake-build-debug/
 /PalmyraOS/cmake-build-debug-wsl/*
 *.md
 *.mdc
+*.backup

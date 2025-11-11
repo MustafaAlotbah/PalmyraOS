@@ -6,6 +6,7 @@
 #include "core/acpi/HPET.h"
 #include "core/acpi/PowerManagement.h"
 #include "core/cpu.h"
+#include "core/files/BuiltinExecutableInode.h"
 #include "core/files/Fat32FileSystem.h"
 #include "core/files/VirtualFileSystem.h"
 #include "core/files/partitions/Fat32.h"
@@ -27,6 +28,7 @@
 #include "libs/memory.h"
 #include "tests/allocatorTests.h"
 #include "tests/pagingTests.h"
+#include "userland/userland.h"
 #include <algorithm>
 #include <new>
 
@@ -525,6 +527,7 @@ void PalmyraOS::kernel::initializePCIeDrivers(BootConsole& console) {
                     if (NetworkManager::registerInterface(pcnet)) {
                         // Configure network interface for VirtualBox NAT defaults
                         pcnet->setIPAddress(0x0A00020F);   // 10.0.2.15
+                                                           //  pcnet->setIPAddress(0xC0A80164);   // 192.168.1.100
                         pcnet->setSubnetMask(0xFFFFFF00);  // 255.255.255.0
                         pcnet->setGateway(0x0A000202);     // 10.0.2.2
 
@@ -1141,13 +1144,42 @@ void PalmyraOS::kernel::initializePartitions(BootConsole& console) {
 }
 
 void PalmyraOS::kernel::initializeBinaries() {
+    // Register built-in executables in /bin/
+    // These are userland applications compiled into the kernel that can be launched via posix_spawn()
 
-    // Create a test inode with a lambda function for reading test string
-    auto terminalNode = kernel::heapManager.createInstance<vfs::FunctionInode>(nullptr, nullptr, nullptr);
-    if (!terminalNode) return;
+    // Helper lambda to register a built-in executable
+    auto registerBuiltin = [](const char* path, vfs::BuiltinExecutableInode::EntryPoint entry) -> bool {
+        LOG_INFO("Registering built-in: %s at entry point 0x%X", path, (uint32_t) entry);
 
-    // Set the test inode at "/bin/terminal"
-    vfs::VirtualFileSystem::setInodeByPath(KString("/bin/terminal.elf"), terminalNode);
+        auto inode = kernel::heapManager.createInstance<vfs::BuiltinExecutableInode>(entry);
+        if (!inode) {
+            LOG_ERROR("Failed to create BuiltinExecutableInode for %s", path);
+            return false;
+        }
+
+        // Verify the entry point is stored correctly
+        auto storedEntry = inode->getEntryPoint();
+        LOG_INFO("  Stored entry point: 0x%X (match: %s)", (uint32_t) storedEntry, (storedEntry == entry) ? "YES" : "NO");
+
+        if (!vfs::VirtualFileSystem::setInodeByPath(KString(path), inode)) {
+            LOG_ERROR("Failed to register %s in VFS", path);
+            return false;
+        }
+        return true;
+    };
+
+    // Register all built-in executables
+    registerBuiltin("/bin/terminal.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::builtin::KernelTerminal::main));
+
+    registerBuiltin("/bin/imgview.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::builtin::ImageViewer::main));
+
+    registerBuiltin("/bin/filemanager.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::builtin::fileManager::main));
+
+    registerBuiltin("/bin/taskmanager.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::builtin::taskManager::main));
+
+    registerBuiltin("/bin/clock.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::builtin::KernelClock::main));
+
+    registerBuiltin("/bin/udp_echo.elf", reinterpret_cast<vfs::BuiltinExecutableInode::EntryPoint>(PalmyraOS::Userland::tests::UDPEchoServer::main));
 }
 
 bool PalmyraOS::kernel::reboot() {

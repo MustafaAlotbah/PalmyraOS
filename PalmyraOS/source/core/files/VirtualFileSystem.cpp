@@ -237,6 +237,8 @@ namespace PalmyraOS::kernel::vfs {
                                                     InodeBase::GroupID::ROOT);
         if (!binaryInode_ || !setInodeByPath(KString("/bin"), binaryInode_)) return false;
 
+        // Note: Built-in executables are registered by kernel::initializeBinaries()
+        // after VFS initialization is complete (see kernel.cpp)
 
         // Create a test inode with a lambda function for reading test string
         auto testInode = kernel::heapManager.createInstance<FunctionInode>([](char* buffer, size_t size, size_t offset) -> size_t {
@@ -306,8 +308,6 @@ namespace PalmyraOS::kernel::vfs {
 
 
     /// endregion
-
-
 
 
 }  // namespace PalmyraOS::kernel::vfs

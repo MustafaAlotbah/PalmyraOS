@@ -319,6 +319,17 @@ namespace PalmyraOS::kernel::vfs {
          */
         virtual int close();
 
+        /**
+         * @brief Check if this inode represents a built-in executable.
+         * 
+         * This virtual method allows the syscall handler to distinguish between
+         * built-in executables (compiled into the kernel) and external ELF files
+         * without using RTTI (dynamic_cast). The default implementation returns false.
+         * 
+         * @return true if this is a BuiltinExecutableInode, false otherwise.
+         */
+        virtual bool isBuiltinExecutable() const { return false; }
+
         // Getters
         [[nodiscard]] size_t getInodeNumber() const;
         [[nodiscard]] Mode getMode() const;

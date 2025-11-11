@@ -431,7 +431,7 @@ void callConstructors() {
     console << "Initializing Mouse Driver...\n" << SWAP_BUFF();
     kernel::Mouse::initialize();
 
-    console << "Initializing Binaries...\n" << SWAP_BUFF();
+    console << "Registering built-in executables...\n" << SWAP_BUFF();
     kernel::initializeBinaries();
 
     console << "Re-measuring CPU frequency..." << SWAP_BUFF();
