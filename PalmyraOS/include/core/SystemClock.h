@@ -18,7 +18,17 @@ namespace PalmyraOS::kernel {
     public:
         static void initialize(uint32_t frequency);
         static bool setFrequency(uint32_t frequency);
+
+        /**
+         * @brief Attach a handler to the timer interrupt
+         *
+         * Allows multiple components to subscribe to timer ticks.
+         * Panics if the handler array is full (MAX_HANDLERS reached).
+         *
+         * @param func Handler function to call on each timer tick
+         */
         static void attachHandler(interrupts::InterruptHandler func);
+
         static uint16_t readCurrentCount();
         static uint64_t getTicks();
         static uint64_t getMilliseconds();
@@ -30,12 +40,15 @@ namespace PalmyraOS::kernel {
         static uint32_t* handleInterrupt(interrupts::CPURegisters* regs);
 
     private:
+        static constexpr uint8_t MAX_HANDLERS = 8;  ///< Maximum number of timer interrupt handlers
+
         static ports::BytePort PITCommandPort;
         static ports::BytePort PITDataPort;
 
-        static uint64_t ticks_;                        // Ticks counter
-        static interrupts::InterruptHandler handler_;  // Handler for the interrupt
-        static uint32_t frequency_;                    // Frequency of the timer
+        static uint64_t ticks_;                                       // Ticks counter
+        static interrupts::InterruptHandler handlers_[MAX_HANDLERS];  // Array of interrupt handlers
+        static uint8_t handlerCount_;                                 // Number of registered handlers
+        static uint32_t frequency_;                                   // Frequency of the timer
     };
 
 }  // namespace PalmyraOS::kernel

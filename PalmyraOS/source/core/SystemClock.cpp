@@ -4,9 +4,10 @@
 
 
 // Globals
-PalmyraOS::kernel::interrupts::InterruptHandler PalmyraOS::kernel::SystemClock::handler_ = nullptr;
-uint64_t PalmyraOS::kernel::SystemClock::ticks_                                          = 1000;
-uint32_t PalmyraOS::kernel::SystemClock::frequency_                                      = 0;
+PalmyraOS::kernel::interrupts::InterruptHandler PalmyraOS::kernel::SystemClock::handlers_[MAX_HANDLERS] = {nullptr};
+uint8_t PalmyraOS::kernel::SystemClock::handlerCount_                                                   = 0;
+uint64_t PalmyraOS::kernel::SystemClock::ticks_                                                         = 1000;
+uint32_t PalmyraOS::kernel::SystemClock::frequency_                                                     = 0;
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::SystemClock::PITCommandPort(PIT_CMD_PORT);
 PalmyraOS::kernel::ports::BytePort PalmyraOS::kernel::SystemClock::PITDataPort(PIT_DAT_PORT);
 
@@ -33,7 +34,10 @@ bool PalmyraOS::kernel::SystemClock::setFrequency(uint32_t frequency) {
     return true;
 }
 
-void PalmyraOS::kernel::SystemClock::attachHandler(PalmyraOS::kernel::interrupts::InterruptHandler func) { handler_ = func; }
+void PalmyraOS::kernel::SystemClock::attachHandler(PalmyraOS::kernel::interrupts::InterruptHandler func) {
+    if (handlerCount_ >= MAX_HANDLERS) { kernelPanic("SystemClock: Cannot attach handler - array full (%d/%d)", handlerCount_, MAX_HANDLERS); }
+    handlers_[handlerCount_++] = func;
+}
 
 uint64_t PalmyraOS::kernel::SystemClock::getTicks() {
     return ticks_;  // Assuming a 64-bit wrap-around
@@ -47,11 +51,15 @@ uint64_t PalmyraOS::kernel::SystemClock::getSeconds() { return getTicks() / freq
 
 uint32_t* PalmyraOS::kernel::SystemClock::handleInterrupt(interrupts::CPURegisters* regs) {
     ticks_++;
-    if (handler_) {
-        return handler_(regs);  // Call the attached handler if it exists
+
+    // Call all registered handlers in sequence, chaining the return values
+    // This allows handlers to modify the stack pointer (e.g., for context switching)
+    uint32_t* currentRegs = (uint32_t*) regs;
+    for (uint8_t i = 0; i < handlerCount_; ++i) {
+        if (handlers_[i]) { currentRegs = handlers_[i]((interrupts::CPURegisters*) currentRegs); }
     }
 
-    return (uint32_t*) regs;
+    return currentRegs;
 }
 
 uint16_t PalmyraOS::kernel::SystemClock::readCurrentCount() {
