@@ -13,6 +13,7 @@
 // System Objects
 #include "core/SystemClock.h"
 #include "core/files/VirtualFileSystem.h"
+#include "core/tasks/FileDescriptor.h"
 #include "core/tasks/ProcessManager.h"
 #include "core/tasks/WindowManager.h"
 
@@ -237,8 +238,9 @@ void PalmyraOS::kernel::SystemCallsManager::handleOpen(PalmyraOS::kernel::interr
         }
     }
 
-    // Allocate a file descriptor for the inode
-    fd_t fileDescriptor = TaskManager::getCurrentProcess()->fileTableDescriptor_.allocate(inode, flags);
+    // Create a new FileDescriptor and allocate a file descriptor number
+    auto* fileDesc      = heapManager.createInstance<FileDescriptor>(inode, flags);
+    fd_t fileDescriptor = TaskManager::getCurrentProcess()->descriptorTable_.allocate(fileDesc);
     regs->eax           = fileDescriptor;
 }
 
@@ -406,8 +408,8 @@ void PalmyraOS::kernel::SystemCallsManager::handleClose(PalmyraOS::kernel::inter
     // Extract arguments from registers
     uint32_t fd = regs->ebx;
 
-    // Release the file descriptor
-    TaskManager::getCurrentProcess()->fileTableDescriptor_.release(fd);
+    // Release the descriptor (works for all descriptor types)
+    TaskManager::getCurrentProcess()->descriptorTable_.release(fd);
 
     // Set eax to 0 to indicate success
     regs->eax = 0;
@@ -452,12 +454,21 @@ void PalmyraOS::kernel::SystemCallsManager::handleWrite(PalmyraOS::kernel::inter
     }
     else {
         // Handle writing to regular files
-        auto file = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
-        if (!file) {
-            // If the file is not open, set the number of bytes written to 0
+        Descriptor* desc = proc->descriptorTable_.get(fileDescriptor);
+        if (!desc) {
+            // If the descriptor is not open, set the number of bytes written to 0
             regs->eax = 0;  // we wrote 0 bytes
             return;
         }
+
+        // Check if it's a file descriptor (pipes/sockets would have different logic)
+        if (desc->kind() != Descriptor::Kind::File) {
+            regs->eax = -EINVAL;  // Invalid descriptor type for this operation
+            return;
+        }
+
+        // Safe to cast since we checked the kind
+        auto* file     = static_cast<FileDescriptor*>(desc);
 
         // Write data to the file and update the file offset
         auto bytesRead = file->getInode()->write(bufferPointer, size, file->getOffset());
@@ -479,13 +490,22 @@ void PalmyraOS::kernel::SystemCallsManager::handleRead(PalmyraOS::kernel::interr
     // Check if bufferPointer is a valid pointer
     if (!isValidAddress(bufferPointer)) return;
 
-    // Get the file associated with the file descriptor
-    auto file = TaskManager::getCurrentProcess()->fileTableDescriptor_.getOpenFile(fileDescriptor);
-    if (!file) {
-        // If the file is not open, set the number of bytes read to 0
+    // Get the descriptor associated with the file descriptor
+    Descriptor* desc = TaskManager::getCurrentProcess()->descriptorTable_.get(fileDescriptor);
+    if (!desc) {
+        // If the descriptor is not open, set the number of bytes read to 0
         regs->eax = 0;  // we read 0 bytes
         return;
     }
+
+    // Check if it's a file descriptor (pipes/sockets would have different logic)
+    if (desc->kind() != Descriptor::Kind::File) {
+        regs->eax = -EINVAL;  // Invalid descriptor type for this operation
+        return;
+    }
+
+    // Safe to cast since we checked the kind
+    auto* file = static_cast<FileDescriptor*>(desc);
 
     // Enable interrupts to allow the system to handle other tasks while sleeping // TODO way to block only FAT32
     interrupts::InterruptController::enableInterrupts();
@@ -510,15 +530,22 @@ void PalmyraOS::kernel::SystemCallsManager::handleIoctl(PalmyraOS::kernel::inter
     if (!isValidAddress(argp)) return;
 
     // Get the current process
-    auto* proc = TaskManager::getCurrentProcess();
+    auto* proc       = TaskManager::getCurrentProcess();
 
-    // Get the file associated with the file descriptor
-    auto file  = proc->fileTableDescriptor_.getOpenFile(fileDescriptor);
-    if (!file) {
-        // If the file is not open, set the number of bytes read to 0
-        regs->eax = 0;
+    // Get the descriptor associated with the file descriptor
+    Descriptor* desc = proc->descriptorTable_.get(fileDescriptor);
+    if (!desc) {
+        regs->eax = -EBADF;
         return;
     }
+
+    // Check if it's a file descriptor
+    if (desc->kind() != Descriptor::Kind::File) {
+        regs->eax = -EINVAL;
+        return;
+    }
+
+    auto* file  = static_cast<FileDescriptor*>(desc);
 
     // Perform the IOCTL operation
     auto status = file->getInode()->ioctl(request, argp);
@@ -642,13 +669,26 @@ void PalmyraOS::kernel::SystemCallsManager::handleGetdents(PalmyraOS::kernel::in
     if (!isValidAddress((char*) bufferPointer + count)) return;
 
     // TODO: uncap and allow for iterative
-    count     = count > 4096 ? 4096 : count;
+    count            = count > 4096 ? 4096 : count;
 
-    // Get the file associated with the file descriptor
-    auto file = TaskManager::getCurrentProcess()->fileTableDescriptor_.getOpenFile(fileDescriptor);
-    if (!file || file->getInode()->getType() != vfs::InodeBase::Type::Directory) {
-        // If the file is not open, or not a directory, set the number of bytes read to 0
-        regs->eax = -1;  // invalid operation
+    // Get the descriptor associated with the file descriptor
+    Descriptor* desc = TaskManager::getCurrentProcess()->descriptorTable_.get(fileDescriptor);
+    if (!desc) {
+        regs->eax = -EBADF;
+        return;
+    }
+
+    // Check if it's a file descriptor
+    if (desc->kind() != Descriptor::Kind::File) {
+        regs->eax = -EINVAL;
+        return;
+    }
+
+    auto* file = static_cast<FileDescriptor*>(desc);
+
+    // Check if it's a directory
+    if (file->getInode()->getType() != vfs::InodeBase::Type::Directory) {
+        regs->eax = -ENOTDIR;  // Not a directory
         return;
     }
 
@@ -733,20 +773,28 @@ void PalmyraOS::kernel::SystemCallsManager::handleLongSeek(PalmyraOS::kernel::in
     // int32_t lseek(uint32_t fd, int32_t offset, int whence)
 
     // Extract arguments from registers
-    uint32_t fd    = regs->ebx;  // File descriptor
-    int32_t offset = regs->ecx;  // Offset
-    int whence     = regs->edx;  // Reference point (SEEK_SET, SEEK_CUR, SEEK_END)
+    uint32_t fd      = regs->ebx;  // File descriptor
+    int32_t offset   = regs->ecx;  // Offset
+    int whence       = regs->edx;  // Reference point (SEEK_SET, SEEK_CUR, SEEK_END)
 
     // Get the current process
-    auto* proc     = TaskManager::getCurrentProcess();
+    auto* proc       = TaskManager::getCurrentProcess();
 
-    // Get the file associated with the file descriptor
-    auto file      = proc->fileTableDescriptor_.getOpenFile(fd);
-    if (!file) {
-        // If the file is not open, set eax to -1 to indicate failure
-        regs->eax = -1;
+    // Get the descriptor associated with the file descriptor
+    Descriptor* desc = proc->descriptorTable_.get(fd);
+    if (!desc) {
+        regs->eax = -EBADF;
         return;
     }
+
+    // Check if it's a file descriptor - pipes and sockets are not seekable
+    if (desc->kind() != Descriptor::Kind::File) {
+        regs->eax = -ESPIPE;  // Illegal seek (POSIX standard for non-seekable descriptors)
+        return;
+    }
+
+    // Safe to cast since we checked the kind
+    auto* file = static_cast<FileDescriptor*>(desc);
 
     // Determine the new offset based on the whence value
     int32_t newOffset;

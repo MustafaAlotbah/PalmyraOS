@@ -308,44 +308,6 @@ namespace PalmyraOS::kernel::vfs {
     /// endregion
 
 
-    /// region OpenFile
-
-    OpenFile::OpenFile(InodeBase* inode, int flags) : inode_(inode), flags_(flags), offset_(0) {}
-
-    InodeBase* OpenFile::getInode() const { return inode_; }
-
-    int OpenFile::getFlags() const { return flags_; }
-
-    size_t OpenFile::getOffset() const { return offset_; }
-
-    void OpenFile::advanceOffset(size_t bytes) { offset_ += bytes; }
-
-    void OpenFile::setOffset(size_t offset) { offset_ = offset; }
-
-
-    /// endregion
-
-
-    /// region FileDescriptorTable
-
-    FileDescriptorTable::FileDescriptorTable()
-        : nextFd_(3)  // 0, 1, 2 for cin, cout, cerr
-    {}
-
-    fd_t FileDescriptorTable::allocate(InodeBase* inode, int flags) {
-        fd_t fd    = nextFd_++;
-        table_[fd] = OpenFile(inode, flags);
-        return fd;
-    }
-
-    void FileDescriptorTable::release(fd_t fd) { table_.erase(fd); }
-
-    OpenFile* FileDescriptorTable::getOpenFile(fd_t fd) {
-        auto it = table_.find(fd);
-        return (it != table_.end()) ? &it->second : nullptr;
-    }
-
-    /// endregion
 
 
 }  // namespace PalmyraOS::kernel::vfs

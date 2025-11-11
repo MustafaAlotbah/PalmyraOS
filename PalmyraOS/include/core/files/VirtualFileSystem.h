@@ -26,16 +26,9 @@ Class: VirtualFileSystem
 - static InodeBase::Type getType(const KString& path)
 - static bool removeInodeByPath(const KString& path)
 
-Class: OpenFile
-- OpenFile(InodeBase& inode, int flags)
-- InodeBase& getInode() const
-- int getFlags() const
-
-Class: FileDescriptorTable
-- FileDescriptorTable()
-- fd_t allocate(InodeBase* inode, int flags)
-- void release(fd_t fd)
-- OpenFile* getOpenFile(fd_t fd)
+NOTE: OpenFile and FileDescriptorTable have been moved to:
+- include/core/tasks/FileDescriptor.h (replaces OpenFile)
+- include/core/tasks/DescriptorTable.h (replaces FileDescriptorTable)
 */
 
 namespace PalmyraOS::kernel::vfs {
@@ -190,64 +183,6 @@ namespace PalmyraOS::kernel::vfs {
         static InodeBase* rootNode_;     ///< Root inode of the virtual file system.
         static InodeBase* deviceInode_;  ///< Inode for the /dev directory.
         static InodeBase* binaryInode_;  ///< Inode for the /bin directory.
-    };
-
-    /**
-     * @class OpenFile
-     * @brief Represents an open file with associated inode and flags.
-     */
-    class OpenFile {
-    public:
-        /**
-         * @brief Constructor for OpenFile.
-         * @param inode Reference to the associated inode.
-         * @param flags The open file flags.
-         */
-        explicit OpenFile(InodeBase* inode = nullptr, int flags = 0);
-
-        // Getters
-        [[nodiscard]] InodeBase* getInode() const;
-        [[nodiscard]] int getFlags() const;
-        [[nodiscard]] size_t getOffset() const;
-        void setOffset(size_t offset);
-        void advanceOffset(size_t bytes);
-
-    private:
-        InodeBase* inode_;  ///< Reference to the associated inode
-        size_t offset_;
-        int flags_;  ///< Open file flags
-    };
-
-    // FileDescriptorTable class managing file descriptors for open files
-    class FileDescriptorTable {
-    public:
-        // Constructor for FileDescriptorTable
-        FileDescriptorTable();
-
-        /**
-         * @brief Allocate a file descriptor for an inode.
-         * @param inode Pointer to the inode.
-         * @param flags The open file flags.
-         * @return The allocated file descriptor.
-         */
-        fd_t allocate(InodeBase* inode, int flags);
-
-        /**
-         * @brief Release a file descriptor.
-         * @param fd The file descriptor to release.
-         */
-        void release(fd_t fd);
-
-        /**
-         * @brief Get the OpenFile associated with a file descriptor.
-         * @param fd The file descriptor.
-         * @return Pointer to the OpenFile associated with the file descriptor.
-         */
-        OpenFile* getOpenFile(fd_t fd);
-
-    private:
-        KMap<fd_t, OpenFile> table_;  ///< Map of file descriptors to OpenFile instances
-        fd_t nextFd_;                 ///< Next file descriptor to be allocated
     };
 
 

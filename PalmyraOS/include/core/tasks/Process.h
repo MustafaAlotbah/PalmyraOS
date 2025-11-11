@@ -3,8 +3,8 @@
 
 #include "core/Interrupts.h"
 #include "core/definitions.h"
-#include "core/files/VirtualFileSystem.h"
 #include "core/memory/KernelHeapAllocator.h"
+#include "core/tasks/DescriptorTable.h"
 
 
 namespace PalmyraOS::kernel {
@@ -299,8 +299,8 @@ namespace PalmyraOS::kernel {
         void* userStack_{};                   ///< Pointer to the user stack
         void* kernelStack_{};                 ///< Pointer to the kernel stack
 
-        KVector<uint32_t> windows_;                     ///< List of windows allocated
-        vfs::FileDescriptorTable fileTableDescriptor_;  ///< File descriptor table to do VFS operations
+        KVector<uint32_t> windows_;        ///< List of windows allocated
+        DescriptorTable descriptorTable_;  ///< Descriptor table for all I/O operations (files, pipes, sockets)
         ProcessDebug debug_;
 
         uint64_t upTime_{0};
