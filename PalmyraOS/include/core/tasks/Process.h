@@ -320,8 +320,8 @@ namespace PalmyraOS::kernel {
         KString commandName_;               ///< Program name (argv[0]), e.g., "terminal.elf"
         KVector<KString> commandlineArgs_;  ///< All command-line arguments (argv), stored safely
 
-        /// Environment variables (KEY=VALUE format, e.g., "PATH=/bin")
-        KVector<KString> environmentVariables_;  ///< Safe copy of environment for /proc and metadata
+        /// Environment variables (stored as key-value pairs for efficient access)
+        KMap<KString, KString> environmentMap_;  ///< Environment: key -> value (e.g., "PATH" -> "/bin")
 
         /// Auxiliary vector for ELF processes (provides kernel info to userspace)
         KVector<AuxiliaryVectorEntry> auxiliaryVector_;  ///< AT_* entries for dynamic linker and libc

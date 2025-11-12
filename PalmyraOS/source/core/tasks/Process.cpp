@@ -413,13 +413,13 @@ void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* 
     LOG_DEBUG("[Process %d] Initializing ELF executable with Linux stack layout (argc=%d)", pid_, argc);
 
     /**
-     * Step 1: Get environment count from our captured environment
+     * Step 1: Get environment count from our map
      *
-     * We use environmentVariables_ as the single source of truth, not the envp parameter.
+     * We use environmentMap_ as the single source of truth, not the envp parameter.
      * This ensures that default environment variables (added in captureEnvironment) are
      * always available to the process, even if nullptr was passed.
      */
-    uint32_t envc = environmentVariables_.size();
+    uint32_t envc = environmentMap_.size();
     LOG_DEBUG("[Process %d] Environment count: %d", pid_, envc);
 
     /**
@@ -445,8 +445,10 @@ void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* 
     // 4. Argument strings
     for (uint32_t i = 0; i < argc; ++i) { totalSize += strlen(argv[i]) + 1; }
 
-    // 5. Environment strings (from our captured environment)
-    for (uint32_t i = 0; i < envc; ++i) { totalSize += environmentVariables_[i].size() + 1; }
+    // 5. Environment strings (serialize from map: "KEY=VALUE" format)
+    for (const auto& [key, value]: environmentMap_) {
+        totalSize += key.size() + 1 + value.size() + 1;  // "KEY" + "=" + "VALUE" + '\0'
+    }
 
     // 6. Platform string for AT_PLATFORM auxiliary vector entry
     const char* platform_string = "i386";
@@ -475,19 +477,38 @@ void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* 
         memcpy(str_copy, argv[i], len);      // Copy string
         str_copy += len;                     // Advance pointer
     }
-    argv_copy[argc] = nullptr;  // NULL terminator
+    argv_copy[argc]    = nullptr;  // NULL terminator
 
     /**
-     * Step 5: Copy envp strings and build envp pointer array
+     * Step 5: Serialize environment from map and build envp pointer array
      *
-     * We copy from environmentVariables_ (our single source of truth), not from the
-     * envp parameter. This ensures default environment variables are always available.
+     * We serialize from environmentMap_ (our single source of truth) into "KEY=VALUE" format.
+     * This ensures default environment variables are always available and prevents duplicates.
      */
-    for (uint32_t i = 0; i < envc; ++i) {
-        envp_copy[i] = str_copy;                                  // Point to string
-        size_t len   = environmentVariables_[i].size() + 1;       // Include null terminator
-        memcpy(str_copy, environmentVariables_[i].c_str(), len);  // Copy from our storage
-        str_copy += len;                                          // Advance pointer
+    uint32_t env_index = 0;
+    for (const auto& [key, value]: environmentMap_) {
+        envp_copy[env_index] = str_copy;  // Point to string
+
+        // Build "KEY=VALUE" string
+        // 1. Copy key
+        size_t key_len       = key.size();
+        memcpy(str_copy, key.c_str(), key_len);
+        str_copy += key_len;
+
+        // 2. Copy '='
+        *str_copy = '=';
+        str_copy++;
+
+        // 3. Copy value
+        size_t value_len = value.size();
+        memcpy(str_copy, value.c_str(), value_len);
+        str_copy += value_len;
+
+        // 4. Null terminator
+        *str_copy = '\0';
+        str_copy++;
+
+        env_index++;
     }
     envp_copy[envc]     = nullptr;  // NULL terminator
 
@@ -677,6 +698,54 @@ void PalmyraOS::kernel::Process::initializeProcessInVFS() {
             nullptr);
     vfs::VirtualFileSystem::setInodeByPath(directory + KString("/cmdline"), cmdlineNode);
 
+    /// Environment variables file - Linux compatible format (null-terminated KEY=VALUE strings)
+    auto environNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
+            // Read function: serializes environment to null-terminated format
+            [this](char* buffer, size_t size, size_t offset) -> size_t {
+                /**
+                 * Serialize environment from map to "KEY1=VALUE1\0KEY2=VALUE2\0" format.
+                 * This matches Linux /proc/pid/environ format.
+                 */
+                char serialized[2048];  // Larger buffer for environment
+                size_t written = 0;
+
+                // Serialize each environment variable
+                for (const auto& [key, value]: environmentMap_) {
+                    // Check space for "KEY=VALUE\0"
+                    size_t needed = key.size() + 1 + value.size() + 1;
+                    if (written + needed > sizeof(serialized)) break;
+
+                    // Copy key
+                    memcpy(serialized + written, key.c_str(), key.size());
+                    written += key.size();
+
+                    // Copy '='
+                    serialized[written++] = '=';
+
+                    // Copy value
+                    memcpy(serialized + written, value.c_str(), value.size());
+                    written += value.size();
+
+                    // Null terminator
+                    serialized[written++] = '\0';
+                }
+
+                // Handle offset into the serialized data
+                if (offset >= written) return 0;
+
+                // Calculate bytes to copy
+                size_t available = written - offset;
+                size_t to_copy   = available < size ? available : size;
+
+                // Copy to output buffer
+                memcpy(buffer, serialized + offset, to_copy);
+
+                return to_copy;
+            },
+            nullptr,
+            nullptr);
+    vfs::VirtualFileSystem::setInodeByPath(directory + KString("/environ"), environNode);
+
     /// Linux-compatible process statistics file
     auto statNode = kernel::heapManager.createInstance<vfs::FunctionInode>(
             // Read function: serializes process stats in Linux /proc/pid/stat format
@@ -756,12 +825,12 @@ void PalmyraOS::kernel::Process::captureCommandlineArguments(uint32_t argc, char
 /**
  * @brief Captures environment variables for process metadata and /proc filesystem access
  *
- * Environment variables are stored as immutable KStrings in KEY=VALUE format.
- * This allows safe access via /proc/{pid}/environ even after the original envp
- * array becomes invalid. If no environment is provided, sensible defaults are used.
+ * Environment variables are parsed from "KEY=VALUE" format and stored as a key-value map.
+ * This provides O(log n) lookup performance and prevents duplicate keys automatically.
+ * If no environment is provided, sensible defaults are used.
  */
 void PalmyraOS::kernel::Process::captureEnvironment(char* const* envp) {
-    environmentVariables_.clear();
+    environmentMap_.clear();
 
     /**
      * If no environment is provided, use minimal POSIX-compatible defaults.
@@ -771,33 +840,38 @@ void PalmyraOS::kernel::Process::captureEnvironment(char* const* envp) {
         LOG_DEBUG("[Process %d] No environment provided, using minimal defaults", pid_);
 
         // Minimal POSIX environment
-        // 1. PATH: Where to search for executables
-        environmentVariables_.push_back(KString("PATH=/bin"));
-
-        // 2. HOME: User's home directory
-        environmentVariables_.push_back(KString("HOME=/"));
-
-        // 3. USER: Current user name
-        environmentVariables_.push_back(KString("USER=root"));
-
-        // 4. SHELL: Default shell
-        environmentVariables_.push_back(KString("SHELL=/bin/terminal.elf"));
+        environmentMap_[KString("PATH")]  = KString("/bin");
+        environmentMap_[KString("HOME")]  = KString("/");
+        environmentMap_[KString("USER")]  = KString("root");
+        environmentMap_[KString("SHELL")] = KString("/bin/terminal.elf");
 
         return;
     }
 
     /**
-     * Copy environment variables from the provided array.
-     * Each entry is in KEY=VALUE format (e.g., "PATH=/bin:/usr/bin").
+     * Parse environment variables from the provided array.
+     * Each entry must be in KEY=VALUE format (e.g., "PATH=/bin:/usr/bin").
+     * Invalid entries (without '=') are silently ignored.
      */
     uint32_t count = 0;
     while (envp[count] != nullptr) {
-        // Make safe copy of environment variable
-        environmentVariables_.push_back(KString(envp[count]));
+        const char* entry  = envp[count];
+        const char* equals = strchr(entry, '=');
+
+        if (equals) {
+            // Split into key and value
+            KString key(entry, equals - entry);  // Everything before '='
+            KString value(equals + 1);           // Everything after '='
+
+            // Store in map (automatically handles duplicates - last one wins)
+            environmentMap_[key] = value;
+        }
+        else { LOG_WARN("[Process %d] Invalid environment entry (no '='): %s", pid_, entry); }
+
         count++;
     }
 
-    LOG_DEBUG("[Process %d] Captured %d environment variables", pid_, count);
+    LOG_DEBUG("[Process %d] Captured %d environment variables into map", pid_, environmentMap_.size());
 }
 
 /**
