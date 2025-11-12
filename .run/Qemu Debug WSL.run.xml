@@ -1,0 +1,6 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Qemu Debug WSL" type="CLion_Remote" version="1" remoteCommand="172.31.224.1:1234" symbolFile="$ProjectFileDir$/PalmyraOS/bin/kernel.bin" sysroot="$ProjectFileDir$/PalmyraOS/bin">
+    <debugger toolchainName="WSL" />
+    <method v="2" />
+  </configuration>
+</component>
