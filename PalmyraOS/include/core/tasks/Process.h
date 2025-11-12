@@ -1,10 +1,13 @@
 
 #pragma once
 
+#include <elf.h>
+
 #include "core/Interrupts.h"
 #include "core/definitions.h"
 #include "core/memory/KernelHeapAllocator.h"
 #include "core/tasks/DescriptorTable.h"
+#include "core/tasks/auxv.h"
 
 
 namespace PalmyraOS::kernel {
@@ -111,8 +114,10 @@ namespace PalmyraOS::kernel {
          * @param priority Priority of the process
          * @param argc Argument count
          * @param argv Argument values
+         * @param envp Environment variables (KEY=VALUE format, NULL-terminated)
+         * @param isInternal True for builtin executables, false for external ELF binaries
          */
-        Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char* const* argv, bool isInternal);
+        Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char* const* argv, char* const* envp, bool isInternal);
 
         /**
          * @brief Destructor for Process.
@@ -262,14 +267,34 @@ namespace PalmyraOS::kernel {
         void initializeCPUState();
 
         /**
-         * @brief Initializes the arguments for the process.
-         * @param entry Entry point function for the process.
-         * @param argc Argument count.
-         * @param argv Argument values.
+         * @brief Initializes arguments for builtin executables (uses dispatcher wrapper)
+         * @param entry Entry point function for the process
+         * @param argc Argument count
+         * @param argv Argument values
+         * @param envp Environment variables (captured but not pushed to builtin stack)
          */
-        void initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv);
+        void initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv, char* const* envp);
 
-        void initializeArgumentsForELF(uint32_t argc, char* const* argv);
+        /**
+         * @brief Initializes arguments for ELF executables (standard Linux stack layout)
+         * @param argc Argument count
+         * @param argv Argument values
+         * @param envp Environment variables
+         */
+        void initializeArgumentsForELF(uint32_t argc, char* const* argv, char* const* envp);
+
+        /**
+         * @brief Captures environment variables for process metadata and /proc access
+         * @param envp Environment variables array (NULL-terminated, KEY=VALUE format)
+         */
+        void captureEnvironment(char* const* envp);
+
+        /**
+         * @brief Builds auxiliary vector for ELF process initialization
+         * @param elfHeader Pointer to loaded ELF header
+         * @param programHeaders Pointer to program headers array
+         */
+        void buildAuxiliaryVectorForELF(const Elf32_Ehdr* elfHeader, const Elf32_Phdr* programHeaders);
 
         void captureCommandlineArguments(uint32_t argc, char* const* argv);
 
@@ -294,6 +319,12 @@ namespace PalmyraOS::kernel {
         /// Command-line metadata (captured at process creation)
         KString commandName_;               ///< Program name (argv[0]), e.g., "terminal.elf"
         KVector<KString> commandlineArgs_;  ///< All command-line arguments (argv), stored safely
+
+        /// Environment variables (KEY=VALUE format, e.g., "PATH=/bin")
+        KVector<KString> environmentVariables_;  ///< Safe copy of environment for /proc and metadata
+
+        /// Auxiliary vector for ELF processes (provides kernel info to userspace)
+        KVector<AuxiliaryVectorEntry> auxiliaryVector_;  ///< AT_* entries for dynamic linker and libc
 
         PagingDirectory* pagingDirectory_{};  ///< Pointer to the paging directory
         void* userStack_{};                   ///< Pointer to the user stack

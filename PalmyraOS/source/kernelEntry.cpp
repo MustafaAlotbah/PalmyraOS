@@ -478,14 +478,14 @@ void callConstructors() {
 
         // Initialize the Window Manager in Kernel Mode
         {
-            char* argv[] = {const_cast<char*>("windowsManager.elf"), nullptr};
-            kernel::TaskManager::newProcess(kernel::WindowManager::thread, kernel::Process::Mode::Kernel, kernel::Process::Priority::Medium, 0, argv, true);
+            char* argv[] = {const_cast<char*>("/bin/windowsManager.elf"), nullptr};
+            kernel::TaskManager::execv_builtin(kernel::WindowManager::thread, kernel::Process::Mode::Kernel, kernel::Process::Priority::Medium, 0, argv, nullptr);
         }
 
         // Initialize the menu bar
         {
-            char* argv[] = {const_cast<char*>("menuBar.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::MenuBar::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
+            char* argv[] = {const_cast<char*>("/bin/menuBar.elf"), nullptr};
+            kernel::TaskManager::execv_builtin(PalmyraOS::Userland::builtin::MenuBar::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, nullptr);
         }
 
         // Run the kernel terminal
@@ -509,8 +509,8 @@ void callConstructors() {
 
         // Process with a window that exists later for testing
         {
-            char* argv[] = {const_cast<char*>("clock.elf"), nullptr};
-            kernel::TaskManager::newProcess(PalmyraOS::Userland::builtin::KernelClock::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, true);
+            char* argv[] = {const_cast<char*>("/bin/clock.elf"), nullptr};
+            kernel::TaskManager::execv_builtin(PalmyraOS::Userland::builtin::KernelClock::main, kernel::Process::Mode::User, kernel::Process::Priority::Low, 1, argv, nullptr);
         }
 
         // Process with a window that exists later for testing

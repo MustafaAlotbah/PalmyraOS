@@ -21,14 +21,28 @@ namespace PalmyraOS::kernel {
         static void initialize();
 
         /**
-         * @brief Creates a new process.
-         * @param entryPoint Entry point function for the new process
-         * @param mode Execution mode of the new process
+         * @brief Executes a builtin (internal) executable as a new process
+         * @param entryPoint Entry point function for the builtin
+         * @param mode Execution mode
+         * @param priority Process priority
+         * @param argc Argument count
+         * @param argv Argument values
+         * @param envp Environment variables
          * @return Pointer to the created process
          */
-        static Process* newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, bool isInternal);
+        static Process* execv_builtin(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, char* const* envp);
 
-        static Process* execv_elf(KVector<uint8_t>& elfFileContent, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv);
+        /**
+         * @brief Loads and executes an ELF binary as a new process
+         * @param elfFileContent ELF file data
+         * @param mode Execution mode
+         * @param priority Process priority
+         * @param argc Argument count
+         * @param argv Argument values
+         * @param envp Environment variables
+         * @return Pointer to the created process
+         */
+        static Process* execv_elf(KVector<uint8_t>& elfFileContent, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, char* const* envp);
 
         /**
          * @brief Gets the current running process.
@@ -57,6 +71,20 @@ namespace PalmyraOS::kernel {
         static uint32_t* interruptHandler(interrupts::CPURegisters*);
 
     private:
+        /**
+         * @brief Internal process factory (used by execv_builtin and execv_elf)
+         * @param entryPoint Entry point function (nullptr for ELF processes)
+         * @param mode Execution mode
+         * @param priority Process priority
+         * @param argc Argument count
+         * @param argv Argument values
+         * @param envp Environment variables
+         * @param isInternal True for builtin executables, false for external ELF binaries
+         * @return Pointer to the created process
+         */
+        static Process*
+        newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, char* const* envp, bool isInternal);
+
         static KVector<Process> processes_;    ///< Vector of processes
         static uint32_t currentProcessIndex_;  ///< Index of the current process
         static uint32_t atomicSectionLevel_;   ///< Level of atomic section nesting

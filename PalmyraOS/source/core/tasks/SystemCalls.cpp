@@ -883,31 +883,50 @@ void PalmyraOS::kernel::SystemCallsManager::handleWaitPID(PalmyraOS::kernel::int
     regs->eax = pid;
 }
 
+/**
+ * @brief Handles posix_spawn system call for process creation
+ *
+ * This system call creates a new process from an executable file, supporting both
+ * builtin executables and external ELF binaries. The new process is initialized
+ * with command-line arguments and environment variables following POSIX semantics.
+ */
 void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
 
     // uint32_t posix_spawn(uint32_t* pid, const char* path, void* file_actions, void* attrp, char* const argv[], char* const envp[]);
 
-    // Extract arguments from registers
+    /**
+     * Extract arguments from registers (following i386 calling convention):
+     * EBX: pid output pointer
+     * ECX: path to executable
+     * EDX: argv array
+     * ESI: envp array (environment variables)
+     */
     auto* pid         = reinterpret_cast<uint32_t*>(regs->ebx);
     const char* path  = reinterpret_cast<const char*>(regs->ecx);
     char* const* argv = reinterpret_cast<char* const*>(regs->edx);
     char* const* envp = reinterpret_cast<char* const*>(regs->esi);
 
-    // file_actions and attrp are ignored in this implementation
-    // void* file_actions = reinterpret_cast<void*>(regs->esi); // Ignored
-    // void* attrp = reinterpret_cast<void*>(regs->edi);         // Ignored
+    // file_actions and attrp are not yet implemented (TODO for future)
+    // void* file_actions = reinterpret_cast<void*>(regs->esi);
+    // void* attrp = reinterpret_cast<void*>(regs->edi);
 
-    // Check if path is a valid pointer
+    /**
+     * Step 1: Validate path pointer
+     */
     if (!isValidAddress(const_cast<char*>(path))) {
         regs->eax = -EFAULT;  // Bad address
         return;
     }
 
-    // Count the number of arguments in argv
+    /**
+     * Step 2: Count arguments in argv
+     */
     int argc = 0;
     while (argv[argc] != nullptr) { argc++; }
 
-    // Look up the file in VFS
+    /**
+     * Step 3: Look up the executable in the virtual file system
+     */
     auto inode = vfs::VirtualFileSystem::getInodeByPath(KString(path));
     if (!inode) {
         regs->eax = -ENOENT;  // No such file or directory
@@ -916,7 +935,11 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 
     Process* proc = nullptr;
 
-    // Check if it's a built-in executable (virtual method, no RTTI needed!)
+    /**
+     * Step 4: Create process based on executable type
+     */
+
+    // Type 1: Builtin executable (kernel function exposed as program)
     if (inode->isBuiltinExecutable()) {
         // Cast is safe because isBuiltinExecutable() returned true
         auto* builtinInode = static_cast<vfs::BuiltinExecutableInode*>(inode);
@@ -924,11 +947,15 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
 
         LOG_INFO("EXEC BUILTIN: %s at entry point 0x%X", path, (uint32_t) entryPoint);
 
-        // Create process with the built-in entry point
-        proc = kernel::TaskManager::newProcess(entryPoint, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, true);
+        // Execute the builtin using the symmetric execv_builtin() interface
+        proc = kernel::TaskManager::execv_builtin(entryPoint, 
+                                                   kernel::Process::Mode::User, 
+                                                   kernel::Process::Priority::Low, 
+                                                   argc, argv, envp);
     }
+    // Type 2: External ELF binary
     else if (inode->getType() == vfs::InodeBase::Type::File) {
-        // Load as ELF from disk
+        // Read ELF file from disk
         auto fileSize = inode->getSize();
         KVector<uint8_t> fileContent(fileSize);
 
@@ -937,10 +964,10 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
             return;
         }
 
-        LOG_INFO("EXEC ELF: %s", path);
+        LOG_INFO("EXEC ELF: %s (argc=%d, envp=%s)", path, argc, envp ? "provided" : "nullptr");
 
-        // Execute the ELF file as a new process
-        proc = kernel::TaskManager::execv_elf(fileContent, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv);
+        // Execute the ELF file as a new process (with environment and auxiliary vector)
+        proc = kernel::TaskManager::execv_elf(fileContent, kernel::Process::Mode::User, kernel::Process::Priority::Low, argc, argv, envp);
     }
     else {
         // Not a regular file or built-in executable
@@ -948,14 +975,21 @@ void PalmyraOS::kernel::SystemCallsManager::handleSpawn(PalmyraOS::kernel::inter
         return;
     }
 
-    // Check if process creation succeeded
+    /**
+     * Step 5: Check if process creation succeeded
+     */
     if (!proc) {
         regs->eax = -ENOMEM;  // Out of memory or failed to create the process
         return;
     }
 
-    // If pid is a valid pointer, store the process ID of the new process
-    if (isValidAddress(pid)) { *pid = proc->getPid(); }
+    /**
+     * Step 6: Store the new process ID if caller provided output pointer
+     */
+    if (isValidAddress(pid)) {
+        *pid = proc->getPid();
+        LOG_DEBUG("Created process PID %d from %s", *pid, path);
+    }
 
     // Return success
     regs->eax = 0;

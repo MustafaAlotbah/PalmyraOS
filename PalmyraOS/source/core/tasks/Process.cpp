@@ -21,7 +21,7 @@
 /// region Process
 
 
-PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char* const* argv, bool isInternal)
+PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode mode, Priority priority, uint32_t argc, char* const* argv, char* const* envp, bool isInternal)
     : pid_(pid), age_(2), state_(State::Ready), mode_(mode), priority_(priority) {
 
     LOG_DEBUG("Constructing Process [pid %d] (%s) (mode: %s)", pid_, argv[0], mode_ == Mode::Kernel ? "kernel" : "user");
@@ -47,11 +47,16 @@ PalmyraOS::kernel::Process::Process(ProcessEntry entryPoint, uint32_t pid, Mode 
     // 2.  Initialize the CPU state for the new process.
     initializeCPUState();
 
-    // 3. Initialize the stack with the process arguments
-    if (isInternal) { initializeArguments(entryPoint, argc, argv); }
-    else { initializeArgumentsForELF(argc, argv); }
+    // 3. Capture environment variables (for /proc and process metadata)
+    captureEnvironment(envp);
 
-    // 4.  Initialize the process stack with CPU state
+    // 4. Initialize the stack with the process arguments and environment
+    // NOTE: For ELF processes, we DON'T initialize here! The auxiliary vector
+    //       needs to be built first (in execv_elf), THEN we set up the stack once.
+    if (isInternal) { initializeArguments(entryPoint, argc, argv, envp); }
+    // For ELF: Stack initialization deferred to execv_elf() after auxv is built
+
+    // 5.  Initialize the process stack with CPU state
     {
         // Adjust the stack pointer to reserve space for the CPU registers.
         stack_.esp -= sizeof(interrupts::CPURegisters);
@@ -206,57 +211,84 @@ void PalmyraOS::kernel::Process::initializeCPUState() {
     stack_.cr3 = reinterpret_cast<uint32_t>(pagingDirectory_->getDirectory());
 }
 
-void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv) {
-    // Calculate the total size required for argv and the strings
+/**
+ * @brief Initializes arguments for builtin (internal) executables
+ *
+ * Builtin executables are kernel functions exposed as user programs (e.g., terminal.elf).
+ * They use a dispatcher wrapper with a special Arguments struct, NOT the standard
+ * Linux stack layout. The environment is captured but NOT pushed to the stack
+ * (builtins don't use envp directly; it's only for /proc metadata).
+ */
+void PalmyraOS::kernel::Process::initializeArguments(ProcessEntry entry, uint32_t argc, char* const* argv, char* const* envp) {
+    LOG_DEBUG("[Process %d] Initializing builtin executable arguments (argc=%d)", pid_, argc);
 
-    // Size of argc and argv pointers (inc. nullptr termination)
+    /**
+     * Calculate total memory needed for argv.
+     * We DON'T push envp for builtins (they use dispatcher, not standard main()).
+     */
+
+    // 1. Space for argv pointers + NULL terminator
     size_t totalSize = (argc + 1) * sizeof(char*);
 
-    // Sizes of the arguments
-    for (uint32_t i = 0; i < argc; ++i) totalSize += strlen(argv[i]) + 1;
+    // 2. Space for argument strings
+    for (uint32_t i = 0; i < argc; ++i) { totalSize += strlen(argv[i]) + 1; }
 
-    // Allocate a single block of memory for argv and the strings
+    /**
+     * Allocate a single contiguous block for all argv data.
+     * Layout: [argv pointers array] [argument strings]
+     */
     size_t numPages  = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
     void* argv_block = allocatePages(numPages);
     debug_.argvBlock = reinterpret_cast<uint32_t>(argv_block);
 
+    // Set up pointers within the allocated block
     char** argv_copy = static_cast<char**>(argv_block);
     char* str_copy   = reinterpret_cast<char*>(argv_block) + (argc + 1) * sizeof(char*);
 
-    // Copy each argument string into the allocated block.
+    // Copy argument strings
     for (uint32_t i = 0; i < argc; ++i) {
-        argv_copy[i] = str_copy;
-        size_t len   = strlen(argv[i]) + 1;
-        memcpy((void*) str_copy, (void*) argv[i], len);
-        str_copy += len;
+        argv_copy[i] = str_copy;             // Point argv[i] to the string location
+        size_t len   = strlen(argv[i]) + 1;  // Include null terminator
+        memcpy(str_copy, argv[i], len);      // Copy string
+        str_copy += len;                     // Advance to next string
     }
-    argv_copy[argc] = nullptr;  // Null-terminate the argv array.
+    argv_copy[argc] = nullptr;  // NULL terminator for argv array
 
-    // Set up the process arguments in the stack based on the mode.
+    /**
+     * Set up the Arguments struct based on execution mode.
+     * Kernel mode: Use kernel stack (esp)
+     * User mode: Use user stack (userEsp)
+     */
     if (mode_ == Mode::Kernel) {
-        // Push the ProcessArguments structure onto the stack.
+        // Push Arguments struct onto kernel stack
         stack_.esp -= sizeof(Arguments);
         auto* processArgs       = reinterpret_cast<Arguments*>(stack_.esp);
         processArgs->entryPoint = entry;
         processArgs->argc       = argc;
         processArgs->argv       = argv_copy;
 
-        // In kernel mode, ss becomes the effective argument to the dispatcher
+        // In kernel mode, ss register holds the stack pointer
         stack_.ss               = stack_.esp;
+
+        LOG_DEBUG("[Process %d] Kernel builtin initialized. ESP: 0x%X", pid_, stack_.esp);
     }
     else {
-        // User mode, copy to user stack
+        // Push Arguments struct onto user stack
         stack_.userEsp -= sizeof(Arguments);
         auto* processArgs       = reinterpret_cast<Arguments*>(stack_.userEsp);
         processArgs->entryPoint = entry;
         processArgs->argc       = argc;
         processArgs->argv       = argv_copy;
 
-        // Adjust the user stack pointer to include the arguments' pointer.
+        // Push pointer to Arguments struct
         stack_.userEsp -= sizeof(Arguments*);
         auto* processArgsPtr = reinterpret_cast<Arguments**>(stack_.userEsp);
         *processArgsPtr      = processArgs;
-        stack_.userEsp -= 4;  // first argument is esp + 4
+
+        // Adjust for calling convention (first argument at esp + 4)
+        stack_.userEsp -= 4;
+
+        LOG_DEBUG("[Process %d] User builtin initialized. ESP: 0x%X", pid_, stack_.userEsp);
     }
 }
 
@@ -362,51 +394,169 @@ void* PalmyraOS::kernel::Process::allocatePagesAt(void* virtual_address, size_t 
     return physicalAddress;
 }
 
-void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* const* argv) {
-    LOG_DEBUG("argc=%d", argc);
+/**
+ * @brief Initializes arguments for ELF executables with Linux-compatible stack layout
+ *
+ * This function creates the standard Linux i386 process stack layout at process startup.
+ * The stack structure follows the System V ABI specification and matches what Linux
+ * kernels provide, ensuring compatibility with standard toolchains and C runtime libraries.
+ *
+ * Stack layout (from low to high address):
+ *   argc (4 bytes)
+ *   argv[0..argc] + NULL
+ *   envp[0..envc] + NULL
+ *   auxv[0..n] + AT_NULL
+ *   [argument strings]
+ *   [environment strings]
+ */
+void PalmyraOS::kernel::Process::initializeArgumentsForELF(uint32_t argc, char* const* argv, char* const* envp) {
+    LOG_DEBUG("[Process %d] Initializing ELF executable with Linux stack layout (argc=%d)", pid_, argc);
 
-    // Calculate the total size required for argv pointers and the strings themselves
-    size_t totalSize = (argc + 1) * sizeof(char*);  // Space for argv pointers + null termination
+    /**
+     * Step 1: Get environment count from our captured environment
+     *
+     * We use environmentVariables_ as the single source of truth, not the envp parameter.
+     * This ensures that default environment variables (added in captureEnvironment) are
+     * always available to the process, even if nullptr was passed.
+     */
+    uint32_t envc = environmentVariables_.size();
+    LOG_DEBUG("[Process %d] Environment count: %d", pid_, envc);
+
+    /**
+     * Step 2: Calculate total memory needed for all data
+     *
+     * We allocate a single contiguous block to hold:
+     * - argv pointer array
+     * - envp pointer array
+     * - auxiliary vector
+     * - all string data
+     */
+    size_t totalSize = 0;
+
+    // 1. Argv pointers + NULL terminator
+    totalSize += (argc + 1) * sizeof(char*);
+
+    // 2. Envp pointers + NULL terminator
+    totalSize += (envc + 1) * sizeof(char*);
+
+    // 3. Auxiliary vector (type-value pairs + AT_NULL)
+    totalSize += (auxiliaryVector_.size() + 1) * 2 * sizeof(uint32_t);
+
+    // 4. Argument strings
+    for (uint32_t i = 0; i < argc; ++i) { totalSize += strlen(argv[i]) + 1; }
+
+    // 5. Environment strings (from our captured environment)
+    for (uint32_t i = 0; i < envc; ++i) { totalSize += environmentVariables_[i].size() + 1; }
+
+    // 6. Platform string for AT_PLATFORM auxiliary vector entry
+    const char* platform_string = "i386";
+    totalSize += strlen(platform_string) + 1;
+
+    /**
+     * Step 3: Allocate memory block and set up layout pointers
+     */
+    size_t numPages = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
+    void* block     = allocatePages(numPages);
+
+    LOG_DEBUG("[Process %d] Allocated %d pages (%d bytes) for ELF stack data", pid_, numPages, totalSize);
+
+    // Layout memory: [argv] [envp] [auxv] [strings]
+    char** argv_copy = static_cast<char**>(block);
+    char** envp_copy = argv_copy + argc + 1;
+    uint32_t* auxv   = reinterpret_cast<uint32_t*>(envp_copy + envc + 1);
+    char* str_copy   = reinterpret_cast<char*>(auxv + (auxiliaryVector_.size() + 1) * 2);
+
+    /**
+     * Step 4: Copy argv strings and build argv pointer array
+     */
     for (uint32_t i = 0; i < argc; ++i) {
-        totalSize += strlen(argv[i]) + 1;  // Space for each string (null-terminated)
+        argv_copy[i] = str_copy;             // Point to string
+        size_t len   = strlen(argv[i]) + 1;  // Include null terminator
+        memcpy(str_copy, argv[i], len);      // Copy string
+        str_copy += len;                     // Advance pointer
+    }
+    argv_copy[argc] = nullptr;  // NULL terminator
+
+    /**
+     * Step 5: Copy envp strings and build envp pointer array
+     *
+     * We copy from environmentVariables_ (our single source of truth), not from the
+     * envp parameter. This ensures default environment variables are always available.
+     */
+    for (uint32_t i = 0; i < envc; ++i) {
+        envp_copy[i] = str_copy;                                  // Point to string
+        size_t len   = environmentVariables_[i].size() + 1;       // Include null terminator
+        memcpy(str_copy, environmentVariables_[i].c_str(), len);  // Copy from our storage
+        str_copy += len;                                          // Advance pointer
+    }
+    envp_copy[envc]     = nullptr;  // NULL terminator
+
+    /**
+     * Step 5.5: Copy platform string and update AT_PLATFORM entry
+     *
+     * The platform string identifies the CPU architecture (e.g., "i386", "i686").
+     * Programs and libraries use this to select optimized code paths at runtime.
+     */
+    char* platform_ptr  = str_copy;
+    size_t platform_len = strlen(platform_string) + 1;
+    memcpy(platform_ptr, platform_string, platform_len);
+    str_copy += platform_len;
+
+    // Find and update the AT_PLATFORM entry in our auxiliary vector
+    for (size_t i = 0; i < auxiliaryVector_.size(); ++i) {
+        if (auxiliaryVector_[i].type == AT_PLATFORM) {
+            auxiliaryVector_[i].value = reinterpret_cast<uint32_t>(platform_ptr);
+            LOG_DEBUG("[Process %d] Set AT_PLATFORM to '%s' at 0x%X", pid_, platform_string, platform_ptr);
+            break;
+        }
     }
 
-    // Allocate memory for argv pointers and the strings
-    size_t numPages  = (totalSize + PAGE_SIZE - 1) >> PAGE_BITS;
-    void* argv_block = allocatePages(numPages);
-    char** argv_copy = static_cast<char**>(argv_block);
-    char* str_copy   = reinterpret_cast<char*>(argv_block) + (argc + 1) * sizeof(char*);
-
-    // Copy each argument string into the allocated memory block
-    for (uint32_t i = 0; i < argc; ++i) {
-        argv_copy[i] = str_copy;
-        size_t len   = strlen(argv[i]) + 1;
-        memcpy(str_copy, argv[i], len);
-        str_copy += len;
+    /**
+     * Step 6: Build auxiliary vector (type-value pairs)
+     *
+     * The auxiliary vector is an array of (type, value) pairs terminated by AT_NULL.
+     * Programs iterate through it sequentially until they find AT_NULL.
+     */
+    for (size_t i = 0; i < auxiliaryVector_.size(); ++i) {
+        auxv[i * 2]     = auxiliaryVector_[i].type;   // AT_* constant
+        auxv[i * 2 + 1] = auxiliaryVector_[i].value;  // Corresponding value
     }
-    argv_copy[argc] = nullptr;  // Null-terminate the argv array
+    // Add AT_NULL terminator
+    auxv[auxiliaryVector_.size() * 2]     = AT_NULL;
+    auxv[auxiliaryVector_.size() * 2 + 1] = 0;
 
-    // Set up the stack layout according to the expected Linux x86 ABI
-    if (mode_ == Mode::User) {
-        // 1. Copy the argv pointers to the stack
-        stack_.userEsp -= (argc + 1) * sizeof(char*);
-        memcpy(reinterpret_cast<void*>(stack_.userEsp), argv_copy, (argc + 1) * sizeof(char*));
-        uint32_t argv_pointer = stack_.userEsp;  // Save the location of argv
+    /**
+     * Step 7: Push data to user stack in Linux ABI order
+     *
+     * Stack grows downward (toward lower addresses), so we push in reverse:
+     * - Auxiliary vector (highest address)
+     * - Environment pointers
+     * - Argument pointers
+     * - Argument count (lowest address, ESP points here)
+     */
 
-        // 2. Place argc 4 bytes before the current stack pointer
-        stack_.userEsp -= sizeof(uint32_t);
-        *reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
-    }
-    else {
-        // Normally, this setup is done for user mode; kernel mode doesn't follow this convention.
-        // But for the sake of completeness, a similar setup could be done for kernel mode.
-        stack_.esp -= (argc + 1) * sizeof(char*);
-        memcpy(reinterpret_cast<void*>(stack_.esp), argv_copy, (argc + 1) * sizeof(char*));
-        uint32_t argv_pointer = stack_.esp;  // Save the location of argv
+    // Push auxiliary vector
+    size_t auxv_size                      = (auxiliaryVector_.size() + 1) * 2 * sizeof(uint32_t);
+    stack_.userEsp -= auxv_size;
+    memcpy(reinterpret_cast<void*>(stack_.userEsp), auxv, auxv_size);
+    LOG_DEBUG("[Process %d] Pushed auxv at 0x%X (size: %d bytes, %d entries)", pid_, stack_.userEsp, auxv_size, auxiliaryVector_.size());
 
-        stack_.esp -= sizeof(uint32_t);
-        *reinterpret_cast<uint32_t*>(stack_.esp) = argc;
-    }
+    // Push envp array
+    stack_.userEsp -= (envc + 1) * sizeof(char*);
+    memcpy(reinterpret_cast<void*>(stack_.userEsp), envp_copy, (envc + 1) * sizeof(char*));
+    LOG_DEBUG("[Process %d] Pushed envp at 0x%X (%d entries)", pid_, stack_.userEsp, envc);
+
+    // Push argv array
+    stack_.userEsp -= (argc + 1) * sizeof(char*);
+    memcpy(reinterpret_cast<void*>(stack_.userEsp), argv_copy, (argc + 1) * sizeof(char*));
+    LOG_DEBUG("[Process %d] Pushed argv at 0x%X (%d entries)", pid_, stack_.userEsp, argc);
+
+    // Push argc
+    stack_.userEsp -= sizeof(uint32_t);
+    *reinterpret_cast<uint32_t*>(stack_.userEsp) = argc;
+    LOG_DEBUG("[Process %d] Pushed argc at 0x%X (value: %d)", pid_, stack_.userEsp, argc);
+
+    LOG_DEBUG("[Process %d] ELF stack initialization complete. Final ESP: 0x%X", pid_, stack_.userEsp);
 }
 
 void PalmyraOS::kernel::Process::initializeProcessInVFS() {
@@ -601,6 +751,111 @@ void PalmyraOS::kernel::Process::captureCommandlineArguments(uint32_t argc, char
     }
 
     LOG_DEBUG("[Process %d] Captured %d command-line arguments: %s", pid_, argc, commandName_.c_str());
+}
+
+/**
+ * @brief Captures environment variables for process metadata and /proc filesystem access
+ *
+ * Environment variables are stored as immutable KStrings in KEY=VALUE format.
+ * This allows safe access via /proc/{pid}/environ even after the original envp
+ * array becomes invalid. If no environment is provided, sensible defaults are used.
+ */
+void PalmyraOS::kernel::Process::captureEnvironment(char* const* envp) {
+    environmentVariables_.clear();
+
+    /**
+     * If no environment is provided, use minimal POSIX-compatible defaults.
+     * This ensures programs have at least basic environment variables available.
+     */
+    if (!envp) {
+        LOG_DEBUG("[Process %d] No environment provided, using minimal defaults", pid_);
+
+        // Minimal POSIX environment
+        // 1. PATH: Where to search for executables
+        environmentVariables_.push_back(KString("PATH=/bin"));
+
+        // 2. HOME: User's home directory
+        environmentVariables_.push_back(KString("HOME=/"));
+
+        // 3. USER: Current user name
+        environmentVariables_.push_back(KString("USER=root"));
+
+        // 4. SHELL: Default shell
+        environmentVariables_.push_back(KString("SHELL=/bin/terminal.elf"));
+
+        return;
+    }
+
+    /**
+     * Copy environment variables from the provided array.
+     * Each entry is in KEY=VALUE format (e.g., "PATH=/bin:/usr/bin").
+     */
+    uint32_t count = 0;
+    while (envp[count] != nullptr) {
+        // Make safe copy of environment variable
+        environmentVariables_.push_back(KString(envp[count]));
+        count++;
+    }
+
+    LOG_DEBUG("[Process %d] Captured %d environment variables", pid_, count);
+}
+
+/**
+ * @brief Builds auxiliary vector for ELF process initialization
+ *
+ * The auxiliary vector provides essential metadata from the kernel to userspace
+ * programs. Dynamic linkers (ld.so) and C runtime libraries rely on this information
+ * to properly initialize the process environment.
+ *
+ * This implementation follows the Linux i386 ABI for compatibility with standard
+ * toolchains and dynamically-linked executables.
+ */
+void PalmyraOS::kernel::Process::buildAuxiliaryVectorForELF(const Elf32_Ehdr* elfHeader, const Elf32_Phdr* programHeaders) {
+    auxiliaryVector_.clear();
+
+    /**
+     * Build the auxiliary vector with essential entries.
+     * The order here doesn't matter (programs iterate until AT_NULL),
+     * but we follow a logical grouping for maintainability.
+     */
+
+    // 1. System information
+    auxiliaryVector_.push_back({AT_PAGESZ, PAGE_SIZE});  // Page size (typically 4096)
+    auxiliaryVector_.push_back({AT_CLKTCK, 100});        // Clock ticks per second (PIT frequency)
+
+    // 2. ELF program header information (critical for dynamic linking)
+    auxiliaryVector_.push_back({AT_PHDR, reinterpret_cast<uint32_t>(programHeaders)});  // Program headers address
+    auxiliaryVector_.push_back({AT_PHENT, sizeof(Elf32_Phdr)});                         // Size of one program header
+    auxiliaryVector_.push_back({AT_PHNUM, elfHeader->e_phnum});                         // Number of program headers
+
+    // 3. Entry point (useful for debuggers and profilers)
+    auxiliaryVector_.push_back({AT_ENTRY, elfHeader->e_entry});
+
+    // 4. Platform string (CPU architecture identifier)
+    // Value will be updated in initializeArgumentsForELF() to point to allocated string
+    auxiliaryVector_.push_back({AT_PLATFORM, 0});  // Placeholder, updated during stack setup
+
+    // 5. User/Group IDs (security context)
+    // TODO: Implement proper UID/GID system; hardcoded to root (0) for now
+    auxiliaryVector_.push_back({AT_UID, 0});   // Real user ID
+    auxiliaryVector_.push_back({AT_EUID, 0});  // Effective user ID
+    auxiliaryVector_.push_back({AT_GID, 0});   // Real group ID
+    auxiliaryVector_.push_back({AT_EGID, 0});  // Effective group ID
+
+    // 6. Security flag (not setuid/setgid)
+    auxiliaryVector_.push_back({AT_SECURE, 0});
+
+    /**
+     * Future enhancements (not yet implemented):
+     * - AT_BASE: Dynamic linker base address (for ld.so support)
+     * - AT_RANDOM: 16 random bytes for stack canaries and ASLR
+     * - AT_HWCAP: Hardware capability flags (SSE, SSE2, etc.)
+     * - AT_EXECFN: Full path to executable
+     */
+
+    LOG_DEBUG("[Process %d] Built auxiliary vector with %d entries for ELF process", pid_, auxiliaryVector_.size());
+
+    // Note: AT_NULL terminator and AT_PLATFORM string pointer are set during stack setup
 }
 
 /**

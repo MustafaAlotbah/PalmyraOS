@@ -35,16 +35,79 @@ void PalmyraOS::kernel::TaskManager::initialize() {
     processes_.reserve(MAX_PROCESSES);
 }
 
-PalmyraOS::kernel::Process*
-PalmyraOS::kernel::TaskManager::newProcess(Process::ProcessEntry entryPoint, Process::Mode mode, Process::Priority priority, uint32_t argc, char* const* argv, bool isInternal) {
+/**
+ * @brief Internal process factory (creates Process object without stack initialization)
+ *
+ * This is a low-level factory used by execv_builtin() and execv_elf().
+ * It creates the Process object but does NOT initialize the user stack.
+ * Stack initialization is done by the caller after all prerequisites are ready.
+ */
+PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::newProcess(Process::ProcessEntry entryPoint,
+                                                                       Process::Mode mode,
+                                                                       Process::Priority priority,
+                                                                       uint32_t argc,
+                                                                       char* const* argv,
+                                                                       char* const* envp,
+                                                                       bool isInternal) {
     // Check if the maximum number of processes has been reached.
     if (processes_.size() == MAX_PROCESSES - 1) return nullptr;
 
     // Create a new process and add it to the processes vector.
-    processes_.emplace_back(entryPoint, pid_count++, mode, priority, argc, argv, isInternal);
+    processes_.emplace_back(entryPoint, pid_count++, mode, priority, argc, argv, envp, isInternal);
 
     // Return a pointer to the newly created process.
     return &processes_.back();
+}
+
+/**
+ * @brief Executes a builtin (kernel-compiled) executable as a new process
+ *
+ * Builtin executables are kernel functions exposed as user programs (e.g., terminal.elf).
+ * They use a dispatcher wrapper that calls the entry point with argc/argv.
+ *
+ * Process creation steps:
+ * 1. Create process object
+ * 2. Initialize user stack with Arguments struct
+ * 3. Return ready-to-run process
+ */
+PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_builtin(Process::ProcessEntry entryPoint,
+                                                                          Process::Mode mode,
+                                                                          Process::Priority priority,
+                                                                          uint32_t argc,
+                                                                          char* const* argv,
+                                                                          char* const* envp) {
+    LOG_DEBUG("Creating builtin process (mode: %s, priority: %d)", mode == Process::Mode::Kernel ? "Kernel" : "User", static_cast<int>(priority));
+
+    /**
+     * Step 1: Create the process object (no stack init yet)
+     */
+    Process* process = newProcess(entryPoint, mode, priority, argc, argv, envp, true);
+    if (!process) {
+        LOG_ERROR("Failed to create builtin process (max processes reached)");
+        return nullptr;
+    }
+
+    /**
+     * Step 2: Initialize the user stack with builtin-specific layout
+     *
+     * Builtins use a dispatcher wrapper, so the stack contains an Arguments struct
+     * instead of the standard Linux argc/argv/envp/auxv layout.
+     * TODO: for now, we rely on the stack being initialized in the constructor
+     */
+    // process->initializeArguments(entryPoint, argc, argv, envp);
+
+    /**
+     * Step 3: Update saved CPU state with the final userEsp
+     *
+     * The CPU state was snapshot in the constructor, but we need to update it
+     * with the final userEsp after re-initializing the stack.
+     *
+     * TODO: This step is not needed for now, as the stack is initialized in the constructor
+     */
+
+    LOG_DEBUG("Builtin process created successfully (PID: %d, userEsp: 0x%X)", process->getPid(), process->stack_.userEsp);
+
+    return process;
 }
 
 uint32_t* PalmyraOS::kernel::TaskManager::interruptHandler(PalmyraOS::kernel::interrupts::CPURegisters* regs) {
@@ -147,7 +210,8 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(KVector<ui
                                                                       PalmyraOS::kernel::Process::Mode mode,
                                                                       PalmyraOS::kernel::Process::Priority priority,
                                                                       uint32_t argc,
-                                                                      char* const* argv) {
+                                                                      char* const* argv,
+                                                                      char* const* envp) {
     // Ensure the ELF file is large enough to contain the header
     if (elfFileContent.size() < EI_NIDENT) return nullptr;
 
@@ -180,8 +244,8 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(KVector<ui
     // Validations are successful.
     LOG_DEBUG("Elf Validations successful. Loading headers..");
 
-    // Create a new process
-    Process* process = newProcess(nullptr, mode, priority, argc, argv, false);
+    // Create a new process (entryPoint is nullptr, will be set from ELF header)
+    Process* process = newProcess(nullptr, mode, priority, argc, argv, envp, false);
     if (!process) return nullptr;
 
     // Temporarily set process as killed, in case of invalid initialization
@@ -236,16 +300,44 @@ PalmyraOS::kernel::Process* PalmyraOS::kernel::TaskManager::execv_elf(KVector<ui
 
     LOG_DEBUG("Program break (brk) initialized at: 0x%X", process->initial_brk);
 
-    // Set up the initial CPU state (already initialized in newProcess)
+    /**
+     * Build auxiliary vector with ELF metadata, then initialize the stack.
+     * The constructor skipped stack initialization for ELF processes, so this is
+     * the ONLY time the stack is set up (avoiding double allocation).
+     */
+    process->buildAuxiliaryVectorForELF(elfHeader, programHeaders);
+
+    // Initialize the stack with argc, argv, envp, and auxv (one-time setup)
+    process->initializeArgumentsForELF(argc, argv, envp);
+
+    /**
+     * Update the saved CPU state with the correct entry point and user stack pointer.
+     *
+     * The CPU state was snapshot in the constructor (step 5), but at that time:
+     * - Entry point was unknown (nullptr for ELF processes)
+     * - User stack was at red zone boundary (not yet set up with args)
+     *
+     * Now that we've initialized the stack with argc/argv/envp/auxv, we must update
+     * the saved state so the process starts with the correct EIP and ESP.
+     */
+
+    // Update entry point in saved state
     // TODO make stuff here more logical PLEASE (intNo + 2 * sizeof(uint32_t) for eip)
     *(uint32_t*) (process->stack_.esp + 8) = elfHeader->e_entry;
     process->stack_.eip                    = elfHeader->e_entry;
     process->debug_.entryEip               = reinterpret_cast<uint32_t>(elfHeader->e_entry);
 
+    // Update userEsp in saved CPU registers (CRITICAL!)
+    uint32_t* saved_state                  = reinterpret_cast<uint32_t*>(process->stack_.esp - offsetof(interrupts::CPURegisters, intNo));
+    auto* saved_regs                       = reinterpret_cast<interrupts::CPURegisters*>(saved_state);
+    saved_regs->userEsp                    = process->stack_.userEsp;
+
+    LOG_DEBUG("Updated saved CPU state: entry=0x%X, userEsp=0x%X", elfHeader->e_entry, process->stack_.userEsp);
+
     // Set process state to Ready
     process->setState(Process::State::Ready);
 
-    LOG_DEBUG("userEsp finally at 0x%X.", process->stack_.userEsp);
+    LOG_DEBUG("ELF process initialization complete. Final userEsp: 0x%X", process->stack_.userEsp);
 
     return process;
 }
