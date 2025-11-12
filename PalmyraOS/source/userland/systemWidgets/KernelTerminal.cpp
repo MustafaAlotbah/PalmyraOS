@@ -917,9 +917,15 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
             for (int i = 0; i < argc; ++i) { argv[i] = const_cast<char*>(tokens[i + 1].c_str()); }
             argv[argc] = nullptr;  // Null-terminate the argv array
 
-            // Spawn the new process
+            // Prepare environment array with PWD
+            char pwdEnv[kPathMax + 16];
+            snprintf(pwdEnv, sizeof(pwdEnv), "PWD=%s", g_cwd);
+
+            char* envp[] = {const_cast<char*>("PATH=/bin"), const_cast<char*>("HOME=/"), const_cast<char*>("USER=root"), pwdEnv, nullptr};
+
+            // Spawn the new process with environment
             uint32_t child_pid;
-            int status = posix_spawn(&child_pid, path, nullptr, nullptr, argv, nullptr);
+            int status = posix_spawn(&child_pid, path, nullptr, nullptr, argv, envp);
 
             // Free allocated memory for argv
             heap.free(argv);
@@ -976,6 +982,8 @@ namespace PalmyraOS::Userland::builtin::KernelTerminal {
                 output.append(statusBuffer, strlen(statusBuffer));
                 output.append(".\n", 2);
             }
+
+            return;
         }
 
         // PING - Test network connectivity with ICMP echo
